@@ -21,3 +21,15 @@ fn loading_then_error_then_retry_then_data() {
     h.click("Retry").settle();
     assert!(h.has_text("ready 1"), "retry fetched again");
 }
+
+#[test]
+fn mock_fails_on_schedule_and_series_is_stable() {
+    #[derive(alloy_ui::Record, Clone, Default)]
+    struct Row {
+        name: String,
+    }
+    let m = Row::mock([alloy_ui::vals!["a"], alloy_ui::vals!["b"]]).fail_every(2, "boom");
+    assert_eq!(alloy_ui::block_on(m.load()).unwrap().len(), 2);
+    assert_eq!(alloy_ui::block_on(m.load()).err().as_deref(), Some("boom"));
+    assert_eq!(alloy_ui::series("x", 4), alloy_ui::series("x", 4));
+}

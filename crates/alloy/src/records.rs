@@ -5,6 +5,7 @@ use crate::{
     blocks::{app, field, local, store, table, Local, Pages},
     cx,
     dsl::{button, caption, check, heading, input, pick, slider, space, Act, Choice},
+    resource::Resource,
     view::{col as col_of, Node, View},
 };
 use crate::{col, row};
@@ -29,6 +30,8 @@ pub enum Kind {
         /// Slider step.
         step: f32,
     },
+    /// A multi-line text area that fills its space (`#[form(long)]`).
+    Long,
     /// A checkbox.
     Bool,
     /// One of a fixed list of strings (a `String` field).
@@ -138,6 +141,40 @@ pub trait Record: Clone + Default + Send + Sync + Serialize + DeserializeOwned +
     fn get(&self, i: usize) -> Value;
     /// Write field `i`.
     fn set(&mut self, i: usize, v: Value);
+    /// When the row was last edited, if it has a [`Stamp`] field. Derived.
+    fn stamp(&self) -> Option<u64> {
+        None
+    }
+    /// Mark the row as just edited (sets its [`Stamp`] field). Derived; [`browse_of`](crate::browse_of) calls it.
+    fn touch(&mut self) {}
+    /// A row per list of values, in field order: `Note::rows([vals!["Hi", false]])`.
+    fn rows<const N: usize>(rows: impl IntoIterator<Item = [Value; N]>) -> Vec<Self> {
+        Records::<Self>::of(rows).rows
+    }
+    /// A fake backend over these rows: `Service::mock([vals![..]]).delay(0.7).fail_every(3, "503")`.
+    fn mock<const N: usize>(rows: impl IntoIterator<Item = [Value; N]>) -> crate::Mock<Self> {
+        crate::Mock::new(Self::rows(rows))
+    }
+}
+
+/// A moment in time (seconds since the epoch) that defaults to now. A [`Record`] with one
+/// `#[form(skip)] edited: Stamp` field is stamped on every edit made through its derived
+/// form, and can be sorted by recency.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct Stamp(pub u64);
+
+impl Stamp {
+    /// The current time.
+    pub fn now() -> Self {
+        let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH);
+        Stamp(d.map_or(0, |d| d.as_secs()))
+    }
+}
+
+impl Default for Stamp {
+    fn default() -> Self {
+        Stamp::now()
+    }
 }
 
 /// The rows of a [`records`] view plus which one is selected. Put it in your state, or in a [`store`].
@@ -216,7 +253,7 @@ pub fn crud_app<T: Record>(title: &'static str, seed: impl Fn() -> Records<T> + 
         .persist()
 }
 
-fn show(f: &FieldInfo, v: &Value) -> String {
+pub(crate) fn show(f: &FieldInfo, v: &Value) -> String {
     match v {
         Value::Text(t) => t.clone(),
         Value::Num(n) if n.fract() == 0.0 => format!("{n:.0}"),
@@ -240,6 +277,50 @@ pub fn table_of<T: Record, S: 'static>(rows: &[T]) -> crate::Table<'_, T, S> {
         };
     }
     grid
+}
+
+/// The control for one field, with its label and validation message, writing through `put`.
+pub(crate) fn control<S: 'static>(
+    f: &FieldInfo,
+    v: Value,
+    put: impl Fn(Value) -> Act<S> + 'static,
+) -> Node<Act<S>> {
+    let (body, err): (Node<Act<S>>, Option<&str>) = match (f.kind, v) {
+        (Kind::Text | Kind::Email, Value::Text(t)) => {
+            let err = if f.required && t.is_empty() {
+                Some("Required")
+            } else if matches!(f.kind, Kind::Email) && !t.contains('@') {
+                Some("Enter a valid email")
+            } else {
+                None
+            };
+            (input(t).on(move |v| put(Value::Text(v))).into(), err)
+        }
+        (Kind::Long, Value::Text(t)) => {
+            return crate::editor(t).on(move |v| put(Value::Text(v))).into()
+        }
+        (Kind::Number { min, max, step }, Value::Num(n)) => (
+            slider(min..=max, n)
+                .step(step)
+                .on(move |v| put(Value::Num(v)))
+                .into(),
+            None,
+        ),
+        (Kind::Choice(opts), Value::Text(t)) => {
+            let at = opts.iter().position(|o| *o == t);
+            let on = move |k: usize| put(Value::Text(opts[k].to_string()));
+            (pick(opts.iter().copied(), at).on(on).into(), None)
+        }
+        (Kind::Enum(labels), Value::Pick(at)) => (
+            pick(labels(), Some(at))
+                .on(move |k| put(Value::Pick(k)))
+                .into(),
+            None,
+        ),
+        (_, Value::Bool(b)) => return check(f.label, b).on(move |v| put(Value::Bool(v))).into(),
+        _ => return caption("").into(),
+    };
+    field(f.label, body, err).into()
 }
 
 type Edit<S, T> = Arc<dyn Fn(&mut S, &mut dyn FnMut(&mut Records<T>)) + Send + Sync>;
@@ -288,42 +369,7 @@ fn editor<S: 'static, T: Record>(title: &str, data: &Records<T>, lens: Edit<S, T
                     let lens = lens.clone();
                     Act::new(move |s: &mut S| lens(s, &mut |d| d.rows[r].set(i, v.clone())))
                 };
-                let (body, err): (Node<Act<S>>, Option<&str>) = match (f.kind, rec.get(i)) {
-                    (Kind::Text | Kind::Email, Value::Text(t)) => {
-                        let err = if f.required && t.is_empty() {
-                            Some("Required")
-                        } else if matches!(f.kind, Kind::Email) && !t.contains('@') {
-                            Some("Enter a valid email")
-                        } else {
-                            None
-                        };
-                        (input(t).on(move |v| put(Value::Text(v))).into(), err)
-                    }
-                    (Kind::Number { min, max, step }, Value::Num(n)) => (
-                        slider(min..=max, n)
-                            .step(step)
-                            .on(move |v| put(Value::Num(v)))
-                            .into(),
-                        None,
-                    ),
-                    (Kind::Choice(opts), Value::Text(t)) => {
-                        let at = opts.iter().position(|o| *o == t);
-                        let on = move |k: usize| put(Value::Text(opts[k].to_string()));
-                        (pick(opts.iter().copied(), at).on(on).into(), None)
-                    }
-                    (Kind::Enum(labels), Value::Pick(at)) => (
-                        pick(labels(), Some(at))
-                            .on(move |k| put(Value::Pick(k)))
-                            .into(),
-                        None,
-                    ),
-                    (_, Value::Bool(b)) => {
-                        items.push(check(f.label, b).on(move |v| put(Value::Bool(v))).into());
-                        continue;
-                    }
-                    _ => continue,
-                };
-                items.push(field(f.label, body, err).into());
+                items.push(control(f, rec.get(i), put));
             }
             col_of(items).gap(14.0).pad(20.0).card().w(300.0)
         });
@@ -354,4 +400,78 @@ fn editor<S: 'static, T: Record>(title: &str, data: &Records<T>, lens: Edit<S, T
     .pad(24.0)
     .fill()
     .into()
+}
+
+/// A status overview of fetched rows, as a page body. Made by [`Resource::board`](crate::Resource::board).
+pub struct Board<T, C, S> {
+    res: Resource<Vec<T>>,
+    title: String,
+    by: fn(&T) -> C,
+    trend: Option<Box<dyn Fn(&T) -> Vec<f32>>>,
+    detail: Option<Box<dyn Fn(&T) -> Node<Act<S>>>>,
+}
+
+impl<T: Record> Resource<Vec<T>> {
+    /// A whole page for rows with a [`Choice`] field: the title row with Refresh, one count
+    /// card per variant of `by`, filter chips, and a sortable table of every field whose
+    /// picked row opens in a detail card.
+    pub fn board<C: Choice + Send + Sync, S: 'static>(
+        &self,
+        title: &str,
+        by: fn(&T) -> C,
+    ) -> Board<T, C, S> {
+        Board {
+            res: self.clone(),
+            title: title.into(),
+            by,
+            trend: None,
+            detail: None,
+        }
+    }
+}
+
+impl<T: Record, C, S: 'static> Board<T, C, S> {
+    /// Draw a bar chart of these values at the bottom of the detail card.
+    pub fn trend(mut self, f: impl Fn(&T) -> Vec<f32> + 'static) -> Self {
+        self.trend = Some(Box::new(f));
+        self
+    }
+    /// Replace the detail card.
+    pub fn detail<N: Into<Node<Act<S>>>>(mut self, f: impl Fn(&T) -> N + 'static) -> Self {
+        self.detail = Some(Box::new(move |t| f(t).into()));
+        self
+    }
+}
+
+impl<T: Record, C: Choice + Send + Sync, S: 'static> From<Board<T, C, S>> for Node<Act<S>> {
+    fn from(b: Board<T, C, S>) -> Self {
+        let filter = local(None::<C>);
+        let (by, trend, detail) = (b.by, b.trend, b.detail);
+        b.res.page(&b.title, move |all| {
+            let rows = filter.apply(all, by);
+            let fields = T::fields();
+            let card = move |t: &T| -> Node<Act<S>> {
+                if let Some(d) = &detail {
+                    return d(t);
+                }
+                let mut items = vec![Node::from(heading(show(&fields[0], &t.get(0))))];
+                for (i, f) in fields.iter().enumerate().skip(1) {
+                    items.push(
+                        row![caption(f.label).w(90.0), crate::text(show(f, &t.get(i)))].into(),
+                    );
+                }
+                if let Some(tr) = &trend {
+                    items.push(crate::bars(tr(t)));
+                }
+                col_of(items).gap(10.0).into()
+            };
+            col![
+                crate::tally(all, by),
+                crate::filter_by(&filter),
+                table_of(&rows).detail(card)
+            ]
+            .gap(14.0)
+            .fill()
+        })
+    }
 }
