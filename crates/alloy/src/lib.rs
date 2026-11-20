@@ -48,7 +48,7 @@ pub mod view;
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
-    app, field, local, shell, store, store_as, table, theme_switch, wizard, Local, Pages, Table,
+    app, field, field_after, local, shell, store, store_as, table, theme_switch, wizard, Local, Pages, Table,
     Wizard,
 };
 pub use chart::bars;
@@ -77,7 +77,7 @@ pub use {serde, serde_json};
 pub mod prelude {
     pub use crate::{
         app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
-        custom, editor, every, field, filter_by, gap, heading, input, list, local, nav, number,
+        custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local, nav, number,
         options, palette, pick, progress, radio, radios, records, records_in, resource, rule,
         scroll, secs, section, series, set_dark, shell, sketch, sleep, slider, space, stat, stats,
         stepper, store, store_as, table, table_of, tabs, tally, text, theme_switch, toggle, vspace,

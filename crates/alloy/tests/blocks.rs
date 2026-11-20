@@ -36,7 +36,10 @@ fn records_add_delete_and_sort() {
         "numeric, not text, sort: 5 < 30"
     );
     h.click("Add");
-    assert!(h.has_text("Required"), "new row has an empty required name");
+    assert!(
+        !h.has_text("Required"),
+        "a fresh row's empty required name is not an error until touched"
+    );
     h.click("Delete");
     assert!(h.has_text("Pear") || h.has_text("Apple"));
 }
@@ -167,4 +170,57 @@ fn filter_and_table_detail() {
     assert!(h.has_text("2 rows"));
     h.click("B");
     assert!(h.has_text("1 rows"));
+}
+
+#[derive(Default)]
+struct Form {
+    name: String,
+    email: String,
+    tried: bool,
+}
+
+fn form(s: &Form) -> impl View<Act<Form>> {
+    col![
+        field_after(
+            "Name",
+            input(at!(s.name)).hint("Ada"),
+            alloy_ui::valid::required(&s.name),
+            s.tried
+        ),
+        field(
+            "Email",
+            input(at!(s.email)).hint("ada@x.dev"),
+            alloy_ui::valid::required(&s.email)
+        ),
+        button("Submit").act(|s: &mut Form| s.tried = true),
+    ]
+}
+
+#[test]
+fn errors_wait_for_blur_or_submit() {
+    let mut h = Harness::new(sketch(Form::default(), form), 400.0, 400.0);
+    assert!(!h.has_text("Required"), "untouched fields open clean");
+
+    // Focused but still being edited: no error yet.
+    h.click("ada@x.dev");
+    assert!(!h.has_text("Required"), "no error while the field has focus");
+
+    // Move on to the name field: the email field is now touched and empty.
+    h.click("Ada");
+    assert!(h.has_text("Required"), "error shows after blur");
+    h.type_text("Grace");
+    assert!(h.has_text("Required"), "email is still required");
+
+    // A failed submit reveals the error on a field nobody touched.
+    let mut h = Harness::new(sketch(Form::default(), form), 400.0, 400.0);
+    h.click("Submit");
+    assert!(h.has_text("Required"), "submit attempt shows errors");
+}
+
+#[test]
+fn tabbing_through_marks_touched() {
+    let mut h = Harness::new(sketch(Form::default(), form), 400.0, 400.0);
+    h.click("Ada").press(alloy_ui::Key::Tab);
+    h.press(alloy_ui::Key::Tab);
+    assert!(h.has_text("Required"), "tabbed past an empty required field");
 }
