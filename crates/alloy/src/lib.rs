@@ -38,11 +38,13 @@ pub mod testing;
 pub mod view;
 
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
-pub use blocks::{app, field, local, shell, store, table, theme_switch, Local, Pages, Table};
+pub use blocks::{
+    app, field, local, shell, store, store_as, table, theme_switch, Local, Pages, Table,
+};
 pub use chart::bars;
 pub use cx::{palette, set_dark, theme, ui};
 pub use dsl::{
-    button, caption, check, choose, custom, editor, gap, heading, input, nav, options, pick,
+    button, caption, check, choose, custom, editor, gap, heading, input, list, nav, options, pick,
     progress, radio, rule, scroll, section, slider, space, tabs, text, toggle, vspace, Act, Choice,
     Variant,
 };
@@ -57,10 +59,10 @@ pub use {serde, serde_json};
 pub mod prelude {
     pub use crate::{
         app, bars, button, caption, check, choose, crud, crud_app, custom, editor, every, field,
-        gap, heading, input, local, nav, options, palette, pick, progress, radio, records,
+        gap, heading, input, list, local, nav, options, palette, pick, progress, radio, records,
         records_in, resource, rule, scroll, secs, section, set_dark, shell, sketch, sleep, slider,
-        space, store, table, table_of, tabs, text, theme_switch, toggle, vspace, Act, App, Choice,
-        Cmd, Local, Node, Record, Records, Resource, View,
+        space, store, store_as, table, table_of, tabs, text, theme_switch, toggle, vspace, Act,
+        App, Choice, Cmd, Local, Node, Record, Records, Resource, View,
     };
     pub use crate::{choices, col, row, vals};
     pub use alloy_ui_core::Color;

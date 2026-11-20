@@ -106,13 +106,18 @@ people, selection and page persisted to JSON in the config directory. The iced v
 | Alloy version | what it uses | Alloy lines | vs iced 316 (lines) | tokens |
 |---|---|---|---|---|
 | `admin_manual.rs` | `table`, `field`, `local`, `persist` only (no derive) | 156 | 2.0x | 2.2x |
-| `admin.rs` | `#[derive(Record)]`, `records()`, `shell`, `theme_switch`, `persist` | 48 | **6.6x** | **6.7x** |
-| `crud.rs` | `crud(title, rows)`: whole app is one struct plus one call | 18 | 17.6x | 19x |
+| `admin.rs` | `#[derive(Record)]`, `choices!`, `app().page()`, `crud`, `theme_switch`, `persist` | 27 | **11.7x** | **12.9x** |
+| `crud.rs` | `crud_app(title, seed)`: whole app is one struct plus one call | 19 | 16.6x | 23x |
 
 Read these honestly:
 
-- The 6.6x row is the same app feature for feature. It is not 10x: 48 lines remain (the struct
-  with its form attributes, the page enum and the `view` that picks a page, seed data).
+- The 11.7x row is the same app feature for feature (pass 2 was 48 lines, 6.6x). What changed in
+  pass 3: pages own their state (`store`, saved with `.persist()`), so there is no state struct,
+  page enum, `view` function or lens; field types pick the controls (a `choices!` enum is a
+  drop-down, `email` is validated by name, the first field is required); the derive also writes
+  the serde impls. The 27 lines include the four seed rows.
+- Be careful what this says. The admin app is shaped like the library's best case (a record
+  editor). The next section shows what happens on apps that are not.
 - The 17.6x row compares a CRUD-only app (no sidebar or settings page) against the full 316-line
   iced app, so it flatters Alloy; against the roughly 270 lines of iced that implement the CRUD
   part alone it is about 15x. It says what happens when an app is mostly a record editor.
@@ -123,3 +128,34 @@ Read these honestly:
 - Visuals differ, and the iced version was not tuned for looks.
 - Not measured: runtime performance of the table (it re-sorts every frame; fine for thousands of
   rows, not for hundreds of thousands) and Windows/macOS rendering (CI is the source of truth).
+
+### Does it generalise? Two other apps (pass 3)
+
+Two more realistic iced 0.14 apps were written first (compiled, in a scratch crate that is not
+a dependency; text copies in `loc/iced`), then the Alloy versions. Both are different in kind
+from the admin panel. Lines are non-blank, non-comment lines after `cargo fmt`
+(`python3 crates/alloy/loc/count.py`).
+
+| App | what it does | iced | Alloy | lines | tokens |
+|---|---|---|---|---|---|
+| `status.rs` | async fetch with loading, error + Retry and optional auto-refresh; stat cards, status filter, sortable table, detail chart | 332 | 110 | **3.0x** | 2.9x |
+| `notes.rs` | searchable/sortable note list, editor per note, pin, delete with confirmation, word count, autosave, settings page, theme | 377 | 159 | **2.4x** | 2.1x |
+
+Honest reading:
+
+- Both fall far short of 10x. A 10x-or-better ratio only appears when the app is "a table plus a
+  form over a struct". Once the app has its own logic (sorting rules, titles from the first
+  line, a fake backend) that logic is the same in both frameworks and dominates.
+- The fake backend alone (`fetch`, 28 lines in iced, 30 in Alloy) is over a quarter of the Alloy
+  status app. Without it the rest is 304 vs 80 lines, 3.8x.
+- Where Alloy saved lines: no `Message` enum and `update` (closures over view-local state), the
+  async state machine (`resource` replaces the `Loading/Ready/Failed` enum, the `Task::perform`
+  plumbing and the retry message), derived table columns, `Copy` state handles (no `.clone()`).
+- Where it did not: list rows, layout, handlers that touch several pieces of state. Alloy handlers
+  are closures, so each still names what it changes.
+- Not covered: **multi-window**. The core now supports opening windows, but the facade does not
+  expose it yet, so the second app is a single window with pages.
+- Limits found while doing this: the status app's async fetch runs on a std-only executor
+  (`sleep`, plain futures); a tokio-based client would need its own runtime inside the fetch.
+  `list` has no empty-state or search integration, and `editor` has no font option (the iced
+  notes app had a monospace toggle that was removed for parity).

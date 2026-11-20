@@ -394,6 +394,12 @@ pub fn editor<M>(value: impl Into<String>) -> Editor<M> {
     }
 }
 impl<M> Editor<M> {
+    /// Use `id` for the editor's cursor and scroll state. Give each document its own when one
+    /// editor shows different texts, so they do not share a cursor.
+    pub fn id(mut self, id: u64) -> Self {
+        self.id = id;
+        self
+    }
     /// Placeholder shown while empty.
     pub fn hint(mut self, h: impl Into<String>) -> Self {
         self.hint = h.into();
@@ -610,7 +616,7 @@ impl<T, M> Choose<T, M> {
 impl<T: Clone + Send + Sync + 'static, S: 'static> Choose<T, Act<S>> {
     /// Write the picked value into a [`Local`](crate::Local) view-state cell.
     pub fn local(self, cell: &crate::Local<T>) -> Self {
-        let cell = cell.clone();
+        let cell = *cell;
         self.act(move |_, v| cell.set(v))
     }
     /// Closure style: `.act(|state, picked| ..)`.
@@ -830,4 +836,52 @@ impl<T: PartialEq, M: Clone + 'static> From<Nav<T, M>> for Node<M> {
 /// A captioned group of controls, the building block of settings pages.
 pub fn section<M: 'static>(title: &str, body: impl Into<Node<M>>) -> crate::view::Flex<M> {
     crate::view::col([text(title).label().dim().into(), body.into()])
+}
+
+/// A scrolling list of rich rows with one selected. Made by [`list`].
+pub struct ListView<M> {
+    rows: Vec<Node<M>>,
+    selected: Option<usize>,
+    on: Option<Box<dyn Fn(usize) -> M>>,
+    id: u64,
+}
+
+/// A selectable, keyboard-navigable list whose rows are any views:
+/// `list(notes.iter().map(|n| col![text(&n.title), caption(&n.preview)]), Some(cur)).act(|s, i| s.cur = i)`.
+#[track_caller]
+pub fn list<M, V: Into<Node<M>>>(
+    rows: impl IntoIterator<Item = V>,
+    selected: Option<usize>,
+) -> ListView<M> {
+    ListView {
+        rows: rows.into_iter().map(Into::into).collect(),
+        selected,
+        on: None,
+        id: auto_id(40),
+    }
+}
+value_widget!(
+    ListView,
+    "list",
+    usize,
+    "Called with the row's position when one is picked."
+);
+impl<M: 'static> From<ListView<M>> for Node<M> {
+    fn from(l: ListView<M>) -> Self {
+        let on = l.on;
+        let pick = move |i| match &on {
+            Some(f) => f(i),
+            None => unreachable!("list needs .on(..) or .act(..)"),
+        };
+        Node(
+            w::List::new(
+                &cx::ui(),
+                l.id,
+                l.rows.into_iter().map(|r| r.0).collect(),
+                l.selected,
+                pick,
+            )
+            .into_element(),
+        )
+    }
 }

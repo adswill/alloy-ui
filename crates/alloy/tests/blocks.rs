@@ -45,7 +45,7 @@ fn records_add_delete_and_sort() {
 fn local_state_survives_frames() {
     let app = sketch((), |_| {
         let open = local(false);
-        let o = open.clone();
+        let o = open;
         col![
             button("Toggle").act(move |_| o.toggle()),
             text(if open.get() { "open" } else { "closed" })

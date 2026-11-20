@@ -247,7 +247,7 @@ type Edit<S, T> = Arc<dyn Fn(&mut S, &mut dyn FnMut(&mut Records<T>)) + Send + S
 /// A master-detail editor for rows kept in a [`store`] (or any [`Local`]): search box,
 /// sortable table, Add / Delete, and a validated form for the selected row.
 pub fn records<S: 'static, T: Record>(title: &str, data: &Local<Records<T>>) -> Node<Act<S>> {
-    let d = data.clone();
+    let d = *data;
     let edit: Edit<S, T> = Arc::new(move |_, f| d.with(f));
     data.with(|rows| editor(title, rows, edit))
 }

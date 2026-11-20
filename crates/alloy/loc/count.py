@@ -24,13 +24,13 @@ def row(name, a, b):
 
 
 pairs = [("counter", "counter"), ("todo", "todo"), ("text_editor", "editor"),
-         ("settings", "settings"), ("dashboard", "dashboard"), ("admin", "admin"), ("admin_blocks", "admin_manual"), ("crud-only", "crud")]
+         ("settings", "settings"), ("dashboard", "dashboard"), ("admin", "admin"), ("status board (async)", "status"), ("notes", "notes"), ("admin_blocks", "admin_manual"), ("crud-only", "crud")]
 print("| App | iced lines | Alloy lines | ratio | iced tokens | Alloy tokens | ratio |")
 print("|---|---|---|---|---|---|---|")
 tot = [0, 0, 0, 0]
 for i, a in pairs:
     n_label = i
-    i = "admin" if i.startswith("admin") else ("admin" if i=="crud-only" else i)
+    i = {"admin_blocks": "admin", "crud-only": "admin", "status board (async)": "status"}.get(i, i)
     n, li, la, ti, ta = row(i, (iced / f"{i}.rs.txt").read_text(), (alloy / f"{a}.rs").read_text())
     n = n_label
     print(f"| {n} | {li} | {la} | {li/la:.1f}x | {ti} | {ta} | {ti/ta:.1f}x |")

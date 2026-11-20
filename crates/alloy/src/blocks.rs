@@ -9,39 +9,41 @@ use crate::{
 };
 use alloy_ui_core::style::Length;
 use alloy_ui_widgets as w;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // ------------------------------------------------------------ local state
 
 /// A value that lives with the widget tree, not in your app state: a search
-/// box, a sort order, an open panel. Made by [`local`]; clones share the value.
-pub struct Local<T>(Arc<Mutex<T>>);
+/// box, a sort order, an open panel. Made by [`local`] or [`store`]. It is a small
+/// `Copy` handle, so closures can capture it freely with no `.clone()`.
+pub struct Local<T>(u64, std::marker::PhantomData<fn() -> T>);
 
 impl<T> Clone for Local<T> {
     fn clone(&self) -> Self {
-        Local(self.0.clone())
+        *self
     }
 }
+impl<T> Copy for Local<T> {}
 
-impl<T> Local<T> {
+impl<T: Send + 'static> Local<T> {
     /// Replace the value.
-    pub fn set(&self, v: T) {
-        *self.0.lock().unwrap() = v;
+    pub fn set(self, v: T) {
+        self.with(|x| *x = v);
     }
     /// Read or change the value in place.
-    pub fn with<R>(&self, f: impl FnOnce(&mut T) -> R) -> R {
-        f(&mut self.0.lock().unwrap())
+    pub fn with<R>(self, f: impl FnOnce(&mut T) -> R) -> R {
+        f(&mut cx::slot_by_id::<T>(self.0).lock().unwrap())
     }
 }
-impl<T: Clone> Local<T> {
+impl<T: Clone + Send + 'static> Local<T> {
     /// A copy of the value.
-    pub fn get(&self) -> T {
-        self.0.lock().unwrap().clone()
+    pub fn get(self) -> T {
+        self.with(|v| v.clone())
     }
 }
-impl<T: Clone + std::ops::Not<Output = T>> Local<T> {
+impl<T: Clone + Send + std::ops::Not<Output = T> + 'static> Local<T> {
     /// Flip a `bool`.
-    pub fn toggle(&self) {
+    pub fn toggle(self) {
         self.with(|v| *v = !v.clone());
     }
 }
@@ -53,7 +55,9 @@ impl<T: Clone + std::ops::Not<Output = T>> Local<T> {
 /// `.act(move |_| q.set(..))`.
 #[track_caller]
 pub fn local<T: Send + 'static>(init: T) -> Local<T> {
-    Local(cx::slot(auto_id(20), || init))
+    let id = auto_id(20);
+    cx::slot(id, || init);
+    Local(id, std::marker::PhantomData)
 }
 
 /// Like [`local`] but saved: with [`Pages::persist`] the value survives restarts, and
@@ -62,7 +66,18 @@ pub fn local<T: Send + 'static>(init: T) -> Local<T> {
 pub fn store<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
     init: impl FnOnce() -> T,
 ) -> Local<T> {
-    Local(cx::durable(init))
+    Local(cx::durable(init), std::marker::PhantomData)
+}
+
+/// A [`store`] with a name, so several pages share it: `store_as("sort", || Sort::Recent)`.
+pub fn store_as<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
+    name: &str,
+    init: impl FnOnce() -> T,
+) -> Local<T> {
+    Local(
+        cx::durable_keyed(format!("={name}"), init),
+        std::marker::PhantomData,
+    )
 }
 
 // --------------------------------------------------------------- tables
@@ -224,7 +239,7 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             ));
         }
 
-        let sort_cell = t.sort.clone();
+        let sort_cell = t.sort;
         let order_sel = order.clone();
         let on_select = t.on_select.clone();
         let mut grid = w::Table::new(&cx::ui(), t.id, columns, move |pos| {
@@ -236,7 +251,7 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             })
         })
         .on_sort(move |i| {
-            let sort = sort_cell.clone();
+            let sort = sort_cell;
             Act::new(move |_: &mut S| {
                 sort.with(|v| {
                     *v = match *v {
@@ -315,9 +330,12 @@ where
 
 /// A Light / Dark switch for the whole window.
 pub fn theme_switch<S: 'static>() -> Node<Act<S>> {
-    let dark = alloy_ui_theme::relative_luminance(cx::palette().background) < 0.5;
-    crate::choose([("Light", false), ("Dark", true)], &dark)
-        .on(|d| Act::new(move |_: &mut S| cx::set_dark(d)))
+    let dark = store_as("dark", || false);
+    crate::choose([("Light", false), ("Dark", true)], &dark.get())
+        .on(move |d| {
+            let dark = dark;
+            Act::new(move |_: &mut S| dark.set(d))
+        })
         .into()
 }
 
@@ -394,6 +412,10 @@ impl App for Pages {
     }
 
     fn view(&self) -> impl View<Act<()>> {
+        let dark = store_as("dark", || false).get();
+        if (alloy_ui_theme::relative_luminance(cx::palette().background) < 0.5) != dark {
+            cx::set_dark(dark);
+        }
         let open = store(|| 0usize);
         let at = open.get().min(self.pages.len().saturating_sub(1));
         let names: Vec<&str> = self.pages.iter().map(|(n, _)| n.as_str()).collect();
@@ -407,7 +429,7 @@ impl App for Pages {
         )
         .on(move |i| {
             Act::new({
-                let open = open.clone();
+                let open = open;
                 move |_: &mut ()| open.set(i)
             })
         })

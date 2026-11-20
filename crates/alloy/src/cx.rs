@@ -88,6 +88,17 @@ thread_local! {
     static SLOTS: RefCell<HashMap<u64, Box<dyn std::any::Any>>> = RefCell::new(HashMap::new());
 }
 
+/// The slot stored for `id` (created earlier by [`slot`]).
+pub(crate) fn slot_by_id<T: Send + 'static>(id: u64) -> std::sync::Arc<std::sync::Mutex<T>> {
+    SLOTS.with(|s| {
+        s.borrow()
+            .get(&id)
+            .and_then(|b| b.downcast_ref::<std::sync::Arc<std::sync::Mutex<T>>>())
+            .expect("a Local used on a different thread or type than it was made on")
+            .clone()
+    })
+}
+
 /// The persistent value stored for `id`, created with `init` the first time.
 pub(crate) fn slot<T: Send + 'static>(
     id: u64,
@@ -146,7 +157,7 @@ pub(crate) fn scope<R>(name: &str, f: impl FnOnce() -> R) -> R {
 /// The persistent, saved-with-the-app value for the next `store` call in this scope.
 pub(crate) fn durable<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
     init: impl FnOnce() -> T,
-) -> std::sync::Arc<std::sync::Mutex<T>> {
+) -> u64 {
     let key = DURABLE.with(|d| {
         let mut d = d.borrow_mut();
         let scope = d.scope.clone();
@@ -154,6 +165,14 @@ pub(crate) fn durable<T: serde::Serialize + serde::de::DeserializeOwned + Send +
         *n += 1;
         format!("{scope}#{n}")
     });
+    durable_keyed(key, init)
+}
+
+/// Like [`durable`] with an explicit key, shared by every page that uses it.
+pub(crate) fn durable_keyed<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
+    key: String,
+    init: impl FnOnce() -> T,
+) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     h.write(key.as_bytes());
     let id = h.finish() & !(1 << 63);
@@ -169,7 +188,7 @@ pub(crate) fn durable<T: serde::Serialize + serde::de::DeserializeOwned + Send +
             Box::new(move || serde_json::to_value(&*s.lock().unwrap()).unwrap_or_default())
         });
     });
-    slot
+    id
 }
 
 /// The name of the page being built (empty outside [`Pages`](crate::Pages)).

@@ -60,7 +60,7 @@ fn main() {
             let body = svc.show(|all| {
                 let rows: Vec<Service> = all
                     .iter()
-                    .filter(|s| filter.get().is_none_or(|f| f == s.status))
+                    .filter(|s| filter.get().is_none() || filter.get() == Some(s.status))
                     .cloned()
                     .collect();
                 let stat = |st: Status| {

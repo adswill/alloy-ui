@@ -1,0 +1,353 @@
+use iced::widget::{button, column, container, row, rule, scrollable, space, text, toggler};
+use iced::{time, Center, Color, Element, Fill, Subscription, Task, Theme};
+use std::time::Duration;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Status {
+    Up,
+    Degraded,
+    Down,
+}
+
+impl Status {
+    const ALL: [Status; 3] = [Status::Up, Status::Degraded, Status::Down];
+
+    fn label(self) -> &'static str {
+        match self {
+            Status::Up => "Up",
+            Status::Degraded => "Degraded",
+            Status::Down => "Down",
+        }
+    }
+
+    fn color(self) -> Color {
+        match self {
+            Status::Up => Color::from_rgb8(0x1a, 0x8a, 0x5a),
+            Status::Degraded => Color::from_rgb8(0xc7, 0x8a, 0x10),
+            Status::Down => Color::from_rgb8(0xc0, 0x39, 0x2b),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct Service {
+    name: String,
+    region: String,
+    status: Status,
+    latency: u32,
+    uptime: f32,
+    history: Vec<f32>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Column {
+    Name,
+    Region,
+    Latency,
+    Uptime,
+    Status,
+}
+
+enum Load {
+    Loading,
+    Ready(Vec<Service>),
+    Failed(String),
+}
+
+struct Board {
+    load: Load,
+    attempts: u32,
+    auto: bool,
+    filter: Option<Status>,
+    sort: Option<(Column, bool)>,
+    selected: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Refresh,
+    Loaded(Result<Vec<Service>, String>),
+    Auto(bool),
+    Filter(Option<Status>),
+    Sort(Column),
+    Select(String),
+}
+
+async fn fetch(attempt: u32) -> Result<Vec<Service>, String> {
+    tokio::time::sleep(Duration::from_millis(700)).await;
+    if attempt % 3 == 2 {
+        return Err("503 from api.status.local: upstream timed out".into());
+    }
+    let rows = [
+        ("api-gateway", "eu-west", Status::Up, 42, 99.99),
+        ("auth", "eu-west", Status::Up, 31, 99.98),
+        ("billing", "us-east", Status::Degraded, 380, 99.12),
+        ("search", "us-east", Status::Up, 88, 99.90),
+        ("media-cdn", "ap-south", Status::Down, 0, 97.40),
+        ("notifications", "eu-west", Status::Up, 64, 99.95),
+    ];
+    Ok(rows
+        .iter()
+        .enumerate()
+        .map(|(i, (name, region, status, latency, uptime))| Service {
+            name: name.to_string(),
+            region: region.to_string(),
+            status: *status,
+            latency: *latency + (attempt * 7 + i as u32 * 3) % 20,
+            uptime: *uptime,
+            history: (0..16)
+                .map(|k| ((k * 37 + i as u32 * 11 + attempt * 5) % 100) as f32 / 100.0)
+                .collect(),
+        })
+        .collect())
+}
+
+impl Board {
+    fn new() -> (Self, Task<Message>) {
+        let board = Board {
+            load: Load::Loading,
+            attempts: 1,
+            auto: false,
+            filter: None,
+            sort: None,
+            selected: None,
+        };
+        (board, Task::perform(fetch(0), Message::Loaded))
+    }
+
+    fn visible(&self, rows: &[Service]) -> Vec<Service> {
+        let mut rows: Vec<Service> = rows
+            .iter()
+            .filter(|s| self.filter.is_none_or(|f| f == s.status))
+            .cloned()
+            .collect();
+        if let Some((col, desc)) = self.sort {
+            rows.sort_by(|a, b| {
+                let o = match col {
+                    Column::Name => a.name.cmp(&b.name),
+                    Column::Region => a.region.cmp(&b.region),
+                    Column::Latency => a.latency.cmp(&b.latency),
+                    Column::Uptime => a.uptime.total_cmp(&b.uptime),
+                    Column::Status => (a.status as u8).cmp(&(b.status as u8)),
+                };
+                if desc {
+                    o.reverse()
+                } else {
+                    o
+                }
+            });
+        }
+        rows
+    }
+}
+
+fn update(s: &mut Board, message: Message) -> Task<Message> {
+    match message {
+        Message::Refresh => {
+            s.load = Load::Loading;
+            s.attempts += 1;
+            return Task::perform(fetch(s.attempts), Message::Loaded);
+        }
+        Message::Loaded(Ok(rows)) => s.load = Load::Ready(rows),
+        Message::Loaded(Err(e)) => s.load = Load::Failed(e),
+        Message::Auto(on) => s.auto = on,
+        Message::Filter(f) => s.filter = f,
+        Message::Sort(c) => {
+            s.sort = match s.sort {
+                Some((o, false)) if o == c => Some((c, true)),
+                Some((o, true)) if o == c => None,
+                _ => Some((c, false)),
+            }
+        }
+        Message::Select(name) => s.selected = Some(name),
+    }
+    Task::none()
+}
+
+fn subscription(s: &Board) -> Subscription<Message> {
+    if s.auto {
+        time::every(Duration::from_secs(10)).map(|_| Message::Refresh)
+    } else {
+        Subscription::none()
+    }
+}
+
+fn stat<'a>(label: &'a str, n: usize, color: Color) -> Element<'a, Message> {
+    container(
+        column![
+            text(label).size(12),
+            text(n.to_string()).size(28).color(color)
+        ]
+        .spacing(4),
+    )
+    .padding(16)
+    .width(Fill)
+    .style(container::bordered_box)
+    .into()
+}
+
+fn header<'a>(
+    s: &Board,
+    label: &'static str,
+    col: Column,
+    width: iced::Length,
+) -> Element<'a, Message> {
+    let arrow = match s.sort {
+        Some((c, false)) if c == col => " \u{2191}",
+        Some((c, true)) if c == col => " \u{2193}",
+        _ => "",
+    };
+    button(text(format!("{label}{arrow}")))
+        .on_press(Message::Sort(col))
+        .style(button::text)
+        .width(width)
+        .into()
+}
+
+fn chip<'a>(
+    label: &'a str,
+    value: Option<Status>,
+    current: Option<Status>,
+) -> Element<'a, Message> {
+    button(label)
+        .on_press(Message::Filter(value))
+        .style(if current == value {
+            button::secondary
+        } else {
+            button::text
+        })
+        .into()
+}
+
+fn table<'a>(s: &'a Board, rows: &[Service]) -> Element<'a, Message> {
+    let w = [
+        Fill,
+        iced::Length::Fixed(90.0),
+        iced::Length::Fixed(90.0),
+        iced::Length::Fixed(90.0),
+        iced::Length::Fixed(100.0),
+    ];
+    let head = row![
+        header(s, "Service", Column::Name, w[0]),
+        header(s, "Region", Column::Region, w[1]),
+        header(s, "Latency", Column::Latency, w[2]),
+        header(s, "Uptime", Column::Uptime, w[3]),
+        header(s, "Status", Column::Status, w[4]),
+    ];
+    let lines = s.visible(rows).into_iter().map(|svc| {
+        let picked = s.selected.as_deref() == Some(svc.name.as_str());
+        let line = row![
+            text(svc.name.clone()).width(w[0]),
+            text(svc.region.clone()).width(w[1]),
+            text(format!("{} ms", svc.latency)).width(w[2]),
+            text(format!("{:.2}%", svc.uptime)).width(w[3]),
+            text(svc.status.label())
+                .color(svc.status.color())
+                .width(w[4]),
+        ]
+        .align_y(Center);
+        button(line)
+            .on_press(Message::Select(svc.name))
+            .width(Fill)
+            .style(if picked {
+                button::secondary
+            } else {
+                button::text
+            })
+            .into()
+    });
+    column![head, scrollable(column(lines)).height(Fill)]
+        .width(Fill)
+        .into()
+}
+
+fn detail<'a>(svc: &Service) -> Element<'a, Message> {
+    let bars = svc.history.iter().map(|v| {
+        column![
+            space().height(Fill),
+            container(space())
+                .width(10)
+                .height(60.0 * v)
+                .style(container::primary)
+        ]
+        .height(60)
+        .into()
+    });
+    container(
+        column![
+            text(svc.name.clone()).size(24),
+            text(format!("{} \u{b7} {}", svc.region, svc.status.label())).size(12),
+            rule::horizontal(1),
+            text("Latency, last 16 checks").size(12),
+            row(bars).spacing(3),
+            text(format!("{} ms now", svc.latency)),
+        ]
+        .spacing(10),
+    )
+    .padding(20)
+    .width(300)
+    .style(container::bordered_box)
+    .into()
+}
+
+fn view(s: &Board) -> Element<'_, Message> {
+    let top = row![
+        text("Services").size(24),
+        space().width(Fill),
+        text("Auto refresh").size(12),
+        toggler(s.auto).on_toggle(Message::Auto),
+        button("Refresh").on_press_maybe(if matches!(s.load, Load::Loading) {
+            None
+        } else {
+            Some(Message::Refresh)
+        }),
+    ]
+    .spacing(12)
+    .align_y(Center);
+    let body: Element<'_, Message> = match &s.load {
+        Load::Loading => container(text("Loading services\u{2026}"))
+            .center(Fill)
+            .into(),
+        Load::Failed(e) => container(
+            column![
+                text("Could not load services").size(20),
+                text(e.clone()).size(12).style(text::danger),
+                button("Retry").on_press(Message::Refresh),
+            ]
+            .spacing(10)
+            .align_x(Center),
+        )
+        .center(Fill)
+        .into(),
+        Load::Ready(rows) => {
+            let count = |st| rows.iter().filter(|r| r.status == st).count();
+            let stats =
+                row(Status::ALL.map(|st| stat(st.label(), count(st), st.color()))).spacing(12);
+            let chips = row![
+                chip("All", None, s.filter),
+                chip("Up", Some(Status::Up), s.filter),
+                chip("Degraded", Some(Status::Degraded), s.filter),
+                chip("Down", Some(Status::Down), s.filter),
+            ]
+            .spacing(4);
+            let picked = rows
+                .iter()
+                .find(|r| s.selected.as_deref() == Some(r.name.as_str()));
+            let main = row![table(s, rows)]
+                .push(picked.map(detail))
+                .spacing(16)
+                .height(Fill);
+            column![stats, chips, main].spacing(14).height(Fill).into()
+        }
+    };
+    column![top, body].spacing(16).padding(24).into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Board::new, update, view)
+        .title("Status")
+        .subscription(subscription)
+        .theme(|_: &Board| Theme::Light)
+        .window_size((1100.0, 640.0))
+        .run()
+}

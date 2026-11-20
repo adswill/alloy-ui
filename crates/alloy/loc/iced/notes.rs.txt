@@ -1,0 +1,403 @@
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, rule, scrollable, space, text,
+    text_editor, text_input,
+};
+use iced::{Center, Element, Fill, Theme};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+enum Page {
+    Notes,
+    Settings,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+enum Sort {
+    Recent,
+    Alphabetical,
+}
+
+impl Sort {
+    const ALL: [Sort; 2] = [Sort::Recent, Sort::Alphabetical];
+}
+
+impl std::fmt::Display for Sort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Sort::Recent => "Most recent",
+            Sort::Alphabetical => "A to Z",
+        })
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct Saved {
+    id: u64,
+    body: String,
+    pinned: bool,
+    edited: u64,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Disk {
+    notes: Vec<Saved>,
+    page: Page,
+    sort: Sort,
+    dark: bool,
+    current: Option<u64>,
+}
+
+struct Note {
+    id: u64,
+    content: text_editor::Content,
+    pinned: bool,
+    edited: u64,
+}
+
+impl Note {
+    fn new(id: u64, body: &str) -> Self {
+        Note {
+            id,
+            content: text_editor::Content::with_text(body),
+            pinned: false,
+            edited: now(),
+        }
+    }
+
+    fn body(&self) -> String {
+        self.content.text()
+    }
+
+    fn title(&self) -> String {
+        let body = self.body();
+        let line = body.lines().next().unwrap_or("").trim();
+        if line.is_empty() {
+            "Untitled".into()
+        } else {
+            line.into()
+        }
+    }
+
+    fn preview(&self) -> String {
+        let body = self.body();
+        body.lines()
+            .skip(1)
+            .find(|l| !l.trim().is_empty())
+            .unwrap_or("No more text")
+            .trim()
+            .chars()
+            .take(48)
+            .collect()
+    }
+}
+
+struct Notes {
+    notes: Vec<Note>,
+    next_id: u64,
+    current: Option<u64>,
+    page: Page,
+    sort: Sort,
+    dark: bool,
+    query: String,
+    confirming: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Page(Page),
+    Query(String),
+    New,
+    Select(u64),
+    Edit(text_editor::Action),
+    TogglePin,
+    AskDelete,
+    ConfirmDelete,
+    CancelDelete,
+    SortBy(Sort),
+    Dark(bool),
+}
+
+fn now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
+fn path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_default()
+        .join("iced-notes")
+        .join("notes.json")
+}
+
+impl Notes {
+    fn new() -> Self {
+        let disk: Option<Disk> = std::fs::read(path())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok());
+        match disk {
+            Some(d) => Notes {
+                next_id: d.notes.iter().map(|n| n.id).max().unwrap_or(0) + 1,
+                notes: d
+                    .notes
+                    .into_iter()
+                    .map(|n| Note {
+                        id: n.id,
+                        content: text_editor::Content::with_text(&n.body),
+                        pinned: n.pinned,
+                        edited: n.edited,
+                    })
+                    .collect(),
+                current: d.current,
+                page: d.page,
+                sort: d.sort,
+                dark: d.dark,
+                query: String::new(),
+                confirming: false,
+            },
+            None => Notes {
+                notes: vec![
+                    Note::new(1, "Welcome\nEverything you type is saved as you go."),
+                    Note::new(2, "Shopping\nCoffee, oat milk, lemons"),
+                    Note::new(3, "Ideas\nA native notes app with no webview"),
+                ],
+                next_id: 4,
+                current: Some(1),
+                page: Page::Notes,
+                sort: Sort::Recent,
+                dark: false,
+                query: String::new(),
+                confirming: false,
+            },
+        }
+    }
+
+    fn save(&self) {
+        let disk = Disk {
+            notes: self
+                .notes
+                .iter()
+                .map(|n| Saved {
+                    id: n.id,
+                    body: n.body(),
+                    pinned: n.pinned,
+                    edited: n.edited,
+                })
+                .collect(),
+            page: self.page,
+            sort: self.sort,
+            dark: self.dark,
+            current: self.current,
+        };
+        if let Ok(json) = serde_json::to_vec_pretty(&disk) {
+            let path = path();
+            let _ = std::fs::create_dir_all(path.parent().unwrap());
+            let _ = std::fs::write(path, json);
+        }
+    }
+
+    fn current_mut(&mut self) -> Option<&mut Note> {
+        let id = self.current?;
+        self.notes.iter_mut().find(|n| n.id == id)
+    }
+
+    fn current(&self) -> Option<&Note> {
+        let id = self.current?;
+        self.notes.iter().find(|n| n.id == id)
+    }
+
+    fn visible(&self) -> Vec<&Note> {
+        let q = self.query.to_lowercase();
+        let mut notes: Vec<&Note> = self
+            .notes
+            .iter()
+            .filter(|n| q.is_empty() || n.body().to_lowercase().contains(&q))
+            .collect();
+        notes.sort_by(|a, b| {
+            b.pinned.cmp(&a.pinned).then_with(|| match self.sort {
+                Sort::Recent => b.edited.cmp(&a.edited),
+                Sort::Alphabetical => a.title().to_lowercase().cmp(&b.title().to_lowercase()),
+            })
+        });
+        notes
+    }
+}
+
+fn update(s: &mut Notes, message: Message) {
+    match message {
+        Message::Page(p) => s.page = p,
+        Message::Query(q) => s.query = q,
+        Message::New => {
+            let id = s.next_id;
+            s.next_id += 1;
+            s.notes.push(Note::new(id, ""));
+            s.current = Some(id);
+            s.confirming = false;
+        }
+        Message::Select(id) => {
+            s.current = Some(id);
+            s.confirming = false;
+        }
+        Message::Edit(action) => {
+            let edit = action.is_edit();
+            if let Some(n) = s.current_mut() {
+                n.content.perform(action);
+                if edit {
+                    n.edited = now();
+                }
+            }
+        }
+        Message::TogglePin => {
+            if let Some(n) = s.current_mut() {
+                n.pinned = !n.pinned;
+            }
+        }
+        Message::AskDelete => s.confirming = true,
+        Message::CancelDelete => s.confirming = false,
+        Message::ConfirmDelete => {
+            let id = s.current;
+            s.notes.retain(|n| Some(n.id) != id);
+            s.current = s.visible().first().map(|n| n.id);
+            s.confirming = false;
+        }
+        Message::SortBy(sort) => s.sort = sort,
+        Message::Dark(d) => s.dark = d,
+    }
+    s.save();
+}
+
+fn list(s: &Notes) -> Element<'_, Message> {
+    let items = s.visible().into_iter().map(|n| {
+        let star = if n.pinned { "\u{2605} " } else { "" };
+        let label = column![
+            text(format!("{star}{}", n.title())).size(15),
+            text(n.preview()).size(12),
+        ]
+        .spacing(2);
+        button(label)
+            .on_press(Message::Select(n.id))
+            .width(Fill)
+            .style(if s.current == Some(n.id) {
+                button::secondary
+            } else {
+                button::text
+            })
+            .into()
+    });
+    column![
+        row![
+            text_input("Search", &s.query)
+                .on_input(Message::Query)
+                .width(Fill),
+            button("New").on_press(Message::New),
+        ]
+        .spacing(8),
+        scrollable(column(items).spacing(2)).height(Fill),
+    ]
+    .spacing(12)
+    .padding(12)
+    .width(300)
+    .into()
+}
+
+fn editor(s: &Notes) -> Element<'_, Message> {
+    let Some(note) = s.current() else {
+        return container(text("Select a note or create a new one"))
+            .center(Fill)
+            .into();
+    };
+    let body = note.body();
+    let words = body.split_whitespace().count();
+    let confirm: Element<'_, Message> = if s.confirming {
+        row![
+            text("Delete this note?").size(12),
+            button("Delete")
+                .on_press(Message::ConfirmDelete)
+                .style(button::danger),
+            button("Cancel")
+                .on_press(Message::CancelDelete)
+                .style(button::text),
+        ]
+        .spacing(8)
+        .align_y(Center)
+        .into()
+    } else {
+        button("Delete")
+            .on_press(Message::AskDelete)
+            .style(button::text)
+            .into()
+    };
+    column![
+        text_editor(&note.content)
+            .on_action(Message::Edit)
+            .height(Fill),
+        row![
+            text(format!(
+                "{words} words \u{b7} {} characters",
+                body.chars().count()
+            ))
+            .size(12),
+            space().width(Fill),
+            checkbox(note.pinned)
+                .label("Pinned")
+                .on_toggle(|_| Message::TogglePin),
+            confirm,
+        ]
+        .spacing(12)
+        .align_y(Center),
+    ]
+    .spacing(10)
+    .padding(16)
+    .into()
+}
+
+fn settings(s: &Notes) -> Element<'_, Message> {
+    column![
+        text("Settings").size(24),
+        column![
+            text("Sort notes by").size(12),
+            pick_list(Sort::ALL, Some(s.sort), Message::SortBy),
+        ]
+        .spacing(4),
+        checkbox(s.dark)
+            .label("Dark theme")
+            .on_toggle(Message::Dark),
+    ]
+    .spacing(20)
+    .padding(28)
+    .into()
+}
+
+fn view(s: &Notes) -> Element<'_, Message> {
+    let page = |label, p| {
+        button(label)
+            .on_press(Message::Page(p))
+            .width(Fill)
+            .style(if s.page == p {
+                button::secondary
+            } else {
+                button::text
+            })
+    };
+    let nav =
+        container(column![page("Notes", Page::Notes), page("Settings", Page::Settings)].spacing(2))
+            .padding(12)
+            .width(170)
+            .height(Fill)
+            .style(container::rounded_box);
+    let body: Element<'_, Message> = match s.page {
+        Page::Notes => row![list(s), rule::vertical(1), editor(s)].into(),
+        Page::Settings => settings(s),
+    };
+    row![nav, body].into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Notes::new, update, view)
+        .title("Notes")
+        .theme(|s: &Notes| if s.dark { Theme::Dark } else { Theme::Light })
+        .window_size((1100.0, 640.0))
+        .run()
+}
