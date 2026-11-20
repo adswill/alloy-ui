@@ -23,6 +23,7 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", default-features = false, features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell", "Win32_UI_Shell_Common"] }
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
@@ -32,7 +33,6 @@ windows-sys = { version = "0.59", features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_System_Registry",
-    "Win32_UI_Controls_Dialogs",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]

@@ -122,6 +122,7 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+ "windows",
  "windows-sys 0.59.0",
  "winit",
  "x11rb",
