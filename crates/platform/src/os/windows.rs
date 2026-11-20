@@ -449,3 +449,13 @@ pub fn msg_hook(msg: *const c_void) -> bool {
     }
     false
 }
+
+/// Connect `window` to UI Automation (see `windows_access`).
+pub fn new_access_adapter(
+    window: &std::sync::Arc<winit::window::Window>,
+    _key: crate::shell::WindowKey,
+    sink: crate::access::ActionSink,
+) -> Option<Box<dyn crate::access::AccessAdapter>> {
+    let a = super::windows_access::WinAdapter::new(window, sink)?;
+    Some(Box::new(a))
+}

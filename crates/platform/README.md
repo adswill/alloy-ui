@@ -11,6 +11,22 @@ Window/event shell and OS services. `unsafe` is denied crate-wide and allowed on
 - **Wayland clipboard**: data-control (`ext_data_control_v1`, falling back to `zwlr_data_control_v1`) rather than core `wl_data_device`, because `wl_data_device` only delivers the selection to the focused client and needs an input serial to set it, neither of which a clipboard connection separate from winit's has. Works on wlroots compositors, KDE, COSMIC, niri. GNOME/Mutter offers neither protocol, so there the XWayland path (or the in-process buffer) applies. Owned selections die with the process unless a clipboard manager keeps them, as with X11.
 - Idle: `ControlFlow::Wait`, redraw only on request; background threads wake the loop via `ShellProxy`.
 
+## Accessibility
+
+`ctx.set_accessibility(&AccessTree)` publishes the frame's accessible nodes to the OS (see `src/access.rs`); `PlatformEvent::Accessibility` carries requests back. Node ids must be stable between frames (use the widget's focus id where it has one). The Linux adapter connects on a background thread, so a missing accessibility bus costs nothing and the app simply is not exposed.
+
+| OS | Mechanism | Roles / patterns | Events sent |
+|---|---|---|---|
+| Linux | AT-SPI2 over D-Bus on the crate's own client (`os/linux_atspi.rs`) | Accessible, Component (extents, hit test, focus), Action, Value, Text, EditableText | ChildrenChanged, StateChanged (focused, checked, enabled), PropertyChange (name, value), TextChanged, Window Create/Activate |
+| macOS | `NSAccessibilityElement` subclass children of a transparent `NSView` (`os/macos_access.rs`) | role, label, value, frame, enabled, focused; press, increment, decrement, set value, focus | LayoutChanged, TitleChanged, ValueChanged, FocusedUIElementChanged |
+| Windows | HWND subclass answering `WM_GETOBJECT`, UIA fragment providers (`os/windows_access.rs`) | Invoke, Toggle, Value, RangeValue | structure changed, property changed (name, toggle, value, enabled), focus changed |
+
+Known gaps: no text caret or selection (Text reports the caret at the end), no per-node parent hierarchy (all nodes are direct children of the window), no live regions, Wayland reports window-relative screen coordinates because clients cannot know their position.
+
+## IME and key events
+
+While an IME preedit string is non-empty the shell drops `KeyPressed` and `KeyReleased` (and the text of the key) instead of forwarding them; `ImePreedit` and the final `TextInput` commit still arrive. Reason: winit documents IME events and raw key events as independent streams, and on some backends (Wayland compositors without a text-input grab, Windows and X11 for keys the IME passes through) raw keys such as Backspace or Enter can still arrive during composition, so a text widget would edit twice. Not verified against a real IME on any OS: only Linux could be run here, and no input method was available.
+
 ## Verification
 | Item | Linux | macOS | Windows |
 |---|---|---|---|
@@ -21,6 +37,9 @@ Window/event shell and OS services. `unsafe` is denied crate-wide and allowed on
 | Windows multi-select buffer parsing (`dialog.rs`) | run locally | CI only | CI only |
 | Clipboard (macOS, Windows, Wayland), save/multi-open dialogs on macOS and Windows, theme backends | compiled | compiled in CI | compiled in CI |
 | Linux tray (SNI over D-Bus) | verified against a real dbus-daemon (properties, Activate, dbusmenu GetLayout + Event via gdbus/busctl); not against a real desktop tray host | n/a | n/a |
+| Linux accessibility (AT-SPI2) | **run**: `tests/atspi_e2e.sh` starts a private session bus with the real `at-spi-bus-launcher` and registry, and drives our server with libatspi (PyGObject): tree, roles, states, text, value, extents, hit test, actions back to the sink, focus and name-change events. Not tried with Orca. | n/a | n/a |
+| macOS accessibility (NSAccessibility) | n/a | clippy-checked for `aarch64-apple-darwin` only; never run, VoiceOver untested | n/a |
+| Windows accessibility (UI Automation) | n/a | n/a | clippy-checked for `x86_64-pc-windows-gnu` only; never run, Narrator untested |
 | Native menu bar + tray | n/a (unsupported) | type-checked + clippy only, never run | type-checked + clippy only, never run |
 | Wayland window (winit on a Wayland compositor) | not run | n/a | n/a |
 
