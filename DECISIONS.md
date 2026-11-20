@@ -35,7 +35,6 @@
 - While an IME preedit is active the field consumes every key except Tab, so Backspace, arrows, Enter and shortcuts cannot touch committed text.
 - Bidi is basic: a line whose first letter is right-to-left makes plain Left/Right arrows move logically forward/backward respectively. Word and line moves stay logical, and the caret's drawn position is still LTR-only. Full visual bidi needs `unicode-bidi` plus renderer support.
 - The editor selects a word on double click and a line on triple click (500 ms, 4 px). The single-line input does not yet. A lone CR on paste is a newline.
-23. **Weight/line_height are accepted but not yet honoured by the renderer** (ignored with `_`); tracked for the render follow-up along with real text metrics.
 24. **Platform: multi-window keys are chosen by the caller** (`WindowKey(u64)`, `MAIN` = 0), so the app, facade and shell agree on identity without a mapping step. Windows are created at the end of the callback that asks for them. The loop exits when the last window closes.
 25. **Platform: Wayland clipboard uses data-control, not `wl_data_device`**, over its own connection, via `wayland-client` plus the generated protocol crates `wayland-protocols` and `wayland-protocols-wlr` (same family; no GUI toolkit). Reason: see crates/platform/README.md. Tested against sway 1.9 only.
 26. **Platform: Windows file dialogs use the `windows` crate (0.58)** for COM interfaces; `windows-sys` has no interface wrappers and hand-written vtables would be untestable here. Menus, tray and clipboard stay on `windows-sys`.
