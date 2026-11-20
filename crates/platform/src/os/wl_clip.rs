@@ -131,7 +131,8 @@ macro_rules! data_control {
                 let mut s = open()?;
                 let offer = s.st.selection.take()??;
                 let mime = pick_mime(s.st.mimes.get(&offer.id())?)?;
-                let (rd, wr) = std::io::pipe().ok()?;
+                // A socketpair stands in for a pipe (`io::pipe` is newer than our MSRV).
+                let (rd, wr) = std::os::unix::net::UnixStream::pair().ok()?;
                 offer.receive(mime.to_owned(), wr.as_fd());
                 drop(wr); // EOF once the owner closes its end
                 s.queue.flush().ok()?;
