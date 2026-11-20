@@ -1,6 +1,7 @@
 //! Single-line text field with selection, clipboard and IME preedit.
 
 use crate::a11y::Role;
+use crate::ui::Clipboard;
 use crate::{
     text_edit::{apply_key, history_key, nearest_boundary, sanitize, Edit, KeyOutcome},
     ui::Ui,
@@ -23,6 +24,16 @@ pub struct TextInput<M> {
     on_input: Option<Box<dyn Fn(String) -> M>>,
     on_submit: Option<Box<dyn Fn() -> M>>,
     width: Length,
+    secure: bool,
+}
+
+/// Clipboard view for password fields: paste works, copy and cut do nothing.
+struct PasteOnly<'a>(&'a dyn Clipboard);
+impl Clipboard for PasteOnly<'_> {
+    fn get(&self) -> Option<String> {
+        self.0.get()
+    }
+    fn set(&self, _: String) {}
 }
 
 impl<M: 'static> TextInput<M> {
@@ -36,6 +47,7 @@ impl<M: 'static> TextInput<M> {
             on_input: None,
             on_submit: None,
             width: Length::Fill(1),
+            secure: false,
         }
     }
     /// Hint shown while empty.
@@ -58,6 +70,20 @@ impl<M: 'static> TextInput<M> {
         self.width = w;
         self
     }
+    /// Password mode: characters are drawn as bullets, the value is hidden from
+    /// accessibility, and copy and cut are disabled.
+    pub fn secure(mut self, secure: bool) -> Self {
+        self.secure = secure;
+        self
+    }
+    /// What is drawn and measured: the value, or one bullet per character.
+    fn shown(&self) -> String {
+        if self.secure {
+            "\u{2022}".repeat(self.value.chars().count())
+        } else {
+            self.value.clone()
+        }
+    }
     /// Box as an element.
     pub fn into_element(self) -> Element<M> {
         Element::new(self)
@@ -70,7 +96,7 @@ impl<M: 'static> TextInput<M> {
         self.ui.theme().typography.body.size
     }
     fn prefix_width(&self, chars: usize) -> f32 {
-        let s: String = self.value.chars().take(chars).collect();
+        let s: String = self.shown().chars().take(chars).collect();
         self.ui.metrics().width(&s, self.size())
     }
     /// Character index nearest to `x` (absolute) for a field at `b`.
@@ -78,7 +104,7 @@ impl<M: 'static> TextInput<M> {
         let rel = x - b.origin.x - self.pad() + scroll;
         let m = self.ui.metrics();
         let size = self.size();
-        nearest_boundary(&self.value, rel, |s| m.width(s, size))
+        nearest_boundary(&self.shown(), rel, |s| m.width(s, size))
     }
     /// Emit `new` as an edit, remembering the old state for undo.
     fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
@@ -129,6 +155,9 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let caret0 = e.caret;
         let editable = self.on_input.is_some();
         let key = util::key_of(&b);
+        let clip = self.ui.clipboard();
+        let paste_only = PasteOnly(&*clip);
+        let clipboard: &dyn Clipboard = if self.secure { &paste_only } else { &*clip };
         let consumed = match event {
             Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
                 self.ui.set_focus(Some(self.id));
@@ -177,15 +206,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                     true
                 }
                 Key::Character(_) if editable && self.history(&mut e, k, m, out) => true,
-                _ => match apply_key(
-                    &mut e,
-                    &self.value,
-                    k,
-                    m,
-                    &*self.ui.clipboard(),
-                    editable,
-                    false,
-                ) {
+                _ => match apply_key(&mut e, &self.value, k, m, clipboard, editable, false) {
                     KeyOutcome::Ignored => false,
                     KeyOutcome::Handled => true,
                     KeyOutcome::Changed(v) => {
@@ -213,7 +234,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         self.ui
             .describe(Role::TextInput, &self.placeholder, &b, |n| {
                 n.id = Some(self.id);
-                n.value = Some(self.value.clone());
+                n.value = (!self.secure).then(|| self.value.clone());
                 n.enabled = self.on_input.is_some();
             });
         let focused = self.ui.is_focused(Some(self.id));
@@ -293,8 +314,9 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                 });
             }
             let color = if editable { p.text } else { p.text_secondary };
-            let before: String = self.value.chars().take(e.caret).collect();
-            let after: String = self.value.chars().skip(e.caret).collect();
+            let shown = self.shown();
+            let before: String = shown.chars().take(e.caret).collect();
+            let after: String = shown.chars().skip(e.caret).collect();
             let m = self.ui.metrics();
             let bw = m.width(&before, s.size);
             let pw = m.width(&e.preedit, s.size);

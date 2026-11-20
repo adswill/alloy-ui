@@ -82,10 +82,12 @@ pub fn store_as<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'stat
 
 // --------------------------------------------------------------- tables
 
+#[allow(clippy::type_complexity)]
 struct GCol<T> {
     title: String,
     get: Box<dyn Fn(&T) -> String>,
     num: bool,
+    key: Option<Box<dyn Fn(&T) -> f64>>,
 }
 
 type RowFn<S> = Arc<dyn Fn(&mut S, usize) + Send + Sync>;
@@ -135,6 +137,7 @@ impl<'a, T, S: 'static> Table<'a, T, S> {
             title: title.into(),
             get: Box::new(get),
             num: false,
+            key: None,
         });
         self
     }
@@ -144,7 +147,16 @@ impl<'a, T, S: 'static> Table<'a, T, S> {
             title: title.into(),
             get: Box::new(get),
             num: true,
+            key: None,
         });
+        self
+    }
+    /// Sort the column added last by this number instead of by its text or the digits in it:
+    /// `.num("Size", |f| human(f.bytes)).key(|f| f.bytes as f64)`.
+    pub fn key(mut self, key: impl Fn(&T) -> f64 + 'static) -> Self {
+        if let Some(c) = self.cols.last_mut() {
+            c.key = Some(Box::new(key));
+        }
         self
     }
     /// Only show rows where some cell contains `query` (case-insensitive).
@@ -212,7 +224,9 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             .collect();
         if let Some((c, desc)) = sort {
             order.sort_by(|&a, &b| {
-                let o = if t.cols[c].num {
+                let o = if let Some(key) = &t.cols[c].key {
+                    key(&t.rows[a]).total_cmp(&key(&t.rows[b]))
+                } else if t.cols[c].num {
                     number(&cells[a][c]).total_cmp(&number(&cells[b][c]))
                 } else {
                     cells[a][c].to_lowercase().cmp(&cells[b][c].to_lowercase())

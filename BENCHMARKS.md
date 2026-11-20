@@ -87,6 +87,8 @@ Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not ap
 
 ## Developer experience: lines of code vs iced
 
+> **Read the audit at the end of this section first.** The 10x to 14x ratios below apply only to apps that are one of Alloy's built-in blocks; ordinary apps measure about 1.6x.
+
 Same five apps in idiomatic iced 0.14 and in Alloy's concise API (`crates/alloy/examples`).
 The iced versions live in `crates/alloy/loc/iced/*.rs.txt` as text only (never a dependency);
 each was compiled once in a scratch crate with `iced = "0.14"` to make sure it is real code.
@@ -208,3 +210,73 @@ New general blocks in `crates/alloy`: `Record::mock(rows)` (fake backend with `.
 | `admin.rs` | 316 | 27 | 11.7x (unchanged) |
 
 Whole apps, data and fake backend included, counted with `loc/count.py`. Differences to be honest about: the status refresh no longer jitters latency (static mock rows); the status detail card lists every field plus a bar chart instead of a custom subtitle; notes moved the sort switch from the settings page to the list header, and the detail form's "Pinned" checkbox sits below the editor. Not done: keyboard shortcuts, toasts, undo, detached editor window.
+
+### Audit of the "10x fewer lines" claim
+
+An independent review of the numbers above, written as a sceptic. Short version: **the 10x claim
+holds only for apps whose whole UI is a library block (a record editor, a status board, a
+notes list). On three new apps that no block was built for, Alloy is 1.5x to 1.8x shorter
+(1.6x in total). Against a more compact iced version the block-shaped apps shrink too.** Quote
+"about 1.6x on ordinary apps, 9x to 14x on apps that are one of Alloy's ready-made blocks".
+
+**Method.** Lines are non-blank, non-comment lines after default `rustfmt`. Until this audit
+`count.py` did not run rustfmt, it only claimed to, and `admin.rs.txt` was not rustfmt-clean, so
+the iced admin app was undercounted (316; it is 338 formatted, so its ratio rises from 11.7x to
+12.5x). `count.py` now formats both sides and strips `/* */` comments. Tokens are counted as before.
+
+| App | iced | Alloy | lines | built for it? |
+|---|---|---|---|---|
+| `admin` | 338 | 27 | 12.5x | yes: `derive(Record)`, `crud` |
+| `status` | 332 | 30 | 11.1x | yes: `Resource::board`, `Service::mock` |
+| `status`, compact iced | 267 | 30 | **8.9x** | see below |
+| `notes` | 377 | 26 | 14.5x | yes: `browse_of`, `Stamp`, `#[form(long)]` |
+| `counter` / `todo` / `text_editor` / `settings` / `dashboard` | 443 | 241 | 1.8x | no |
+| **`pomodoro` (new)** | 159 | 101 | **1.6x** | no |
+| **`files` (new)** | 222 | 149 | **1.5x** | no |
+| **`wizard` (new)** | 238 | 130 | **1.8x** | no |
+
+**(a) Are the iced apps fair?** Mostly. They are idiomatic iced 0.14, compiled, and rustfmt-clean
+(except admin, now fixed). They are not minimal. To measure how much a seasoned iced developer
+could save, `status_compact.rs.txt` is a rewrite of the status app (all behaviour kept) that drops
+the `Status`/`Column` enums and `impl` blocks for const tables and indices, folds `Load` into an
+`Option<Result>`, and inlines helpers: 267 lines, 20% shorter than 332. That moves the status
+ratio from 11.1x to 8.9x, so it is under 10x. The same trick would likely shave the iced notes and
+admin apps by a similar amount (not rewritten, not measured). No iced helper crate was used;
+`iced_aw` and similar add widgets (date picker, tabs) but nothing that replaces a table or a form.
+
+**(b) Are the Alloy features general?** Not all of them. `Resource::board(title, |s| s.status)`
+renders stat cards per status, filter chips, a sortable table and a detail pane with a trend
+chart. `Service::mock(..).fail_every(3, "..")` is the exact fake backend of the iced status app
+(700 ms delay, every third fetch fails). `browse_of` is the notes app's UI (search, order, pin,
+delete with confirmation, word-count footer). Those are real, reusable blocks for "status board"
+and "notes list" apps, but the 11x to 14x is a property of the block, not of the framework.
+Three apps written for this audit (iced first, then Alloy, same feature list and spec, written
+by the same author, so some bias is possible) give 1.5x to 1.8x. No block applied; the Alloy
+code is the ordinary closure API.
+
+**(c) Counting rules.** Now the same on both sides (rustfmt, no comments, no blank lines). The
+Alloy `vals![..]` seed rows count as code, as do the iced `const` tables. The earlier
+tables silently relied on already-formatted files.
+
+**(d) Does Alloy match the iced feature set?** Not entirely. Differences found, not fixed:
+
+- Status: iced colours the stat numbers and the Status column per status; Alloy's `board` does
+  not. The iced detail card has a "Latency, last 16 checks" caption that Alloy's lacks. Alloy
+  wraps the app in a one-page sidebar. Refresh-disabled-while-loading was not verified.
+- Alloy's table sorted size columns by the digits of their display text ("2.0 KB" before
+  "500 B"); found by the files app. Fixed (`Table::key`).
+- No password field existed. Added (`input(..).secure()`, widgets `TextInput::secure`).
+- No way to disable a button conditionally and no fixed-width input. Added (`Btn::enabled`,
+  `Input::w`, `Txt::accent_if`).
+
+**Behaviour checks.** `crates/alloy/tests/audit_apps.rs` drives the three new Alloy apps through
+the real runtime (wizard validation, masked password, step flow; file browser navigation, hidden
+files, folders first, size sort; pomodoro state machine). The iced versions compile
+(`loc/iced/*.rs.txt`, scratch crate with `iced = "0.14"`) but were not run in a window or tested
+beyond that; their behaviour was checked by reading. Windowed iced and Alloy runs on macOS
+and Windows were not done.
+
+**What still holds:** Alloy needs no message enum, no `Message` plumbing for simple state, and
+brings a table, form fields, async resource and persistence as built-ins. Those are real, they
+are worth 1.5x to 2x on ordinary apps and 9x or more on block-shaped ones. A claim of "10x fewer
+lines than iced" should say "for apps that are mostly a table, a form or a list".

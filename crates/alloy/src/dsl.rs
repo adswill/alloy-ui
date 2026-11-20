@@ -123,6 +123,14 @@ impl Txt {
         let c = cx::palette().accent;
         self.color(c)
     }
+    /// Accent colour when `yes`.
+    pub fn accent_if(self, yes: bool) -> Self {
+        if yes {
+            self.accent()
+        } else {
+            self
+        }
+    }
     /// Never wrap onto a second line.
     pub fn no_wrap(mut self) -> Self {
         self.wrap = false;
@@ -168,6 +176,7 @@ pub struct Btn<M> {
     on: Option<M>,
     variant: Variant,
     wide: bool,
+    off: bool,
     id: u64,
 }
 
@@ -179,6 +188,7 @@ pub fn button<M>(label: impl Into<String>) -> Btn<M> {
         on: None,
         variant: Variant::Secondary,
         wide: false,
+        off: false,
         id: auto_id(1),
     }
 }
@@ -218,6 +228,11 @@ impl<M> Btn<M> {
         self.id = id;
         self
     }
+    /// Disable the button unless `yes`, wherever in the chain this is called.
+    pub fn enabled(mut self, yes: bool) -> Self {
+        self.off = !yes;
+        self
+    }
 }
 impl<S: 'static> Btn<Act<S>> {
     /// Closure style: run `f` on the state when pressed.
@@ -252,7 +267,7 @@ impl<S: 'static> Btn<Act<S>> {
 impl<M: Clone + 'static> Btn<M> {
     fn build(self) -> Node<M> {
         let mut b = w::Button::new(&cx::ui(), self.label).variant(self.variant);
-        if let Some(m) = self.on {
+        if let Some(m) = self.on.filter(|_| !self.off) {
             b = b.on_press(m);
         }
         if self.wide {
@@ -330,6 +345,8 @@ pub struct Input<M> {
     enter: Option<Box<dyn Fn() -> M>>,
     id: u64,
     wide: bool,
+    px: Option<f32>,
+    secure: bool,
 }
 
 /// A single-line text field showing `value`.
@@ -342,6 +359,8 @@ pub fn input<M>(value: impl Into<String>) -> Input<M> {
         enter: None,
         id: auto_id(2),
         wide: false,
+        px: None,
+        secure: false,
     }
 }
 impl<M> Input<M> {
@@ -353,6 +372,16 @@ impl<M> Input<M> {
     /// Stretch to the available width.
     pub fn fill_w(mut self) -> Self {
         self.wide = true;
+        self
+    }
+    /// A fixed width in pixels.
+    pub fn w(mut self, px: f32) -> Self {
+        self.px = Some(px);
+        self
+    }
+    /// Password field: bullets instead of characters, no copy or cut.
+    pub fn secure(mut self) -> Self {
+        self.secure = true;
         self
     }
     /// Message sent when Enter is pressed.
@@ -390,8 +419,12 @@ impl<M: 'static> From<Input<M>> for Node<M> {
         if let Some(f) = i.enter {
             t = t.on_submit(f);
         }
+        t = t.secure(i.secure);
         if i.wide {
             t = t.width(Length::Fill(1));
+        }
+        if let Some(px) = i.px {
+            t = t.width(Length::Fixed(px));
         }
         Node(t.into_element())
     }

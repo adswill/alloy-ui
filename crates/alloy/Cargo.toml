@@ -7,8 +7,11 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 
-[lints]
-workspace = true
+# Not `workspace = true`: `tests/audit_apps.rs` `include!`s example files, which cannot carry
+# crate-level docs. The library itself still warns via `#![warn(missing_docs)]` in lib.rs.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "allow"
 
 [dependencies]
 alloy-ui-core.workspace = true
