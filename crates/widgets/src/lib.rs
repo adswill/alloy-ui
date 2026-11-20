@@ -14,12 +14,16 @@
 //! metrics) and emit `alloy_ui_core::DrawCommand`s.
 #![warn(missing_docs)]
 
+mod a11y;
 mod button;
+mod chart;
 mod checkbox;
 mod container;
+mod date_picker;
 mod flex;
 mod image;
 mod list;
+mod number_input;
 mod pick_list;
 mod progress;
 mod radio;
@@ -37,12 +41,16 @@ mod tooltip;
 mod ui;
 mod util;
 
+pub use a11y::{A11yNode, Role};
 pub use button::{Button, Variant};
+pub use chart::BarChart;
 pub use checkbox::Checkbox;
 pub use container::Container;
+pub use date_picker::{days_in_month, Date, DatePicker};
 pub use flex::{Column, Row};
 pub use image::Image;
 pub use list::List;
+pub use number_input::NumberInput;
 pub use pick_list::PickList;
 pub use progress::ProgressBar;
 pub use radio::Radio;

@@ -1,5 +1,6 @@
 //! Segmented control: a compact either-or switch between a few views.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{self, focus_ring},
@@ -128,6 +129,18 @@ impl<M: 'static> Widget<M> for Segmented<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        let seg = b.size.width / self.labels.len().max(1) as f32;
+        for (i, l) in self.labels.iter().enumerate() {
+            let r = Rectangle::new(
+                Point::new(b.origin.x + i as f32 * seg, b.origin.y),
+                Size::new(seg, b.size.height),
+            );
+            self.ui.describe(Role::Tab, l, &r, |n| {
+                n.id = Some(self.id);
+                n.checked = Some(i == self.selected);
+                n.enabled = self.on_select.is_some();
+            });
+        }
         let enabled = self.on_select.is_some();
         self.ui.register(self.id);
         if self.ui.is_focused(Some(self.id)) {

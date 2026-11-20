@@ -1,5 +1,6 @@
 //! Horizontal slider.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{self, focus_ring, key_of},
@@ -135,6 +136,11 @@ impl<M: 'static> Widget<M> for Slider<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::Slider, "", &b, |n| {
+            n.id = self.id;
+            n.value = Some(self.value.to_string());
+            n.enabled = self.on_change.is_some();
+        });
         let enabled = self.on_change.is_some();
         let span = (b.size.width - THUMB).max(0.0);
         let frac = if self.max > self.min {

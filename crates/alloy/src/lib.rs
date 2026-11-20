@@ -1,6 +1,59 @@
 //! Alloy facade: wires the runtime, platform shell, renderer and task runner
-//! together so an app is just an [`Application`] and a call to [`run`].
+//! together, and provides the concise app API.
+//!
+//! ```no_run
+//! use alloy_ui::prelude::*;
+//!
+//! fn main() {
+//!     sketch(0i64, |n| {
+//!         row![button("-").act(|n| *n -= 1), n.to_string(), button("+").act(|n| *n += 1)]
+//!             .align_center()
+//!             .pad(24.0)
+//!     })
+//!     .run("Counter");
+//! }
+//! ```
+//!
+//! Two ways to write an app, both fully typed:
+//!
+//! * [`sketch`]: state plus a view function; handlers are closures over the state.
+//!   No message enum.
+//! * [`App`]: the Elm contract (`Msg`, `update`, `view`) for apps that want a message log,
+//!   background [`Cmd`]s or subscriptions.
+//!
+//! Widgets are plain functions (`button`, `input`, `check`, `slider`, ...) that need
+//! no `Ui` handle, no ids and no `Root` wrapper; the lower-level [`run`] and
+//! [`Application`] remain for custom shells.
 #![warn(missing_docs)]
+
+mod app;
+mod chart;
+mod cx;
+mod dsl;
+pub mod testing;
+pub mod view;
+
+pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
+pub use chart::bars;
+pub use cx::{palette, set_dark, theme, ui};
+pub use dsl::{
+    button, caption, check, choose, custom, editor, gap, heading, input, nav, options, pick,
+    progress, radio, rule, scroll, section, slider, space, tabs, text, toggle, Act, Choice,
+    Variant,
+};
+pub use view::{col, row, Boxed, Flex, Node, View};
+
+/// One import for everything an app needs: `use alloy_ui::prelude::*;`.
+pub mod prelude {
+    pub use crate::{
+        bars, button, caption, check, choose, custom, editor, every, gap, heading, input, nav,
+        options, palette, pick, progress, radio, rule, scroll, secs, section, set_dark, sketch,
+        slider, space, tabs, text, toggle, Act, App, Choice, Cmd, Node, View,
+    };
+    pub use crate::{col, row};
+    pub use alloy_ui_core::Color;
+    pub use std::time::Duration;
+}
 
 pub use alloy_ui_core::*;
 pub use alloy_ui_ipc as ipc;
@@ -58,7 +111,7 @@ where
         Host {
             pending: Some((Box::new(build), size, layouter)),
             runtime: None,
-            renderer: None,
+            renderers: HashMap::new(),
             tasks: TaskRunner::new(move || {
                 task_proxy.wake();
             }),
@@ -109,7 +162,7 @@ type Pending<A> = (Build<A>, Size, Layouter<<A as Application>::Message>);
 struct Host<A: Application> {
     pending: Option<Pending<A>>,
     runtime: Option<Runtime<A>>,
-    renderer: Option<WindowRenderer>,
+    renderers: HashMap<WindowId, WindowRenderer>,
     tasks: TaskRunner<A::Message>,
     proxy: alloy_ui_platform::shell::ShellProxy,
     start: Instant,
@@ -126,8 +179,25 @@ impl<A: Application + 'static> Host<A> {
             ctx.exit();
             return;
         }
-        if outcome.redraw {
-            ctx.request_redraw();
+        if let Some(rt) = self.runtime.as_mut() {
+            for req in rt.take_window_requests() {
+                match req {
+                    WindowRequest::Open(id, spec) => ctx.open_window(
+                        platform::shell::WindowKey(id.0),
+                        WindowSettings {
+                            title: spec.title,
+                            size: spec.size,
+                        },
+                    ),
+                    WindowRequest::Close(id) => {
+                        self.renderers.remove(&id);
+                        ctx.close_window(platform::shell::WindowKey(id.0));
+                    }
+                }
+            }
+            for id in rt.take_dirty() {
+                ctx.request_redraw_of(platform::shell::WindowKey(id.0));
+            }
         }
         if outcome.tick && !self.tick_pending {
             // Animation is active: one short-lived timer thread per frame, so an
@@ -189,7 +259,9 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let size = ctx.logical_size();
         let (w, h) = ctx.physical_size();
         match WindowRenderer::new(ctx.window().clone(), w, h) {
-            Ok(r) => self.renderer = Some(r),
+            Ok(r) => {
+                self.renderers.insert(WindowId::MAIN, r);
+            }
             Err(e) => {
                 log::error!("renderer init failed: {e}");
                 ctx.exit();
@@ -202,7 +274,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             theme::Theme::light()
         };
         let ui = widgets::Ui::new(theme);
-        if let Some(r) = self.renderer.as_ref() {
+        if let Some(r) = self.renderers.get(&WindowId::MAIN) {
             ui.set_metrics(std::rc::Rc::new(MeasurerMetrics(r.text_measurer())));
         }
         ui.set_clipboard(std::rc::Rc::new(OsClipboard(std::cell::RefCell::new(
@@ -222,15 +294,20 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
+        let win = WindowId(ctx.window_key().0);
         let outcome = match event {
+            PlatformEvent::WindowClosed => {
+                self.renderers.remove(&win);
+                rt.window_closed(win)
+            }
             PlatformEvent::Input(Event::Resized(s)) => {
                 let (w, h) = ctx.physical_size();
-                if let Some(r) = self.renderer.as_mut() {
+                if let Some(r) = self.renderers.get_mut(&win) {
                     r.resize(w, h);
                 }
-                rt.handle_event(&Event::Resized(s))
+                rt.handle_window_event(win, &Event::Resized(s))
             }
-            PlatformEvent::Input(e) => rt.handle_event(&e),
+            PlatformEvent::Input(e) => rt.handle_window_event(win, &e),
             PlatformEvent::Wake => {
                 let mut outcome = Outcome::default();
                 if self.tick_due.swap(false, Ordering::AcqRel) {
@@ -260,9 +337,25 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
     }
 
     fn redraw(&mut self, ctx: &mut ShellContext) {
-        let (Some(rt), Some(r)) = (self.runtime.as_ref(), self.renderer.as_mut()) else {
+        let Some(rt) = self.runtime.as_ref() else {
             return;
         };
-        r.render(&rt.draw(), ctx.scale_factor() as f32);
+        let win = WindowId(ctx.window_key().0);
+        if let std::collections::hash_map::Entry::Vacant(slot) = self.renderers.entry(win) {
+            // A window opened by `Command::open_window`: build its surface on first paint.
+            let (w, h) = ctx.physical_size();
+            match WindowRenderer::new(ctx.window().clone(), w, h) {
+                Ok(r) => {
+                    slot.insert(r);
+                }
+                Err(e) => {
+                    log::error!("renderer init failed for {win:?}: {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(r) = self.renderers.get_mut(&win) {
+            r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
+        }
     }
 }

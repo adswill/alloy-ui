@@ -1,0 +1,114 @@
+use iced::widget::{button, column, container, row, space, text};
+use iced::{time, Center, Element, Fill, Length};
+use std::time::Duration;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Range {
+    Hours,
+    Days,
+}
+
+const HOURS: [f32; 12] = [
+    0.32, 0.41, 0.38, 0.52, 0.61, 0.58, 0.72, 0.69, 0.81, 0.64, 0.55, 0.48,
+];
+const DAYS: [f32; 12] = [
+    0.60, 0.55, 0.71, 0.66, 0.42, 0.38, 0.74, 0.79, 0.83, 0.77, 0.52, 0.45,
+];
+const JOBS: [(&str, &str, &str); 4] = [
+    ("nightly-index", "done", "4m 12s"),
+    ("thumbnail-sweep", "done", "38s"),
+    ("export-ledger", "failed", "1m 05s"),
+    ("sync-calendars", "running", "12s"),
+];
+
+struct Dashboard {
+    range: Range,
+    live: Vec<f32>,
+    seed: u32,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Range(Range),
+    Tick,
+}
+
+fn update(d: &mut Dashboard, message: Message) {
+    match message {
+        Message::Range(r) => {
+            d.range = r;
+            d.live = if r == Range::Hours { HOURS } else { DAYS }.to_vec();
+        }
+        Message::Tick => {
+            d.seed = d.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let step = ((d.seed >> 16) % 100) as f32 / 100.0 - 0.5;
+            let last = d.live.last().copied().unwrap_or(0.5);
+            d.live.remove(0);
+            d.live.push((last + step * 0.25).clamp(0.1, 0.95));
+        }
+    }
+}
+
+fn view(d: &Dashboard) -> Element<'_, Message> {
+    let peak = d.live.iter().cloned().fold(0.0, f32::max);
+    let seg = |label, r| {
+        button(label)
+            .on_press(Message::Range(r))
+            .style(if d.range == r {
+                button::secondary
+            } else {
+                button::text
+            })
+    };
+    let bars = row(d.live.iter().map(|&v| {
+        let share = |x: f32| Length::FillPortion((x * 100.0) as u16 + 1);
+        column![
+            space::vertical().height(share(1.0 - v)),
+            container(space())
+                .width(Fill)
+                .height(share(v))
+                .style(|t: &iced::Theme| container::background(t.palette().primary)),
+        ]
+        .width(Fill)
+        .height(120)
+        .into()
+    }))
+    .spacing(6);
+    let cell = |s: &'static str, w: f32| text(s).size(12).width(w);
+    let table = column(JOBS.iter().map(|(name, state, time)| {
+        row![cell(name, 170.0), cell(state, 90.0), cell(time, 80.0)].into()
+    }))
+    .spacing(8);
+    column![
+        row![
+            text("Requests").size(24).width(Fill),
+            seg("12 hours", Range::Hours),
+            seg("12 days", Range::Days)
+        ]
+        .spacing(4)
+        .align_y(Center),
+        text(format!("Peak {:.0}k per interval", peak * 100.0)).size(12),
+        bars,
+        text("Recent jobs").size(18),
+        table,
+    ]
+    .spacing(16)
+    .padding(24)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(
+        || Dashboard {
+            range: Range::Hours,
+            live: HOURS.to_vec(),
+            seed: 7,
+        },
+        update,
+        view,
+    )
+    .subscription(|_| time::every(Duration::from_secs(1)).map(|_| Message::Tick))
+    .title("Dashboard")
+    .window_size((520.0, 460.0))
+    .run()
+}

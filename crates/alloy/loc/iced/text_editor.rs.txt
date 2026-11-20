@@ -1,0 +1,47 @@
+use iced::widget::{column, row, space, text, text_editor};
+use iced::{Element, Fill};
+
+struct Editor {
+    content: text_editor::Content,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Edit(text_editor::Action),
+}
+
+fn update(e: &mut Editor, Message::Edit(action): Message) {
+    e.content.perform(action);
+}
+
+fn view(e: &Editor) -> Element<'_, Message> {
+    let words = e.content.text().split_whitespace().count();
+    column![
+        text_editor(&e.content)
+            .on_action(Message::Edit)
+            .height(Fill),
+        row![
+            text(format!("{} lines", e.content.line_count())).size(12),
+            space::horizontal(),
+            text(format!("{words} words")).size(12),
+        ],
+    ]
+    .spacing(8)
+    .padding(16)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(
+        || Editor {
+            content: text_editor::Content::with_text(
+                "Alloy draws every pixel itself.\nNo webview, no HTML.\n",
+            ),
+        },
+        update,
+        view,
+    )
+    .title("Text editor")
+    .window_size((520.0, 260.0))
+    .run()
+}

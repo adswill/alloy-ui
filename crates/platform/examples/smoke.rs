@@ -1,11 +1,25 @@
-//! Opens a window, waits for the first redraw and a cross-thread wake, then exits 0.
+//! Opens a window, waits for the first redraw and a cross-thread wake, opens a
+//! second window, waits for it to paint, closes it, checks the frame counter,
+//! then exits 0.
 //! Run under Xvfb in CI: `xvfb-run cargo run -p alloy-ui-platform --example smoke`.
 use alloy_ui_core::Size;
+use alloy_ui_platform::shell::WindowKey;
 use alloy_ui_platform::{run, PlatformEvent, ShellContext, ShellHandler, WindowSettings};
 
+fn settings(title: &str) -> WindowSettings {
+    WindowSettings {
+        title: title.into(),
+        size: Size::new(320.0, 200.0),
+    }
+}
+
+#[derive(Default)]
 struct H {
-    redrawn: bool,
+    main_painted: bool,
     woke: bool,
+    second: Option<WindowKey>,
+    second_painted: bool,
+    second_closed: bool,
 }
 
 impl ShellHandler for H {
@@ -14,32 +28,53 @@ impl ShellHandler for H {
         std::thread::spawn(move || {
             p.wake();
         });
+        let key = WindowKey(1);
+        ctx.open_window(key, settings("second"));
+        self.second = Some(key);
     }
     fn event(&mut self, ctx: &mut ShellContext, e: PlatformEvent) {
-        if e == PlatformEvent::Wake {
-            self.woke = true;
+        match e {
+            PlatformEvent::Wake => self.woke = true,
+            PlatformEvent::WindowClosed if Some(ctx.window_key()) == self.second => {
+                self.second_closed = true;
+                let s = ctx.frame_stats();
+                assert!(s.frames >= 2, "frames counted: {}", s.frames);
+                assert!(s.first_paint.is_some(), "first paint recorded");
+                println!(
+                    "ok: 2 windows, {} frames, first paint {:?}",
+                    s.frames,
+                    s.first_paint.unwrap()
+                );
+            }
+            _ => {}
         }
-        if self.redrawn && self.woke {
-            println!("ok: redraw + wake");
-            ctx.exit();
-        }
+        self.check(ctx);
     }
     fn redraw(&mut self, ctx: &mut ShellContext) {
-        self.redrawn = true;
-        if self.woke {
+        let key = ctx.window_key();
+        if key == WindowKey::MAIN {
+            self.main_painted = true;
+        } else if Some(key) == self.second {
+            self.second_painted = true;
+        }
+        self.check(ctx);
+    }
+}
+
+impl H {
+    fn check(&mut self, ctx: &mut ShellContext) {
+        if self.main_painted && self.woke && self.second_painted && !self.second_closed {
+            if let Some(k) = self.second {
+                ctx.close_window(k);
+            }
+        }
+        if self.second_closed {
+            println!("ok: redraw + wake + close second window");
             ctx.exit();
         }
     }
 }
 
 fn main() {
-    let s = WindowSettings {
-        title: "smoke".into(),
-        size: Size::new(320.0, 200.0),
-    };
-    run(s, |_| H {
-        redrawn: false,
-        woke: false,
-    })
-    .expect("shell");
+    run(settings("smoke"), |_| H::default()).expect("shell");
 }
