@@ -22,9 +22,22 @@ impl<M> Cmd<M> {
     pub fn perform(fut: impl Future<Output = M> + Send + 'static) -> Self {
         Cmd(Command::perform(fut))
     }
-    /// Close the window and exit.
+    /// Close every window and exit.
     pub fn exit() -> Self {
         Cmd(Command::Exit)
+    }
+    /// Open another window. `id` (not 0, which is the first window) names it in
+    /// [`App::view_window`] and [`Cmd::close_window`].
+    pub fn open_window(id: u64, title: &str, width: f32, height: f32) -> Self {
+        Cmd(Command::open_window(
+            alloy_ui_core::WindowId(id),
+            title,
+            alloy_ui_core::Size::new(width, height),
+        ))
+    }
+    /// Close a window opened with [`Cmd::open_window`]. Closing the last one exits.
+    pub fn close_window(id: u64) -> Self {
+        Cmd(Command::CloseWindow(alloy_ui_core::WindowId(id)))
     }
 }
 
@@ -89,6 +102,12 @@ pub trait App: Sized + 'static {
     /// Describe the UI for the current state.
     fn view(&self) -> impl View<Self::Msg>;
 
+    /// Describe the UI of window `id` (0 is the first window). Defaults to
+    /// [`view`](Self::view), so single-window apps ignore it.
+    fn view_window(&self, _id: u64) -> impl View<Self::Msg> {
+        self.view()
+    }
+
     /// Timers and other long-lived message sources for the current state.
     fn subscriptions(&self) -> Vec<Sub<Self::Msg>> {
         Vec::new()
@@ -151,15 +170,25 @@ impl<A: App> Application for Shell<A> {
     }
 
     fn view(&self) -> Element<A::Msg> {
-        cx::enter(&self.ui, || {
-            let page: Node<A::Msg> = self.app.view().into();
+        self.view_window(alloy_ui_core::WindowId::MAIN)
+    }
+
+    fn view_window(&self, id: alloy_ui_core::WindowId) -> Element<A::Msg> {
+        // Every window has its own focus, scroll and caret state.
+        let ui = if id == alloy_ui_core::WindowId::MAIN {
+            self.ui.clone()
+        } else {
+            cx::window_ui_or_fork(id, &self.ui)
+        };
+        cx::enter(&ui, || {
+            let page: Node<A::Msg> = self.app.view_window(id.0).into();
             let bg = cx::palette().background;
             let page = Container::new(page.0)
                 .background(bg)
                 .width(alloy_ui_core::style::Length::Fill(1))
                 .height(alloy_ui_core::style::Length::Fill(1))
                 .into_element();
-            Root::new(&self.ui, page).into_element()
+            Root::new(&ui, page).into_element()
         })
     }
 

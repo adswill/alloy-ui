@@ -305,6 +305,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             platform::default_clipboard(),
         ))));
         let app = build(&ui);
+        cx::register_window_ui(WindowId::MAIN, &ui);
         self.ui = Some(ui);
         let mut rt = Runtime::new(app, size, layouter);
         for fut in rt.take_futures() {
@@ -327,13 +328,15 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                 let Some(node) = nodes.iter().find(|n| n.id == request.target) else {
                     return;
                 };
-                let o = apply_access(rt, self.ui.as_ref(), w, node, &request.action);
+                let ui = cx::window_ui(w).or_else(|| self.ui.clone());
+                let o = apply_access(rt, ui.as_ref(), w, node, &request.action);
                 self.pump(ctx, o);
                 return;
             }
             PlatformEvent::WindowClosed => {
                 self.renderers.remove(&win);
                 self.access.remove(&win);
+                cx::forget_window_ui(win);
                 rt.window_closed(win)
             }
             PlatformEvent::Input(Event::Resized(s)) => {
@@ -393,7 +396,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         if let Some(r) = self.renderers.get_mut(&win) {
             r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
         }
-        if let Some(ui) = self.ui.as_ref() {
+        if let Some(ui) = cx::window_ui(win).or_else(|| self.ui.clone()) {
             let nodes = access_nodes(&ui.accessibility());
             ctx.set_accessibility(&platform::access::AccessTree {
                 title: ctx.window().title(),

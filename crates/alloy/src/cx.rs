@@ -18,6 +18,8 @@ struct Cx {
 }
 
 thread_local! {
+    /// The `Ui` of every open window, so the shell host and the app adapter agree on them.
+    static WINDOW_UIS: RefCell<HashMap<alloy_ui_core::WindowId, Ui>> = RefCell::new(HashMap::new());
     static CX: RefCell<Option<Cx>> = const { RefCell::new(None) };
 }
 
@@ -215,4 +217,32 @@ pub(crate) fn durable_keyed<T: serde::Serialize + serde::de::DeserializeOwned + 
 /// The name of the page being built (empty outside [`Pages`](crate::Pages)).
 pub(crate) fn scope_name() -> String {
     DURABLE.with(|d| d.borrow().scope.clone())
+}
+
+/// Remember `ui` as window `id`'s widget state.
+pub(crate) fn register_window_ui(id: alloy_ui_core::WindowId, ui: &Ui) {
+    WINDOW_UIS.with(|m| m.borrow_mut().insert(id, ui.clone()));
+}
+
+/// The `Ui` of window `id`, if it has one.
+pub(crate) fn window_ui(id: alloy_ui_core::WindowId) -> Option<Ui> {
+    WINDOW_UIS.with(|m| m.borrow().get(&id).cloned())
+}
+
+/// Drop a closed window's widget state.
+pub(crate) fn forget_window_ui(id: alloy_ui_core::WindowId) {
+    WINDOW_UIS.with(|m| m.borrow_mut().remove(&id));
+}
+
+/// The `Ui` of window `id`, created on first use as a fresh copy of `template`:
+/// same theme, text metrics and clipboard, but its own focus, scroll and caret state.
+pub(crate) fn window_ui_or_fork(id: alloy_ui_core::WindowId, template: &Ui) -> Ui {
+    if let Some(ui) = window_ui(id) {
+        return ui;
+    }
+    let ui = Ui::new((*template.theme()).clone());
+    ui.set_metrics(template.metrics());
+    ui.set_clipboard(template.clipboard());
+    register_window_ui(id, &ui);
+    ui
 }
