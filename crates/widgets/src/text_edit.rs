@@ -322,35 +322,6 @@ pub(crate) fn history_key(
     Some(v)
 }
 
-/// Split `value` into lines (a trailing newline yields a final empty line).
-#[cfg(test)]
-pub fn split_lines(value: &str) -> Vec<String> {
-    value.split('\n').map(str::to_owned).collect()
-}
-
-/// The `(line, column)` of character index `idx`.
-#[cfg(test)]
-pub fn line_col(lines: &[String], idx: usize) -> (usize, usize) {
-    let mut start = 0;
-    for (i, l) in lines.iter().enumerate() {
-        let n = l.chars().count();
-        if idx <= start + n {
-            return (i, idx - start);
-        }
-        start += n + 1;
-    }
-    let last = lines.len().saturating_sub(1);
-    (last, lines.get(last).map_or(0, |l| l.chars().count()))
-}
-
-/// The character index of `(line, col)`, clamping both into range.
-#[cfg(test)]
-pub fn index_of(lines: &[String], line: usize, col: usize) -> usize {
-    let line = line.min(lines.len().saturating_sub(1));
-    let start: usize = lines[..line].iter().map(|l| l.chars().count() + 1).sum();
-    start + col.min(lines[line].chars().count())
-}
-
 /// Byte offset of char index `idx` (the end when past it).
 fn byte_of(value: &str, idx: usize) -> usize {
     value
