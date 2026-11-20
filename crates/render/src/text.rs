@@ -92,7 +92,10 @@ impl TextSystem {
         if size_px <= 0.0 || content.is_empty() || self.face_count() == 0 {
             return Vec::new();
         }
-        let mut buffer = Buffer::new(&mut self.fonts, Metrics::new(size_px, size_px * LINE_HEIGHT));
+        let mut buffer = Buffer::new(
+            &mut self.fonts,
+            Metrics::new(size_px, size_px * LINE_HEIGHT),
+        );
         buffer.set_size(&mut self.fonts, max_width_px, None);
         buffer.set_text(&mut self.fonts, content, &Attrs::new(), Shaping::Advanced);
         buffer.shape_until_scroll(&mut self.fonts, false);
@@ -126,10 +129,9 @@ impl TextSystem {
             .map(|img| {
                 let (w, h) = (img.placement.width, img.placement.height);
                 let (rgba, color) = match img.content {
-                    SwashContent::Mask => (
-                        img.data.iter().flat_map(|&a| [a, a, a, a]).collect(),
-                        false,
-                    ),
+                    SwashContent::Mask => {
+                        (img.data.iter().flat_map(|&a| [a, a, a, a]).collect(), false)
+                    }
                     SwashContent::Color => (
                         img.data
                             .chunks_exact(4)
