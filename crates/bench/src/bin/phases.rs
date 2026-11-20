@@ -1,10 +1,10 @@
-//! Per-phase timing of one text_editor frame (pointer-move style redraw):
-//! draw-list build, CPU raster, GPU offscreen. Prints microseconds.
+//! Per-phase timing of one frame: draw-list build, CPU raster, GPU offscreen.
+//! Prints microseconds. `phases [text_editor|dashboard]`.
 use std::time::Instant;
 
-use alloy_ui_core::{Event, Point};
-use alloy_ui_examples::apps::{dashboard, text_editor};
-use alloy_ui_examples::run::{apply, runtime};
+use alloy_ui::testing::Harness;
+use alloy_ui::App;
+use alloy_ui_examples::{dashboard, text_editor};
 use alloy_ui_render::{CpuRenderer, GpuHeadlessRenderer, HeadlessRenderer};
 
 fn med(mut v: Vec<f64>) -> f64 {
@@ -14,17 +14,14 @@ fn med(mut v: Vec<f64>) -> f64 {
 
 fn main() {
     match std::env::args().nth(1).as_deref() {
-        Some("dashboard") => run(dashboard::demo()),
-        _ => run(text_editor::demo()),
+        Some("dashboard") => run(dashboard::app(), dashboard::SIZE),
+        _ => run(text_editor::app(), text_editor::SIZE),
     }
 }
 
-fn run<A: alloy_ui_core::Application>(demo: alloy_ui_examples::run::Demo<A>) {
-    let size = demo.size;
-    let mut rt = runtime(demo.app, size);
-    for s in &demo.steps {
-        apply(&mut rt, s);
-    }
+fn run(app: impl App, size: (f32, f32)) {
+    let mut h = Harness::new(app, size.0, size.1);
+    h.settle();
     let t = |f: &mut dyn FnMut()| {
         med((0..15)
             .map(|_| {
@@ -34,32 +31,24 @@ fn run<A: alloy_ui_core::Application>(demo: alloy_ui_examples::run::Demo<A>) {
             })
             .collect())
     };
-    let mut i = 0;
-    let ev = t(&mut || {
-        i += 1;
-        rt.handle_event(&Event::CursorMoved(Point::new(
-            100.0 + (i % 50) as f32,
-            100.0,
-        )));
-    });
-    let list = rt.draw();
+    let list = h.draw_list();
     println!("commands: {}", list.0.len());
     let draw = t(&mut || {
-        let _ = rt.draw();
+        let _ = h.draw_list();
     });
-    let (w, h) = (size.0 as u32 * 2, size.1 as u32 * 2);
+    let (w, ht) = (size.0 as u32 * 2, size.1 as u32 * 2);
     // One renderer for all frames, like a window: fonts and caches stay warm.
-    let mut cpur = CpuRenderer::new(w, h);
-    let _ = cpur.render_to_image(&list, w, h, 2.0);
+    let mut cpur = CpuRenderer::new(w, ht);
+    let _ = cpur.render_to_image(&list, w, ht, 2.0);
     let cpu = t(&mut || {
-        let _ = cpur.render_to_image(&list, w, h, 2.0);
+        let _ = cpur.render_to_image(&list, w, ht, 2.0);
     });
-    let gpu = GpuHeadlessRenderer::try_new(w, h).ok().map(|mut g| {
+    let gpu = GpuHeadlessRenderer::try_new(w, ht).ok().map(|mut g| {
         println!("adapter: {}", g.adapter_name());
-        let _ = g.render_to_image(&list, w, h, 2.0);
+        let _ = g.render_to_image(&list, w, ht, 2.0);
         t(&mut || {
-            let _ = g.render_to_image(&list, w, h, 2.0);
+            let _ = g.render_to_image(&list, w, ht, 2.0);
         })
     });
-    println!("event {ev:.0} us | draw {draw:.0} us | cpu raster {cpu:.0} us | gpu {gpu:?} us");
+    println!("draw {draw:.0} us | cpu raster {cpu:.0} us | gpu {gpu:?} us");
 }
