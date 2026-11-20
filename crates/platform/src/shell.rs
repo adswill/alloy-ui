@@ -79,6 +79,8 @@ pub struct ShellContext {
     redraw: bool,
     close_cancelled: bool,
     proxy: ShellProxy,
+    /// Shortcuts the shell resolves itself (menus on OSes without native accelerators).
+    shortcuts: Vec<(crate::shortcut::Shortcut, String)>,
 }
 
 impl ShellContext {
@@ -139,8 +141,18 @@ impl ShellContext {
     }
     /// Install the application menu bar. Item activations arrive as
     /// [`PlatformEvent::MenuAction`]. Errors where the OS has no menu bar.
-    pub fn set_menu(&self, menus: &[crate::menu::Menu]) -> Result<(), PlatformError> {
-        crate::os::set_menu(&self.window, menus)
+    pub fn set_menu(&mut self, menus: &[crate::menu::Menu]) -> Result<(), PlatformError> {
+        let result = crate::os::set_menu(&self.window, menus);
+        // macOS menus handle their own key equivalents; elsewhere the shell
+        // matches shortcuts itself and reports them as MenuAction.
+        self.shortcuts = if cfg!(target_os = "macos") {
+            Vec::new()
+        } else {
+            crate::shortcut::collect(menus)
+        };
+        // Shortcuts work even where the OS has no native menu bar (Linux);
+        // the backend error is still reported so the app can show its own menu.
+        result
     }
     /// Show a tray icon. Activations arrive as [`PlatformEvent::TrayClicked`]
     /// and [`PlatformEvent::MenuAction`].
@@ -212,6 +224,7 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                     redraw: true,
                     close_cancelled: false,
                     proxy: self.proxy.clone(),
+                    shortcuts: Vec::new(),
                 };
                 let mut h = (self.make.take().expect("resumed once"))(self.proxy.clone());
                 h.started(&mut ctx);
@@ -286,6 +299,22 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                     .as_ref()
                     .filter(|t| pressed && !m.ctrl && !m.logo && !t.chars().any(char::is_control));
                 let key = convert::key(&event.logical_key);
+                if let Some(k) = &key {
+                    let hit = pressed
+                        .then(|| {
+                            self.ctx.as_ref().and_then(|c| {
+                                c.shortcuts
+                                    .iter()
+                                    .find(|(s, _)| s.matches(k, &m))
+                                    .map(|(_, id)| id.clone())
+                            })
+                        })
+                        .flatten();
+                    if let Some(id) = hit {
+                        self.dispatch(el, PlatformEvent::MenuAction(id));
+                        return;
+                    }
+                }
                 if let Some(k) = key {
                     let ev = if pressed {
                         Event::KeyPressed(k, m)
@@ -330,6 +359,8 @@ pub fn run<H: ShellHandler + 'static>(
     el.set_control_flow(ControlFlow::Wait);
     let proxy = ShellProxy(el.create_proxy());
     crate::os::set_waker(proxy.clone());
+    #[cfg(target_os = "linux")]
+    crate::os::watch_theme();
     let mut app = App {
         settings,
         make: Some(Box::new(make)),

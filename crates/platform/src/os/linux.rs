@@ -2,7 +2,7 @@
 //! `WAYLAND_DISPLAY` is set.
 
 use super::{capture, feed, unavailable};
-use crate::{menu::Menu, theme, tray::TraySettings, PlatformError};
+use crate::{menu::Menu, theme, tray::TraySettings, PlatformError, PlatformEvent};
 use std::path::PathBuf;
 
 fn wayland() -> bool {
@@ -80,4 +80,60 @@ pub fn set_tray(_: &winit::window::Window, t: &TraySettings) -> Result<(), Platf
 }
 pub fn clear_tray() {
     super::linux_tray::stop();
+}
+
+/// Parse one line of `gsettings monitor` output, e.g. `color-scheme: 'prefer-dark'`.
+/// Returns the dark flag, or None for unrelated or `default` values.
+pub(crate) fn parse_monitor_line(line: &str) -> Option<bool> {
+    let value = line.strip_prefix("color-scheme:")?;
+    theme::parse_linux(Some(value), None)
+}
+
+/// Watch the desktop colour scheme and queue `ThemeChanged` when it flips.
+/// Does nothing if `gsettings` is not installed. The helper process is killed
+/// by the OS when the app exits (its stdout pipe closes).
+pub fn watch_theme() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let Ok(mut child) = Command::new("gsettings")
+        .args(["monitor", "org.gnome.desktop.interface", "color-scheme"])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .stdout(Stdio::piped())
+        .spawn()
+    else {
+        return;
+    };
+    let Some(out) = child.stdout.take() else {
+        return;
+    };
+    let _ = std::thread::Builder::new()
+        .name("alloy-theme".into())
+        .spawn(move || {
+            for line in BufReader::new(out).lines().map_while(Result::ok) {
+                if let Some(dark) = parse_monitor_line(&line) {
+                    super::push_pending(PlatformEvent::ThemeChanged { dark });
+                }
+            }
+            let _ = child.wait();
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn monitor_lines() {
+        assert_eq!(
+            parse_monitor_line("color-scheme: 'prefer-dark'"),
+            Some(true)
+        );
+        assert_eq!(
+            parse_monitor_line("color-scheme: 'prefer-light'"),
+            Some(false)
+        );
+        assert_eq!(parse_monitor_line("color-scheme: 'default'"), None);
+        assert_eq!(parse_monitor_line("other: 'x'"), None);
+    }
 }
