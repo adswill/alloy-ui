@@ -26,6 +26,33 @@
 //! [`Application`] remain for custom shells.
 #![warn(missing_docs)]
 
+/// The guide in `docs/guide` is compiled as doc-tests, so its snippets cannot rot.
+#[cfg(doctest)]
+mod guide {
+    #[doc = include_str!("../../../docs/guide/01-getting-started.md")]
+    struct G0;
+    #[doc = include_str!("../../../docs/guide/02-state-and-bindings.md")]
+    struct G1;
+    #[doc = include_str!("../../../docs/guide/03-layout.md")]
+    struct G2;
+    #[doc = include_str!("../../../docs/guide/04-widgets.md")]
+    struct G3;
+    #[doc = include_str!("../../../docs/guide/05-records-and-forms.md")]
+    struct G4;
+    #[doc = include_str!("../../../docs/guide/06-async-resources.md")]
+    struct G5;
+    #[doc = include_str!("../../../docs/guide/07-multi-window.md")]
+    struct G6;
+    #[doc = include_str!("../../../docs/guide/08-shortcuts-palette-toasts-undo.md")]
+    struct G7;
+    #[doc = include_str!("../../../docs/guide/09-theming.md")]
+    struct G8;
+    #[doc = include_str!("../../../docs/guide/10-bundling.md")]
+    struct G9;
+    #[doc = include_str!("../../../docs/guide/11-capabilities-and-ipc.md")]
+    struct G10;
+}
+
 mod app;
 mod bind;
 mod blocks;
