@@ -1,6 +1,59 @@
 //! Alloy facade: wires the runtime, platform shell, renderer and task runner
-//! together so an app is just an [`Application`] and a call to [`run`].
+//! together, and provides the concise app API.
+//!
+//! ```no_run
+//! use alloy_ui::prelude::*;
+//!
+//! fn main() {
+//!     sketch(0i64, |n| {
+//!         row![button("-").act(|n| *n -= 1), n.to_string(), button("+").act(|n| *n += 1)]
+//!             .align_center()
+//!             .pad(24.0)
+//!     })
+//!     .run("Counter");
+//! }
+//! ```
+//!
+//! Two ways to write an app, both fully typed:
+//!
+//! * [`sketch`]: state plus a view function; handlers are closures over the state.
+//!   No message enum.
+//! * [`App`]: the Elm contract (`Msg`, `update`, `view`) for apps that want a message log,
+//!   background [`Cmd`]s or subscriptions.
+//!
+//! Widgets are plain functions (`button`, `input`, `check`, `slider`, ...) that need
+//! no `Ui` handle, no ids and no `Root` wrapper; the lower-level [`run`] and
+//! [`Application`] remain for custom shells.
 #![warn(missing_docs)]
+
+mod app;
+mod chart;
+mod cx;
+mod dsl;
+pub mod testing;
+pub mod view;
+
+pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
+pub use chart::bars;
+pub use cx::{palette, set_dark, theme, ui};
+pub use dsl::{
+    button, caption, check, choose, custom, editor, gap, heading, input, nav, options, pick,
+    progress, radio, rule, scroll, section, slider, space, tabs, text, toggle, Act, Choice,
+    Variant,
+};
+pub use view::{col, row, Boxed, Flex, Node, View};
+
+/// One import for everything an app needs: `use alloy_ui::prelude::*;`.
+pub mod prelude {
+    pub use crate::{
+        bars, button, caption, check, choose, custom, editor, every, gap, heading, input, nav,
+        options, palette, pick, progress, radio, rule, scroll, secs, section, set_dark, sketch,
+        slider, space, tabs, text, toggle, Act, App, Choice, Cmd, Node, View,
+    };
+    pub use crate::{col, row};
+    pub use alloy_ui_core::Color;
+    pub use std::time::Duration;
+}
 
 pub use alloy_ui_core::*;
 pub use alloy_ui_ipc as ipc;
