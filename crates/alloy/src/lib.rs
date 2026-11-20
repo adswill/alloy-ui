@@ -32,6 +32,7 @@ mod chart;
 mod collections;
 mod cx;
 mod dsl;
+mod mock;
 mod persist;
 mod records;
 mod resource;
@@ -44,7 +45,8 @@ pub use blocks::{
 };
 pub use chart::bars;
 pub use collections::{
-    browse, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item, Prop, TextCell,
+    browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
+    Prop, TextCell,
 };
 pub use cx::{palette, set_dark, theme, ui};
 pub use dsl::{
@@ -52,8 +54,10 @@ pub use dsl::{
     progress, radio, rule, scroll, section, slider, space, tabs, text, toggle, vspace, Act, Choice,
     Variant,
 };
+pub use mock::{series, Mock};
 pub use records::{
-    crud, crud_app, records, records_in, table_of, Field, FieldInfo, Kind, Record, Records, Value,
+    crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
+    Stamp, Value,
 };
 pub use resource::{block_on, resource, sleep, Resource};
 pub use view::{col, row, Boxed, Flex, Node, View};
@@ -62,12 +66,13 @@ pub use {serde, serde_json};
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::{
-        app, bars, browse, button, caption, check, choose, crud, crud_app, custom, editor, every,
-        field, filter_by, gap, heading, input, list, local, nav, options, palette, pick, progress,
-        radio, records, records_in, resource, rule, scroll, secs, section, set_dark, shell, sketch,
-        sleep, slider, space, stat, stats, store, store_as, table, table_of, tabs, tally, text,
-        theme_switch, toggle, vspace, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item,
-        Local, Node, Record, Records, Resource, TextCell, View,
+        app, bars, browse, browse_of, button, caption, check, choose, crud, crud_app, custom,
+        editor, every, field, filter_by, gap, heading, input, list, local, nav, options, palette,
+        pick, progress, radio, records, records_in, resource, rule, scroll, secs, section, series,
+        set_dark, shell, sketch, sleep, slider, space, stat, stats, store, store_as, table,
+        table_of, tabs, tally, text, theme_switch, toggle, vspace, Act, App, Cell, Choice,
+        ChoiceCell, Cmd, FlagCell, Item, Local, Node, Record, Records, Resource, Stamp, TextCell,
+        View,
     };
     pub use crate::{choices, col, row, vals};
     pub use alloy_ui_core::Color;

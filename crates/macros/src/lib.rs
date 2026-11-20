@@ -5,7 +5,7 @@
 //! slider, a `choices!` enum a dropdown). Conventions: the first field is the row's
 //! title and is required; a `String` field named `email` is validated as an email.
 //! Options go in `#[form(..)]`: `label = "Full name"`, `email`, `required`,
-//! `range = (40.0, 200.0)`, `step = 5.0`, `choices = ROLES` (a `[&str; N]`; the field is
+//! `range = (40.0, 200.0)`, `step = 5.0`, `long` (a multi-line editor), `choices = ROLES` (a `[&str; N]`; the field is
 //! a `String`), `skip`.
 //!
 //! The derive also implements `Serialize` and `Deserialize` (missing keys keep their
@@ -35,10 +35,12 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let name = &input.ident;
     let (mut infos, mut gets, mut sets) = (vec![], vec![], vec![]);
     let (mut ser, mut de) = (vec![], vec![]);
+    let mut stamp: Option<syn::Ident> = None;
     for f in &fields.named {
         let id = f.ident.as_ref().unwrap();
         let ty = &f.ty;
-        let (mut label, mut email, mut required, mut skip) = (None, false, false, false);
+        let (mut label, mut email, mut required, mut skip, mut long) =
+            (None, false, false, false, false);
         let (mut range, mut step, mut choices): (Option<(Expr, Expr)>, Option<Expr>, Option<Expr>) =
             (None, None, None);
         for a in f.attrs.iter().filter(|a| a.path().is_ident("form")) {
@@ -52,6 +54,8 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                     email = true;
                 } else if m.path.is_ident("required") {
                     required = true;
+                } else if m.path.is_ident("long") {
+                    long = true;
                 } else if m.path.is_ident("skip") {
                     skip = true;
                 } else if m.path.is_ident("range") {
@@ -77,6 +81,11 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 out.#id = ::alloy_ui::serde_json::from_value(v).map_err(D::Error::custom)?;
             }
         ));
+        if let syn::Type::Path(p) = ty {
+            if p.path.segments.last().is_some_and(|s| s.ident == "Stamp") {
+                stamp = Some(id.clone());
+            }
+        }
         if skip {
             continue;
         }
@@ -88,7 +97,9 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 .map(|h| h.to_uppercase().chain(c).collect())
                 .unwrap_or_default()
         });
-        let kind = if let Some(c) = &choices {
+        let kind = if long {
+            quote!(::alloy_ui::Kind::Long)
+        } else if let Some(c) = &choices {
             quote!(::alloy_ui::Kind::Choice(&#c))
         } else if range.is_some() || step.is_some() {
             let (lo, hi) = range.map_or((quote!(0.0), quote!(100.0)), |(a, b)| {
@@ -110,6 +121,12 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     }
     let count = fields.named.len();
     let title = name.to_string();
+    let stamp_fns = stamp.map(|id| {
+        quote! {
+            fn stamp(&self) -> Option<u64> { Some(self.#id.0) }
+            fn touch(&mut self) { self.#id = ::alloy_ui::Stamp::now(); }
+        }
+    });
     Ok(quote! {
         impl ::alloy_ui::Record for #name {
             fn fields() -> ::std::vec::Vec<::alloy_ui::FieldInfo> {
@@ -121,6 +138,7 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             fn set(&mut self, field: usize, v: ::alloy_ui::Value) {
                 match field { #(#sets,)* _ => unreachable!() }
             }
+            #stamp_fns
         }
         impl ::alloy_ui::serde::Serialize for #name {
             fn serialize<S: ::alloy_ui::serde::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {

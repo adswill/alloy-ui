@@ -413,6 +413,10 @@ impl Pages {
             .pad(24.0)
         })
     }
+    /// A "Settings" page with only the Light / Dark switch.
+    pub fn theme_page(self) -> Self {
+        self.settings(|| col::<Act<()>, Node<Act<()>>>([]))
+    }
     /// Add a sidebar entry. `view` builds the page while it is showing.
     pub fn page<N: Into<Node<Act<()>>>>(
         mut self,

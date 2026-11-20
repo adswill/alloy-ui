@@ -171,3 +171,15 @@ New facade features, all general (`crates/alloy/src/collections.rs`): `Cell` han
 Notes: 27 lines are the `Note` type and its helper (same logic in both); `main` is 45 lines vs about 330 for the iced UI and update code, roughly 7x.
 
 Honest reading: 10x on the whole app was not reached for these two. What is left is app logic (the data type, fake backend, sort rule) plus imports and the `main` shell; the UI is now a few lines per screen. Not done: multi-window in the facade (needs per-window `Ui` in `Host`; left for a core-aware thread), keyboard shortcut declarations, toasts, chart helpers beyond `bars`.
+
+### Pass 5: mock backend, derived list-detail, status board
+
+New general blocks in `crates/alloy`: `Record::mock(rows)` (fake backend with `.delay`, `.fail_every`, `.resource()`), `series` (sample chart data), `Resource::board(title, |row| choice)` with `.trend`/`.detail` (count cards, filter chips, sortable table, detail card), `browse_of` (list-detail derived from a `Record`: first text field is the title, a `Pinned` bool pins, derived form plus Delete, `.foot`, `.sort_by` switch), `Stamp` (edit time, auto-touched), `#[form(long)]`, `Pages::theme_page`.
+
+| App | iced | Alloy | ratio |
+|---|---|---|---|
+| `status.rs` | 332 | 30 | **11.1x** |
+| `notes.rs` | 377 | 26 | **14.5x** |
+| `admin.rs` | 316 | 27 | 11.7x (unchanged) |
+
+Whole apps, data and fake backend included, counted with `loc/count.py`. Differences to be honest about: the status refresh no longer jitters latency (static mock rows); the status detail card lists every field plus a bar chart instead of a custom subtitle; notes moved the sort switch from the settings page to the list header, and the detail form's "Pinned" checkbox sits below the editor. Not done: keyboard shortcuts, toasts, undo, detached editor window.

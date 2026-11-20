@@ -153,16 +153,20 @@ impl<T: Send + 'static, V: Clone + Default + Send + 'static> Cell<V> for Prop<T,
 
 type RowFn<T> = Box<dyn Fn(&T) -> (String, String)>;
 type DetailFn<T, S> = Box<dyn Fn(Item<T>) -> Node<Act<S>>>;
+type FootFn<T, S> = Box<dyn Fn(&T) -> Node<Act<S>>>;
+type Order<T> = (String, Box<dyn Fn(&T, &T) -> Ordering>);
 
 /// A searchable list next to a detail pane. Made by [`browse`].
 pub struct Browse<T, S> {
     items: Local<Vec<T>>,
     row: Option<RowFn<T>>,
     search: Option<Box<dyn Fn(&T) -> String>>,
-    order: Option<Box<dyn Fn(&T, &T) -> Ordering>>,
+    orders: Vec<Order<T>>,
     pin: Option<Box<dyn Fn(&T) -> bool>>,
     new: Option<Box<dyn Fn() -> T + Send + Sync>>,
     detail: Option<DetailFn<T, S>>,
+    form: Option<fn(Item<T>, Option<&FootFn<T, S>>) -> Node<Act<S>>>,
+    foot: Option<FootFn<T, S>>,
     empty: String,
 }
 
@@ -182,10 +186,12 @@ pub fn browse<T: Send + 'static, S: 'static>(items: &Local<Vec<T>>) -> Browse<T,
         items: *items,
         row: None,
         search: None,
-        order: None,
+        orders: Vec::new(),
         pin: None,
         new: None,
         detail: None,
+        form: None,
+        foot: None,
         empty: "Nothing selected".into(),
     }
 }
@@ -198,15 +204,19 @@ impl<T: Send + 'static, S: 'static> Browse<T, S> {
     }
     /// Rows are the text itself: the first non-blank line is the title ("Untitled" if none), the
     /// next one the dimmer line, and the search looks in all of it. For notes, mails, snippets.
-    pub fn doc(mut self, text: impl Fn(&T) -> &str + Clone + 'static) -> Self {
+    pub fn doc(self, text: impl Fn(&T) -> &str + Clone + 'static) -> Self {
+        self.doc_of(move |x| text(x).to_string())
+    }
+    fn doc_of(mut self, text: impl Fn(&T) -> String + Clone + 'static) -> Self {
         let t = text.clone();
         self.row = Some(Box::new(move |x| {
-            let mut lines = t(x).lines().map(str::trim).filter(|l| !l.is_empty());
+            let body = t(x);
+            let mut lines = body.lines().map(str::trim).filter(|l| !l.is_empty());
             let title = lines.next().unwrap_or("Untitled").to_string();
             let more = lines.next().unwrap_or("No more text");
             (title, more.chars().take(48).collect())
         }));
-        self.search = Some(Box::new(move |x| text(x).to_string()));
+        self.search = Some(Box::new(text));
         self
     }
     /// Rows for which this is true show a ★ and stay above the others, whatever the order.
@@ -221,7 +231,18 @@ impl<T: Send + 'static, S: 'static> Browse<T, S> {
     }
     /// How rows are ordered on screen (default: as stored). Read your sort choice with a [`store`].
     pub fn order(mut self, f: impl Fn(&T, &T) -> Ordering + 'static) -> Self {
-        self.order = Some(Box::new(f));
+        self.orders = vec![(String::new(), Box::new(f))];
+        self
+    }
+    /// Offer an ordering under `label`. With two or more, a switch above the list picks one
+    /// (the first is the default) and the choice is saved with the app's stores.
+    pub fn sort_by(mut self, label: &str, f: impl Fn(&T, &T) -> Ordering + 'static) -> Self {
+        self.orders.push((label.into(), Box::new(f)));
+        self
+    }
+    /// A line under the detail form of [`browse_of`], left of the Delete button.
+    pub fn foot<N: Into<Node<Act<S>>>>(mut self, f: impl Fn(&T) -> N + 'static) -> Self {
+        self.foot = Some(Box::new(move |t| f(t).into()));
         self
     }
     /// Show a "New" button that appends `make()` and selects it.
@@ -245,6 +266,7 @@ impl<T: Send + 'static, S: 'static> Browse<T, S> {
 impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
     fn from(b: Browse<T, S>) -> Self {
         let (cur, query) = (store(|| 0usize), local(String::new()));
+        let by = (b.orders.len() > 1).then(|| store(|| 0usize));
         let items = b.items;
         let row_of = b.row.expect("browse needs .row(|item| (title, subtitle))");
         let q = query.get().to_lowercase();
@@ -263,9 +285,13 @@ impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
                 .collect();
             let pinned = |i: usize| b.pin.as_ref().is_some_and(|p| p(&all[i]));
             v.sort_by(|&a, &c| {
-                pinned(c).cmp(&pinned(a)).then_with(|| match &b.order {
-                    Some(o) => o(&all[a], &all[c]),
-                    None => Ordering::Equal,
+                pinned(c).cmp(&pinned(a)).then_with(|| {
+                    let at = by
+                        .map_or(0, |l| l.get())
+                        .min(b.orders.len().saturating_sub(1));
+                    b.orders
+                        .get(at)
+                        .map_or(Ordering::Equal, |o| (o.1)(&all[a], &all[c]))
                 })
             });
             v.into_iter()
@@ -302,16 +328,98 @@ impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
             );
         }
         let top: Node<Act<S>> = row(top).gap(8.0).into();
+        let top: Node<Act<S>> = match by {
+            Some(l) => col([
+                top,
+                crate::choose(
+                    b.orders.iter().enumerate().map(|(i, o)| (o.0.clone(), i)),
+                    &l.get(),
+                )
+                .local(&l)
+                .into(),
+            ])
+            .gap(8.0)
+            .into(),
+            None => top,
+        };
         let rows: Node<Act<S>> = list(rows, at)
             .act(move |_: &mut S, p| cur.set(idx[p]))
             .into();
         let side = col([top, rows]).gap(12.0).pad(12.0).w(300.0).fill_h();
         let pane: Node<Act<S>> = match (&b.detail, len) {
             (Some(f), 1..) => cx::keyed(sel as u64 + 1, || f(items.item(sel))),
+            (None, 1..) if b.form.is_some() => cx::keyed(sel as u64 + 1, || {
+                (b.form.unwrap())(items.item(sel), b.foot.as_ref())
+            }),
             _ => text(b.empty).dim().into(),
         };
         row([side.into(), pane]).fill().into()
     }
+}
+
+/// [`browse`] over a [`Record`](crate::Record), with everything derived: the first text field is
+/// the title and the text searched, a `Pinned` checkbox field pins, a form of the fields
+/// (and Delete) is the detail pane, "New" appends a default row, and a `Stamp` field adds
+/// Recent / A–Z ordering. Override any of it with the usual methods.
+///
+/// ```ignore
+/// browse_of(&notes).foot(|n| caption(format!("{} words", n.body.split_whitespace().count())))
+/// ```
+pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<T, S> {
+    use crate::records::{control, Kind, Value};
+    let fields = T::fields();
+    let text_at = fields
+        .iter()
+        .position(|f| matches!(f.kind, Kind::Text | Kind::Long))
+        .expect("browse_of needs a record with a text field");
+    let doc = move |t: &T| match t.get(text_at) {
+        Value::Text(s) => s,
+        _ => String::new(),
+    };
+    let mut b = browse(items).doc_of(doc).new(T::default);
+    if let Some(p) = fields
+        .iter()
+        .position(|f| f.label == "Pinned" && matches!(f.kind, Kind::Bool))
+    {
+        b = b.pin(move |t| matches!(t.get(p), Value::Bool(true)));
+    }
+    if T::default().stamp().is_some() {
+        b = b
+            .sort_by("Recent", |a, c| c.stamp().cmp(&a.stamp()))
+            .sort_by("A–Z", move |a, c| {
+                doc(a).to_lowercase().cmp(&doc(c).to_lowercase())
+            });
+    }
+    b.form = Some(|it, foot| {
+        let Some(rec) = it.get() else {
+            return text("").into();
+        };
+        let mut items: Vec<Node<Act<S>>> = Vec::new();
+        for (i, f) in T::fields().iter().enumerate() {
+            let put = move |v: Value| {
+                Act::new(move |_: &mut S| {
+                    it.with(|r| {
+                        r.set(i, v.clone());
+                        r.touch();
+                    });
+                })
+            };
+            items.push(control(f, rec.get(i), put));
+        }
+        let end = foot.map_or_else(|| text("").into(), |f| f(&rec));
+        let del = button("Delete")
+            .ghost()
+            .act(move |_: &mut S| it.remove())
+            .confirm("Delete this item?");
+        items.push(
+            row([end, crate::space(), del.into()])
+                .align_center()
+                .gap(12.0)
+                .into(),
+        );
+        col(items).gap(12.0).pad(16.0).fill().into()
+    });
+    b
 }
 
 // ---------------------------------------------------------------- stats
