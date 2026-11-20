@@ -359,6 +359,8 @@ pub fn run<H: ShellHandler + 'static>(
     el.set_control_flow(ControlFlow::Wait);
     let proxy = ShellProxy(el.create_proxy());
     crate::os::set_waker(proxy.clone());
+    #[cfg(target_os = "linux")]
+    crate::os::watch_theme();
     let mut app = App {
         settings,
         make: Some(Box::new(make)),

@@ -121,6 +121,8 @@ pub(crate) fn unavailable(what: &str) -> PlatformError {
 
 /// Native menu bar / tray entry points; each backend implements these.
 pub(crate) use backend::{clear_tray, set_menu, set_tray};
+#[cfg(target_os = "linux")]
+pub(crate) use linux::watch_theme;
 #[cfg(windows)]
 pub(crate) use windows::msg_hook;
 
