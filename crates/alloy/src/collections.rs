@@ -412,7 +412,7 @@ pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<
             .act(move |_: &mut S| it.remove())
             .confirm("Delete this item?");
         items.push(
-            row([end, crate::space(), del.into()])
+            row([end, crate::space(), del])
                 .align_center()
                 .gap(12.0)
                 .into(),

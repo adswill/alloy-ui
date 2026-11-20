@@ -402,13 +402,16 @@ fn editor<S: 'static, T: Record>(title: &str, data: &Records<T>, lens: Edit<S, T
     .into()
 }
 
+type TrendFn<T> = Box<dyn Fn(&T) -> Vec<f32>>;
+type DetailFn<T, S> = Box<dyn Fn(&T) -> Node<Act<S>>>;
+
 /// A status overview of fetched rows, as a page body. Made by [`Resource::board`](crate::Resource::board).
 pub struct Board<T, C, S> {
     res: Resource<Vec<T>>,
     title: String,
     by: fn(&T) -> C,
-    trend: Option<Box<dyn Fn(&T) -> Vec<f32>>>,
-    detail: Option<Box<dyn Fn(&T) -> Node<Act<S>>>>,
+    trend: Option<TrendFn<T>>,
+    detail: Option<DetailFn<T, S>>,
 }
 
 impl<T: Record> Resource<Vec<T>> {
