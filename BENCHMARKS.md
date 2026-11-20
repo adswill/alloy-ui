@@ -56,6 +56,31 @@ Finding: since the examples use real text metrics, a no-op event costs 0.25 to 0
 
 A screenshot of the running dashboard window under Xvfb confirmed that the native window paints and that the subscription updates the chart.
 
+## Render and text path profile (Linux, llvmpipe)
+
+All numbers: Linux x86_64 cloud container, software Vulkan (Mesa llvmpipe), not a GPU. macOS and Windows not run.
+
+`cargo run --release -p alloy-ui-bench --bin text` times `TextMeasurer::measure` and `TextSystem::layout` on 60 repeated short strings (the shape of a no-op re-layout or an unchanged frame):
+
+| Operation | Before | After (shaping cache) |
+|---|---|---|
+| measure, per string | 149 us | 0.38 us |
+| glyph layout, per string | 149 us | 0.58 us |
+
+`cargo run --release -p alloy-ui-bench --bin phases [dashboard]` splits one frame after state setup (2x scale, 1040x520 for text_editor):
+
+| Phase | text_editor | dashboard |
+|---|---|---|
+| input event + view + layout | 3 us | 13 us |
+| draw list | 1 us | 4 us |
+| flatten + instance build + encode + submit (CPU side of the GPU path) | about 0.2 ms | about 0.2 ms |
+| GPU offscreen incl. read-back (llvmpipe rasterising) | 9.4 ms | 16 ms |
+| CPU reference rasteriser, warm | 33 ms | 49 ms |
+
+Reading: on the CPU side a whole frame is about 0.2 ms; what remains is fragment work on the software adapter, which a real GPU does not pay. The wgpu offscreen path therefore bounds text_editor near 100 fps and the dashboard near 60 fps on llvmpipe. The reported 4 fps for text_editor under pointer movement could not be reproduced: in this Xvfb session `xdotool` input never reached the window (no redraws), so the window path was timed only for its first two frames (26 ms, then 3.4 ms including present). Not render or layout CPU; the shaping cost it could have hit is now cached.
+
+Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled Plex fonts are 1.15 MB of the binary.
+
 ## Not measured yet
 
 - On-screen frames per second (the shell has no frame counter; the 60 fps and 120 fps ProMotion targets are unverified). The headless table gives only an upper bound on llvmpipe.
