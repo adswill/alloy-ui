@@ -56,3 +56,7 @@
 40. **Cells, not message plumbing.** `Cell<V>` (`Local<V>` or `Item::field(lens)`) is the one thing widgets bind to; lenses are plain `fn` pointers so handles stay `Copy`. Widget shortcuts live on extension traits (`TextCell`, `FlagCell`, `ChoiceCell`). The flag switch is `.switch()` because `Local<bool>::toggle()` already flips.
 41. **`browse` keys the detail pane per row** with `cx::keyed`, which salts every generated id and `local`, so each row has its own cursor, scroll and confirm state.
 42. **Pinning is a list convention**, not user ordering: `.pin(..)` shows a star and sorts pinned rows first, and `.order(..)` only breaks ties.
+
+## Cache text shaping inside `TextSystem`
+
+Shaping with cosmic-text cost about 150 us per string, paid on every layout pass (measure) and every frame (glyph layout in `flatten`). Both are now memoised in `TextSystem`, keyed by a hash of content, size, weight, family, line height and wrap width, with the stored content compared on a hit so a hash collision cannot return wrong glyphs. Glyphs are cached relative to the box origin (which is rounded to whole pixels anyway), so one entry serves every position. Each map is cleared when it reaches 4096 entries, a crude bound chosen over LRU bookkeeping because a window rarely shows that many distinct strings and a miss only costs one reshape. Result: 400x faster on repeats (see BENCHMARKS.md). Not done: removing the wgpu `gles` feature (saves 0.38 MB but loses the GL fallback).
