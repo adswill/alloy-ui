@@ -115,7 +115,10 @@ impl Application for Dashboard {
                 .width(Length::Fixed(w))
                 .no_wrap();
             if secondary {
-                c = c.secondary();
+                // Column headers: quiet colour, heavier weight.
+                c = c.secondary().weight(600);
+            } else {
+                c = c.color(p.text);
             }
             if danger {
                 c = c.color(p.danger);
@@ -159,7 +162,7 @@ impl Application for Dashboard {
             Text::new(ui, "Recent jobs")
                 .role(TextRole::Subheading)
                 .into_element(),
-            Column::new(table).spacing(8.0).into_element(),
+            Column::new(table).spacing(7.0).into_element(),
         ])
         .spacing(16.0)
         .padding(Padding::all(24.0))
