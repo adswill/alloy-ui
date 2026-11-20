@@ -32,6 +32,18 @@ The earlier wgpu-offscreen column was dropped when the examples moved to the fac
 | counter release binary (windowed build, also runs headless) | 7.15 MB | < 10 MB |
 | counter spawn to first frame written (--headless, median of 7) | 25 ms | < 200 ms |
 
+## Bundle sizes (counter, `alloy bundle -p alloy-ui-examples --bin counter`)
+
+Linux x86_64, run locally (the CI jobs that would record Windows and macOS sizes have not run yet, see `crates/cli/ci/`):
+
+| Artifact | Bytes |
+|---|---|
+| counter binary (release, stripped) | 7,517,208 |
+| .deb | 3,212,402 |
+| .rpm | 3,213,834 |
+
+Windows (exe, NSIS, MSI) and macOS (.app, .dmg) sizes: not measured. `verify-windows.ps1` and `verify-macos.sh` write them to the job summary when a runner is available.
+
 ## Windowed run (Linux, Xvfb, Mesa llvmpipe software rendering)
 
 `crates/bench/windowed.py target/release counter todo text_editor settings dashboard`
