@@ -1,0 +1,21 @@
+[package]
+name = "alloy-ui-bench"
+description = "Benchmark harness for Alloy UI: frame cost, startup, binary size"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-ui-core.workspace = true
+alloy-ui-render.workspace = true
+alloy-ui-examples = { path = "../../examples" }
+
+[[bin]]
+name = "alloy-bench"
+path = "src/main.rs"
