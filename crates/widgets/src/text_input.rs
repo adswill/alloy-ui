@@ -1,7 +1,7 @@
 //! Single-line text field with selection, clipboard and IME preedit.
 
 use crate::{
-    text_edit::{word_left, word_right},
+    text_edit::{apply_key, sanitize, KeyOutcome},
     ui::Ui,
     util::{self, focus_ring},
 };
@@ -96,10 +96,6 @@ impl<M: 'static> TextInput<M> {
     }
 }
 
-fn mod_key(m: &alloy_ui_core::Modifiers) -> bool {
-    m.ctrl || m.logo
-}
-
 impl<M: 'static> Widget<M> for TextInput<M> {
     fn style(&self) -> Style {
         util::sized(self.width, Length::Shrink)
@@ -142,118 +138,42 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             }
             Event::TextInput(s) if self.ui.is_focused(Some(self.id)) => {
                 e.preedit.clear();
-                let clean: String = s.chars().filter(|c| !c.is_control()).collect();
+                let clean = sanitize(s, false);
                 if editable && !clean.is_empty() {
                     let v = e.insert(&self.value, &clean);
                     self.commit(v, out);
                 }
                 true
             }
-            Event::KeyPressed(k, m) if self.ui.is_focused(Some(self.id)) => {
-                let word = m.alt || m.ctrl;
-                if matches!(k, Key::Tab) {
-                    return false;
+            Event::KeyPressed(k, m) if self.ui.is_focused(Some(self.id)) => match k {
+                Key::Tab => return false,
+                Key::Enter => {
+                    if let Some(f) = &self.on_submit {
+                        out.push(f());
+                    }
+                    true
                 }
-                match k {
-                    Key::Backspace if editable => {
-                        if !e.has_selection() && word {
-                            e.anchor = word_left(&self.value, e.caret);
-                        }
-                        if let Some(v) = e.delete(&self.value, false) {
-                            self.commit(v, out);
-                        }
-                        true
-                    }
-                    Key::Enter => {
-                        if let Some(f) = &self.on_submit {
-                            out.push(f());
-                        }
-                        true
-                    }
-                    Key::Escape => {
-                        self.ui.set_focus(None);
-                        true
-                    }
-                    Key::Named(n) => match n.as_str() {
-                        "ArrowLeft" => {
-                            let to = if e.has_selection() && !m.shift {
-                                e.range().0
-                            } else if m.logo {
-                                0
-                            } else if word {
-                                word_left(&self.value, e.caret)
-                            } else {
-                                e.caret.saturating_sub(1)
-                            };
-                            e.move_to(to, m.shift);
-                            true
-                        }
-                        "ArrowRight" => {
-                            let to = if e.has_selection() && !m.shift {
-                                e.range().1
-                            } else if m.logo {
-                                len
-                            } else if word {
-                                word_right(&self.value, e.caret)
-                            } else {
-                                (e.caret + 1).min(len)
-                            };
-                            e.move_to(to, m.shift);
-                            true
-                        }
-                        "Home" => {
-                            e.move_to(0, m.shift);
-                            true
-                        }
-                        "End" => {
-                            e.move_to(len, m.shift);
-                            true
-                        }
-                        "Delete" if editable => {
-                            if !e.has_selection() && word {
-                                e.anchor = word_right(&self.value, e.caret);
-                            }
-                            if let Some(v) = e.delete(&self.value, true) {
-                                self.commit(v, out);
-                            }
-                            true
-                        }
-                        _ => false,
-                    },
-                    Key::Character(c) if mod_key(m) => match c.to_lowercase().as_str() {
-                        "a" => {
-                            e.select_all(len);
-                            true
-                        }
-                        "c" => {
-                            if e.has_selection() {
-                                self.ui.clipboard().set(e.selected(&self.value));
-                            }
-                            true
-                        }
-                        "x" if editable => {
-                            if e.has_selection() {
-                                self.ui.clipboard().set(e.selected(&self.value));
-                                if let Some(v) = e.delete(&self.value, false) {
-                                    self.commit(v, out);
-                                }
-                            }
-                            true
-                        }
-                        "v" if editable => {
-                            if let Some(text) = self.ui.clipboard().get() {
-                                let clean: String =
-                                    text.chars().filter(|c| !c.is_control()).collect();
-                                let v = e.insert(&self.value, &clean);
-                                self.commit(v, out);
-                            }
-                            true
-                        }
-                        _ => false,
-                    },
-                    _ => false,
+                Key::Escape => {
+                    self.ui.set_focus(None);
+                    true
                 }
-            }
+                _ => match apply_key(
+                    &mut e,
+                    &self.value,
+                    k,
+                    m,
+                    &*self.ui.clipboard(),
+                    editable,
+                    false,
+                ) {
+                    KeyOutcome::Ignored => false,
+                    KeyOutcome::Handled => true,
+                    KeyOutcome::Changed(v) => {
+                        self.commit(v, out);
+                        true
+                    }
+                },
+            },
             _ => false,
         };
         if consumed {

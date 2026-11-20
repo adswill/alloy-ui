@@ -840,3 +840,121 @@ fn popup_is_drawn_last() {
         "popup text comes after the sibling button"
     );
 }
+
+fn editor(ui: &Ui, v: &str) -> Element<Msg> {
+    TextEditor::new(ui, 40, v)
+        .on_input(Msg::Text)
+        .into_element()
+}
+
+#[test]
+fn editor_enter_inserts_newline_and_vertical_moves_keep_column() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, editor(&ui, "abcd\nxy\nhello"), 300.0, 200.0);
+    h.click(290.0, 8.0); // focus; caret at end of line 0 (right of the text)
+    assert_eq!(ui.focused(), Some(40));
+    assert_eq!(
+        h.key(Key::Enter),
+        vec![Msg::Text("abcd\n\nxy\nhello".into())]
+    );
+    // rebuild with the app's accepted value; caret is now at the start of line 1
+    let mut h = Harness::new(&ui, editor(&ui, "abcd\n\nxy\nhello"), 300.0, 200.0);
+    h.key(Key::Named("ArrowDown".into()));
+    h.key(Key::Named("End".into())); // end of "xy" (col 2)
+    h.key(Key::Named("ArrowDown".into())); // "hello": col 2
+    assert_eq!(
+        typing(&mut h, "!"),
+        vec![Msg::Text("abcd\n\nxy\nhe!llo".into())]
+    );
+}
+
+#[test]
+fn editor_goal_column_survives_short_lines() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, editor(&ui, "abcdef\nx\nabcdef"), 300.0, 200.0);
+    h.click(290.0, 8.0);
+    h.key(Key::Named("End".into())); // col 6
+    h.key(Key::Named("ArrowDown".into())); // clamps to col 1
+    h.key(Key::Named("ArrowDown".into())); // back to col 6
+    assert_eq!(
+        typing(&mut h, "!"),
+        vec![Msg::Text("abcdef\nx\nabcdef!".into())]
+    );
+}
+
+#[test]
+fn editor_backspace_joins_lines_and_home_end_are_per_line() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, editor(&ui, "ab\ncd"), 300.0, 200.0);
+    h.click(290.0, 8.0);
+    h.key(Key::Named("ArrowDown".into()));
+    h.key(Key::Named("Home".into()));
+    assert_eq!(h.key(Key::Backspace), vec![Msg::Text("abcd".into())]);
+}
+
+#[test]
+fn editor_select_all_and_paste_keeps_newlines() {
+    let ui = ui();
+    ui.clipboard().set("one\ntwo".into());
+    let mut h = Harness::new(&ui, editor(&ui, "zz"), 300.0, 200.0);
+    h.click(290.0, 8.0);
+    let m = Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    h.send(Event::KeyPressed(Key::Character("a".into()), m));
+    assert_eq!(
+        h.send(Event::KeyPressed(Key::Character("v".into()), m)),
+        vec![Msg::Text("one\ntwo".into())]
+    );
+}
+
+#[test]
+fn editor_scrolls_with_wheel_and_follows_caret() {
+    let ui = ui();
+    let text = (0..100)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut h = Harness::new(&ui, editor(&ui, &text), 300.0, 120.0);
+    h.mv(10.0, 10.0);
+    h.send(Event::Scrolled { dx: 0.0, dy: -50.0 });
+    assert_eq!(ui.scroll_offset(40), 50.0);
+    // Ctrl+End moves the caret to the last line; drawing scrolls it into view.
+    h.click(10.0, 10.0);
+    h.send(Event::KeyPressed(
+        Key::Named("End".into()),
+        Modifiers {
+            ctrl: true,
+            ..Default::default()
+        },
+    ));
+    h.draw();
+    let lh = ui.theme().typography.code.line_height;
+    let max = 100.0 * lh - (120.0 - 2.0 * ui.theme().spacing.md);
+    assert!(
+        (ui.scroll_offset(40) - max).abs() < 0.01,
+        "{} vs {max}",
+        ui.scroll_offset(40)
+    );
+}
+
+#[test]
+fn space_pushes_siblings_apart_and_rule_is_one_pixel() {
+    let ui = ui();
+    let row = Row::new(vec![
+        Text::new(&ui, "left").into_element(),
+        Space::fill().into_element(),
+        Text::new(&ui, "right").into_element(),
+    ])
+    .width(Length::Fill(1));
+    let h = Harness::new(&ui, row.into_element(), 400.0, 40.0);
+    let k = &h.layout.children[0].children;
+    assert_eq!(k[2].bounds.origin.x + k[2].bounds.size.width, 400.0);
+    let col = Column::new(vec![Rule::horizontal(&ui).into_element()]).width(Length::Fill(1));
+    let h = Harness::new(&ui, col.into_element(), 400.0, 40.0);
+    assert_eq!(
+        h.layout.children[0].children[0].bounds.size,
+        Size::new(400.0, 1.0)
+    );
+}
