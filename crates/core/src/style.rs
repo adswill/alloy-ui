@@ -152,7 +152,7 @@ pub fn ordered(min: f32, max: f32) -> (f32, f32) {
     (lo, if hi < lo { lo } else { hi })
 }
 
-/// Layout style of a [`Node`].
+/// Layout style of a `Node`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Style {
     /// Main axis along which children flow.

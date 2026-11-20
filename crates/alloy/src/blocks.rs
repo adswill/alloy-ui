@@ -495,9 +495,11 @@ impl<M: 'static> Widget<M> for Watch<M> {
         self.child[0].0.draw(&layout.children[0], out);
         // The control just drew itself, so its accessibility nodes (with focus) are fresh.
         let b = layout.bounds;
-        let inside = self.ui.accessibility().iter().any(|n| {
-            n.focused && b.contains(Point::new(n.bounds.origin.x, n.bounds.origin.y))
-        });
+        let inside = self
+            .ui
+            .accessibility()
+            .iter()
+            .any(|n| n.focused && b.contains(Point::new(n.bounds.origin.x, n.bounds.origin.y)));
         let mut t = self.touched.lock().unwrap();
         if t.focused && !inside {
             t.touched = true;

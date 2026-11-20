@@ -45,7 +45,7 @@ pub struct Txt {
     width: Length,
 }
 
-/// Body text. Roles: [`.heading()`](Txt::heading), [`.caption()`](Txt::caption), ...
+/// Body text. Roles: `.heading()`, `.caption()`, ...
 pub fn text(s: impl Into<String>) -> Txt {
     Txt {
         s: s.into(),
@@ -716,7 +716,7 @@ pub struct Choose<T, M> {
     on: Option<Box<dyn Fn(T) -> M>>,
     id: u64,
 }
-/// See [`Choose`]. `current` is matched against the options with `==`.
+/// See `Choose`. `current` is matched against the options with `==`.
 #[track_caller]
 pub fn choose<T: PartialEq, M, L: Into<String>>(
     opts: impl IntoIterator<Item = (L, T)>,

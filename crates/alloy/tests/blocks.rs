@@ -203,7 +203,10 @@ fn errors_wait_for_blur_or_submit() {
 
     // Focused but still being edited: no error yet.
     h.click("ada@x.dev");
-    assert!(!h.has_text("Required"), "no error while the field has focus");
+    assert!(
+        !h.has_text("Required"),
+        "no error while the field has focus"
+    );
 
     // Move on to the name field: the email field is now touched and empty.
     h.click("Ada");
@@ -222,5 +225,8 @@ fn tabbing_through_marks_touched() {
     let mut h = Harness::new(sketch(Form::default(), form), 400.0, 400.0);
     h.click("Ada").press(alloy_ui::Key::Tab);
     h.press(alloy_ui::Key::Tab);
-    assert!(h.has_text("Required"), "tabbed past an empty required field");
+    assert!(
+        h.has_text("Required"),
+        "tabbed past an empty required field"
+    );
 }
