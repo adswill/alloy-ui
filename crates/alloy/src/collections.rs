@@ -343,7 +343,7 @@ impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
         let rows: Node<Act<S>> = list(rows, at)
             .act(move |_: &mut S, p| cur.set(idx[p]))
             .into();
-        let side = col([top, rows]).gap(12.0).pad(12.0).w(300.0).fill_h();
+        let side = col([top, rows]).gap(12.0).pad(16.0).w(310.0).fill_h();
         let pane: Node<Act<S>> = match (&b.detail, len) {
             (Some(f), 1..) => cx::keyed(sel as u64 + 1, || f(items.item(sel))),
             (None, 1..) if b.form.is_some() => cx::keyed(sel as u64 + 1, || {
@@ -393,6 +393,8 @@ pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<
             return text("").into();
         };
         let mut items: Vec<Node<Act<S>>> = Vec::new();
+        // Checkboxes sit in the footer beside the count and Delete, not as form rows.
+        let mut tail: Vec<Node<Act<S>>> = Vec::new();
         for (i, f) in T::fields().iter().enumerate() {
             let put = move |v: Value| {
                 Act::new(move |_: &mut S| {
@@ -402,7 +404,12 @@ pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<
                     });
                 })
             };
-            items.push(control(f, rec.get(i), put));
+            let c = control(f, rec.get(i), put);
+            if matches!(f.kind, Kind::Bool) {
+                tail.push(c);
+            } else {
+                items.push(c);
+            }
         }
         let end = foot.map_or_else(|| text("").into(), |f| f(&rec));
         let del = button("Delete").ghost().act(move |_: &mut S| {
@@ -415,12 +422,8 @@ pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<
         } else {
             del.confirm("Delete this item?")
         };
-        items.push(
-            row([end, crate::space(), del])
-                .align_center()
-                .gap(12.0)
-                .into(),
-        );
+        tail.extend([end, crate::space(), del]);
+        items.push(row(tail).align_center().gap(16.0).into());
         col(items).gap(12.0).pad(16.0).fill().into()
     });
     b
@@ -449,11 +452,22 @@ pub fn stats<M: 'static, L: Into<String>, V: ToString>(
 /// One [`stat`] card per variant of an enum, counting the rows that have it:
 /// `tally(&services, |s| s.status)`.
 pub fn tally<T, C: Choice, M: 'static>(rows: &[T], by: impl Fn(&T) -> C) -> Flex<M> {
-    stats(
-        C::all()
-            .iter()
-            .map(|&(l, c)| (l, rows.iter().filter(|r| by(r) == c).count())),
-    )
+    row(C::all().iter().map(|&(l, c)| {
+        let n = rows.iter().filter(|r| by(r) == c).count();
+        let label: Node<M> = match crate::tone::tone(l) {
+            Some(t) => row([crate::tone::dot::<M>(t, 8.0), caption(l).into()])
+                .gap(8.0)
+                .align_center()
+                .into(),
+            None => caption(l).into(),
+        };
+        col([label, heading(n.to_string()).into()])
+            .gap(6.0)
+            .card()
+            .pad_xy(18.0, 14.0)
+            .fill_w()
+    }))
+    .gap(12.0)
 }
 
 /// "All" plus one chip per variant, bound to a `Local<Option<T>>` (`None` is All).

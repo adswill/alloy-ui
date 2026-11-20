@@ -21,7 +21,15 @@ impl<M> Hotkey<M> {
             msg,
         }
     }
-    /// Also list the shortcut under this name in the native menu bar.
+    /// A command with no key: it only appears in the command palette (`mod+k`).
+    pub fn command(label: &str, msg: M) -> Self {
+        Self {
+            keys: String::new(),
+            label: Some(label.into()),
+            msg,
+        }
+    }
+    /// Also list the shortcut under this name in the native menu bar and the palette.
     pub fn labelled(mut self, label: &str) -> Self {
         self.label = Some(label.into());
         self
@@ -237,6 +245,12 @@ pub trait Shortcuts<S: 'static>: View<Act<S>> + Sized {
     /// shown). `mod` is Cmd on macOS and Ctrl elsewhere.
     fn shortcut(self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         register(Hotkey::new(keys, Act::new(f)));
+        self
+    }
+    /// Add `label` to the command palette (`mod+k`) while this view is shown:
+    /// `page.command("Export CSV", |s| s.export())`.
+    fn command(self, label: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        register(Hotkey::command(label, Act::new(f)));
         self
     }
     /// Like [`shortcut`](Self::shortcut), and listed in the menu bar as `label`.

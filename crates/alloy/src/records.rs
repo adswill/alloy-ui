@@ -273,6 +273,7 @@ pub fn table_of<T: Record, S: 'static>(rows: &[T]) -> crate::Table<'_, T, S> {
         let get = move |r: &T| show(&f, &r.get(i));
         grid = match f.kind {
             Kind::Number { .. } => grid.num(f.label, get),
+            Kind::Enum(_) => grid.col(f.label, get).status(),
             _ => grid.col(f.label, get),
         };
     }

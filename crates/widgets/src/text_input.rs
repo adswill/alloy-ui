@@ -307,7 +307,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                 origin: Point::new(ox, ty),
                 content: self.placeholder.clone(),
                 size: s.size,
-                color: p.text_secondary,
+                color: p.text_secondary.with_alpha(0.7),
                 max_width: None,
             });
         } else {

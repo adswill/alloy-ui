@@ -24,6 +24,7 @@ fn main() {
                 .foot(|n| caption(format!("{} words", n.body.split_whitespace().count())))
         })
         .shortcut_as("mod+s", "Save", || toast("Saved"))
+        .command("Export as Markdown", || toast("Exported 3 notes"))
         .undoable()
         .theme_page()
         .persist()
