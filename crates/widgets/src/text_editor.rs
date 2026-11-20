@@ -1,13 +1,15 @@
 //! Multi-line text editor field.
 
 use crate::{
-    text_edit::{apply_key, index_of, line_col, sanitize, split_lines, KeyOutcome},
+    text_edit::{
+        apply_key, history_key, index_of, line_col, sanitize, split_lines, Edit, KeyOutcome,
+    },
     ui::Ui,
     util::{self, focus_ring},
 };
 use alloy_ui_core::{
-    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point,
-    Rectangle, Size, Widget,
+    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, Modifiers,
+    MouseButton, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
 
@@ -98,9 +100,29 @@ impl<M: 'static> TextEditor<M> {
         }
         index_of(lines, line, best.0)
     }
-    fn commit(&self, v: String, out: &mut Vec<M>) {
+    /// Emit `new` as an edit, remembering the old state for undo.
+    fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
+        let now = self.ui.now();
+        self.ui
+            .with_history(self.id, |h| h.record(&self.value, caret_before, &new, now));
         if let Some(f) = &self.on_input {
-            out.push(f(v));
+            out.push(f(new));
+        }
+    }
+    /// Undo/redo shortcut; returns true when the key was one.
+    fn history(&self, e: &mut Edit, k: &Key, m: &Modifiers, out: &mut Vec<M>) -> bool {
+        let Some(f) = &self.on_input else {
+            return false;
+        };
+        match self
+            .ui
+            .with_history(self.id, |h| history_key(e, h, &self.value, k, m))
+        {
+            Some(v) => {
+                out.push(f(v));
+                true
+            }
+            None => false,
         }
     }
 }
@@ -124,6 +146,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let lines = split_lines(&self.value);
         let mut e = self.ui.edit(self.id);
         e.clamp(self.value.chars().count());
+        let caret0 = e.caret;
         let editable = self.on_input.is_some();
         let focused = self.ui.is_focused(Some(self.id));
         let key = util::key_of(&b);
@@ -159,13 +182,13 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                 let clean = sanitize(s, true);
                 if editable && !clean.is_empty() {
                     let v = e.insert(&self.value, &clean);
-                    self.commit(v, out);
+                    self.commit(v, caret0, out);
                 }
                 true
             }
             Event::KeyPressed(k, m) if focused => {
                 let (line, col) = line_col(&lines, e.caret);
-                let vertical = |e: &mut crate::Edit, to_line: usize| {
+                let vertical = |e: &mut Edit, to_line: usize| {
                     let goal = e.goal_col.unwrap_or(col);
                     e.move_to(index_of(&lines, to_line, goal), m.shift);
                     e.goal_col = Some(goal);
@@ -173,13 +196,14 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                 let page = (((b.size.height - 2.0 * self.pad()) / self.line_h()) as usize).max(1);
                 let handled = match k {
                     Key::Tab => return false,
+                    Key::Character(_) if editable && self.history(&mut e, k, m, out) => true,
                     Key::Escape => {
                         self.ui.set_focus(None);
                         true
                     }
                     Key::Enter if editable => {
                         let v = e.insert(&self.value, "\n");
-                        self.commit(v, out);
+                        self.commit(v, caret0, out);
                         true
                     }
                     Key::Named(n) => match n.as_str() {
@@ -242,7 +266,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                         }
                         KeyOutcome::Changed(v) => {
                             e.goal_col = None;
-                            self.commit(v, out);
+                            self.commit(v, caret0, out);
                             true
                         }
                     }
