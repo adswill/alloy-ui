@@ -148,6 +148,8 @@ fn cpu_text_draws_when_fonts_exist() {
     }
     let mut l = DrawList::default();
     l.push(DrawCommand::Text {
+        weight: 400,
+        line_height: None,
         origin: Point::new(4.0, 4.0),
         content: "Hello".into(),
         size: 16.0,
@@ -242,6 +244,8 @@ fn gpu_text_matches_cpu_roughly() {
     }
     let mut l = DrawList::default();
     l.push(DrawCommand::Text {
+        weight: 400,
+        line_height: None,
         origin: Point::new(4.0, 4.0),
         content: "Hello".into(),
         size: 16.0,

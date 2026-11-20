@@ -1,0 +1,570 @@
+//! Behavioural tests for the widget library: layout, events, focus, drawing.
+use alloy_ui_core::*;
+use alloy_ui_layout::Length;
+use alloy_ui_theme::Theme;
+use alloy_ui_widgets::*;
+
+#[derive(Debug, Clone, PartialEq)]
+enum Msg {
+    Clicked,
+    Toggled(bool),
+    Value(f32),
+    Text(String),
+    Picked(usize),
+    Submit,
+}
+
+struct Harness {
+    root: Element<Msg>,
+    layout: Layout,
+    cursor: Point,
+}
+
+impl Harness {
+    fn new(ui: &Ui, child: Element<Msg>, w: f32, h: f32) -> Self {
+        let root = Root::new(ui, child).into_element();
+        let layout = root
+            .0
+            .arrange(Rectangle::new(Point::default(), Size::new(w, h)));
+        Self {
+            root,
+            layout,
+            cursor: Point::default(),
+        }
+    }
+    fn send(&mut self, e: Event) -> Vec<Msg> {
+        if let Event::CursorMoved(p) = &e {
+            self.cursor = *p;
+        }
+        let mut out = Vec::new();
+        self.root
+            .0
+            .on_event(&e, &self.layout, self.cursor, &mut out);
+        out
+    }
+    fn mv(&mut self, x: f32, y: f32) -> Vec<Msg> {
+        self.send(Event::CursorMoved(Point::new(x, y)))
+    }
+    fn click(&mut self, x: f32, y: f32) -> Vec<Msg> {
+        self.mv(x, y);
+        let mut m = self.send(Event::MousePressed(MouseButton::Left));
+        m.extend(self.send(Event::MouseReleased(MouseButton::Left)));
+        m
+    }
+    fn key(&mut self, k: Key) -> Vec<Msg> {
+        self.send(Event::KeyPressed(k, Modifiers::default()))
+    }
+    fn draw(&self) -> DrawList {
+        let mut l = DrawList::default();
+        self.root.0.draw(&self.layout, &mut l);
+        l
+    }
+    fn texts(&self) -> Vec<String> {
+        self.draw()
+            .0
+            .into_iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { content, .. } => Some(content),
+                _ => None,
+            })
+            .collect()
+    }
+}
+
+fn ui() -> Ui {
+    Ui::new(Theme::light())
+}
+
+#[test]
+fn column_stacks_children_with_spacing() {
+    let ui = ui();
+    let col = Column::new(vec![
+        Text::new(&ui, "one").into_element(),
+        Text::new(&ui, "two").into_element(),
+    ])
+    .spacing(10.0);
+    let h = Harness::new(&ui, col.into_element(), 300.0, 300.0);
+    let kids = &h.layout.children[0].children;
+    assert_eq!(kids.len(), 2);
+    let lh = ui.theme().typography.body.line_height;
+    assert_eq!(kids[0].bounds.size.height, lh);
+    assert_eq!(kids[1].bounds.origin.y, lh + 10.0);
+}
+
+#[test]
+fn row_fill_shares_space() {
+    let ui = ui();
+    let row = Row::new(vec![
+        Container::new(Text::new(&ui, "a").into_element())
+            .width(Length::Fill(1))
+            .into_element(),
+        Container::new(Text::new(&ui, "b").into_element())
+            .width(Length::Fill(3))
+            .into_element(),
+    ])
+    .width(Length::Fill(1));
+    let h = Harness::new(&ui, row.into_element(), 400.0, 100.0);
+    let k = &h.layout.children[0].children;
+    assert_eq!(k[0].bounds.size.width, 100.0);
+    assert_eq!(k[1].bounds.size.width, 300.0);
+}
+
+#[test]
+fn text_wraps_in_narrow_column() {
+    let ui = ui();
+    let t = Text::new(&ui, "the quick brown fox jumps over the lazy dog").width(Length::Fill(1));
+    let h = Harness::new(
+        &ui,
+        Column::new(vec![t.into_element()])
+            .width(Length::Fill(1))
+            .into_element(),
+        100.0,
+        400.0,
+    );
+    assert!(h.texts().len() > 1, "{:?}", h.texts());
+    assert_eq!(
+        h.texts().join(" "),
+        "the quick brown fox jumps over the lazy dog"
+            .replace("  ", " ")
+            .split(' ')
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim_end()
+    );
+}
+
+#[test]
+fn container_draws_background_only_when_set() {
+    let ui = ui();
+    let plain = Container::new(Text::new(&ui, "x").into_element());
+    let h = Harness::new(&ui, plain.into_element(), 100.0, 100.0);
+    assert!(!h
+        .draw()
+        .0
+        .iter()
+        .any(|c| matches!(c, DrawCommand::Quad { .. })));
+    let styled = Container::new(Text::new(&ui, "x").into_element())
+        .background(Color::hex(0xffffff))
+        .radius(4.0);
+    let h = Harness::new(&ui, styled.into_element(), 100.0, 100.0);
+    assert!(h
+        .draw()
+        .0
+        .iter()
+        .any(|c| matches!(c, DrawCommand::Quad { .. })));
+}
+
+#[test]
+fn button_click_emits_message_on_release_inside() {
+    let ui = ui();
+    let b = Button::new(&ui, "Save").on_press(Msg::Clicked);
+    let mut h = Harness::new(&ui, b.into_element(), 200.0, 100.0);
+    assert_eq!(h.click(5.0, 5.0), vec![Msg::Clicked]);
+    // press inside, release outside: no click
+    h.mv(5.0, 5.0);
+    h.send(Event::MousePressed(MouseButton::Left));
+    h.mv(150.0, 90.0);
+    assert!(h.send(Event::MouseReleased(MouseButton::Left)).is_empty());
+}
+
+#[test]
+fn press_survives_view_rebuild() {
+    let ui = ui();
+    let mk = |ui: &Ui| {
+        Harness::new(
+            ui,
+            Button::new(ui, "Save")
+                .on_press(Msg::Clicked)
+                .into_element(),
+            200.0,
+            100.0,
+        )
+    };
+    let mut h = mk(&ui);
+    h.mv(5.0, 5.0);
+    h.send(Event::MousePressed(MouseButton::Left));
+    let mut h2 = mk(&ui); // view rebuilt between press and release
+    h2.cursor = h.cursor;
+    assert_eq!(
+        h2.send(Event::MouseReleased(MouseButton::Left)),
+        vec![Msg::Clicked]
+    );
+}
+
+#[test]
+fn disabled_button_does_nothing() {
+    let ui = ui();
+    let mut h = Harness::new(
+        &ui,
+        Button::<Msg>::new(&ui, "Nope").into_element(),
+        200.0,
+        100.0,
+    );
+    assert!(h.click(5.0, 5.0).is_empty());
+}
+
+#[test]
+fn tab_cycles_focus_and_enter_activates() {
+    let ui = ui();
+    let col = Column::new(vec![
+        Button::new(&ui, "A")
+            .id(1)
+            .on_press(Msg::Clicked)
+            .into_element(),
+        Button::new(&ui, "B")
+            .id(2)
+            .on_press(Msg::Submit)
+            .into_element(),
+    ])
+    .spacing(8.0);
+    let mut h = Harness::new(&ui, col.into_element(), 300.0, 300.0);
+    h.draw(); // registers tab order
+    assert_eq!(ui.focused(), None);
+    h.key(Key::Tab);
+    assert_eq!(ui.focused(), Some(1));
+    h.key(Key::Tab);
+    assert_eq!(ui.focused(), Some(2));
+    assert_eq!(h.key(Key::Enter), vec![Msg::Submit]);
+    h.key(Key::Tab);
+    assert_eq!(ui.focused(), Some(1), "wraps");
+    h.send(Event::KeyPressed(
+        Key::Tab,
+        Modifiers {
+            shift: true,
+            ..Default::default()
+        },
+    ));
+    assert_eq!(ui.focused(), Some(2), "shift-tab goes back");
+}
+
+#[test]
+fn clicking_empty_space_clears_focus() {
+    let ui = ui();
+    let mut h = Harness::new(
+        &ui,
+        Button::new(&ui, "A")
+            .id(1)
+            .on_press(Msg::Clicked)
+            .into_element(),
+        300.0,
+        300.0,
+    );
+    h.click(5.0, 5.0);
+    assert_eq!(ui.focused(), Some(1));
+    h.click(250.0, 250.0);
+    assert_eq!(ui.focused(), None);
+}
+
+#[test]
+fn focused_button_draws_ring_and_space_activates() {
+    let ui = ui();
+    let mut h = Harness::new(
+        &ui,
+        Button::new(&ui, "A")
+            .id(1)
+            .on_press(Msg::Clicked)
+            .into_element(),
+        300.0,
+        300.0,
+    );
+    h.draw();
+    h.key(Key::Tab);
+    let quads = h
+        .draw()
+        .0
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::Quad { .. }))
+        .count();
+    assert_eq!(quads, 2, "ring + body");
+    assert_eq!(h.key(Key::Character(" ".into())), vec![Msg::Clicked]);
+}
+
+#[test]
+fn checkbox_toggles_by_click_and_space() {
+    let ui = ui();
+    let cb = Checkbox::new(&ui, "Notify", false)
+        .id(3)
+        .on_toggle(Msg::Toggled);
+    let mut h = Harness::new(&ui, cb.into_element(), 300.0, 100.0);
+    assert_eq!(h.click(4.0, 4.0), vec![Msg::Toggled(true)]);
+    assert_eq!(h.key(Key::Character(" ".into())), vec![Msg::Toggled(true)]);
+    let on = Checkbox::new(&ui, "Notify", true).on_toggle(Msg::Toggled);
+    let mut h = Harness::new(&ui, on.into_element(), 300.0, 100.0);
+    assert_eq!(h.click(4.0, 4.0), vec![Msg::Toggled(false)]);
+}
+
+#[test]
+fn slider_drag_and_keys() {
+    let ui = ui();
+    let mk = |ui: &Ui, v: f32| {
+        Slider::new(ui, 0.0, 100.0, v)
+            .step(1.0)
+            .id(4)
+            .on_change(Msg::Value)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, 10.0), 216.0, 24.0);
+    // track spans x in [8, 208]; click at the middle
+    assert_eq!(h.mv(108.0, 12.0), vec![]);
+    assert_eq!(
+        h.send(Event::MousePressed(MouseButton::Left)),
+        vec![Msg::Value(50.0)]
+    );
+    assert_eq!(h.mv(208.0, 12.0), vec![Msg::Value(100.0)]);
+    assert_eq!(h.mv(58.0, 12.0), vec![Msg::Value(25.0)]);
+    assert_eq!(
+        h.mv(-50.0, 12.0),
+        vec![Msg::Value(0.0)],
+        "drag continues outside, clamped"
+    );
+    h.send(Event::MouseReleased(MouseButton::Left));
+    assert!(h.mv(100.0, 12.0).is_empty(), "no drag after release");
+    let mut h = Harness::new(&ui, mk(&ui, 10.0), 216.0, 24.0);
+    assert_eq!(
+        h.key(Key::Named("ArrowRight".into())),
+        vec![Msg::Value(11.0)]
+    );
+    assert_eq!(h.key(Key::Named("End".into())), vec![Msg::Value(100.0)]);
+}
+
+fn typing(h: &mut Harness, s: &str) -> Vec<Msg> {
+    h.send(Event::TextInput(s.into()))
+}
+
+#[test]
+fn text_input_typing_selection_and_clipboard() {
+    let ui = ui();
+    let mk = |ui: &Ui, v: &str| {
+        TextInput::new(ui, 7, v)
+            .on_input(Msg::Text)
+            .on_submit(|| Msg::Submit)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, "hello"), 300.0, 40.0);
+    h.click(290.0, 20.0); // click right of the text: caret at end
+    assert_eq!(ui.focused(), Some(7));
+    assert_eq!(typing(&mut h, "!"), vec![Msg::Text("hello!".into())]);
+    // app accepted: rebuild with new value
+    let mut h = Harness::new(&ui, mk(&ui, "hello!"), 300.0, 40.0);
+    assert_eq!(h.key(Key::Backspace), vec![Msg::Text("hello".into())]);
+    // select all + replace
+    let m = Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    h.send(Event::KeyPressed(Key::Character("a".into()), m));
+    assert_eq!(typing(&mut h, "x"), vec![Msg::Text("x".into())]);
+    // copy / paste
+    let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
+    h.send(Event::KeyPressed(Key::Character("a".into()), m));
+    h.send(Event::KeyPressed(Key::Character("c".into()), m));
+    h.send(Event::KeyPressed(
+        Key::Named("End".into()),
+        Modifiers::default(),
+    ));
+    assert_eq!(
+        h.send(Event::KeyPressed(Key::Character("v".into()), m)),
+        vec![Msg::Text("abcabc".into())]
+    );
+    assert_eq!(h.key(Key::Enter), vec![Msg::Submit]);
+}
+
+#[test]
+fn text_input_shift_arrows_select_and_cut() {
+    let ui = ui();
+    let mk = |ui: &Ui| {
+        TextInput::new(ui, 7, "abcdef")
+            .on_input(Msg::Text)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui), 300.0, 40.0);
+    h.click(290.0, 20.0);
+    let shift = Modifiers {
+        shift: true,
+        ..Default::default()
+    };
+    for _ in 0..2 {
+        h.send(Event::KeyPressed(Key::Named("ArrowLeft".into()), shift));
+    }
+    let cut = Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        h.send(Event::KeyPressed(Key::Character("x".into()), cut)),
+        vec![Msg::Text("abcd".into())]
+    );
+    assert_eq!(ui.clipboard().get().as_deref(), Some("ef"));
+}
+
+#[test]
+fn text_input_ignores_input_when_unfocused_and_readonly() {
+    let ui = ui();
+    let mut h = Harness::new(
+        &ui,
+        TextInput::new(&ui, 7, "a")
+            .on_input(Msg::Text)
+            .into_element(),
+        300.0,
+        40.0,
+    );
+    assert!(typing(&mut h, "z").is_empty(), "not focused");
+    let mut ro = Harness::new(
+        &ui,
+        TextInput::<Msg>::new(&ui, 8, "a").into_element(),
+        300.0,
+        40.0,
+    );
+    ro.click(290.0, 20.0);
+    assert!(typing(&mut ro, "z").is_empty(), "read-only");
+}
+
+#[test]
+fn text_input_ime_preedit_is_drawn_not_committed() {
+    let ui = ui();
+    let mut h = Harness::new(
+        &ui,
+        TextInput::new(&ui, 7, "ab")
+            .on_input(Msg::Text)
+            .into_element(),
+        300.0,
+        40.0,
+    );
+    h.click(290.0, 20.0);
+    assert!(h.send(Event::ImePreedit("にほ".into())).is_empty());
+    assert!(h.texts().contains(&"にほ".to_string()));
+    assert_eq!(typing(&mut h, "日本"), vec![Msg::Text("ab日本".into())]);
+}
+
+#[test]
+fn text_input_placeholder_when_empty() {
+    let ui = ui();
+    let h = Harness::new(
+        &ui,
+        TextInput::<Msg>::new(&ui, 7, "")
+            .placeholder("Search")
+            .into_element(),
+        300.0,
+        40.0,
+    );
+    assert_eq!(h.texts(), vec!["Search".to_string()]);
+}
+
+fn tall_list(ui: &Ui) -> Element<Msg> {
+    let rows = (0..50)
+        .map(|i| Text::new(ui, format!("item {i}")).into_element())
+        .collect();
+    Scrollable::new(
+        ui,
+        9,
+        Column::new(rows).width(Length::Fill(1)).into_element(),
+    )
+    .into_element()
+}
+
+#[test]
+fn scrollable_scrolls_clamps_and_clips() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    let d = h.draw().0;
+    assert!(matches!(d.first(), Some(DrawCommand::PushClip(_))));
+    assert!(d.iter().any(|c| matches!(c, DrawCommand::PopClip)));
+    h.mv(10.0, 10.0);
+    h.send(Event::Scrolled { dx: 0.0, dy: -40.0 });
+    assert_eq!(ui.scroll_offset(9), 40.0);
+    h.send(Event::Scrolled {
+        dx: 0.0,
+        dy: 10_000.0,
+    });
+    assert_eq!(ui.scroll_offset(9), 0.0, "clamped at top");
+    h.send(Event::Scrolled {
+        dx: 0.0,
+        dy: -1.0e6,
+    });
+    let lh = ui.theme().typography.body.line_height;
+    assert_eq!(ui.scroll_offset(9), 50.0 * lh - 100.0, "clamped at bottom");
+}
+
+#[test]
+fn scrollable_offsets_child_content() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    let first_y = |h: &Harness| {
+        h.draw().0.iter().find_map(|c| match c {
+            DrawCommand::Text { origin, .. } => Some(origin.y),
+            _ => None,
+        })
+    };
+    assert_eq!(first_y(&h), Some(0.0));
+    h.mv(10.0, 10.0);
+    h.send(Event::Scrolled { dx: 0.0, dy: -30.0 });
+    assert_eq!(first_y(&h), Some(-30.0));
+}
+
+#[test]
+fn scroll_ignored_outside_viewport() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    h.mv(500.0, 500.0);
+    h.send(Event::Scrolled { dx: 0.0, dy: -40.0 });
+    assert_eq!(ui.scroll_offset(9), 0.0);
+}
+
+#[test]
+fn list_select_by_click_and_keys() {
+    let ui = ui();
+    let mk = |ui: &Ui, sel: Option<usize>| {
+        let items = (0..5)
+            .map(|i| Text::new(ui, format!("row {i}")).into_element())
+            .collect();
+        List::new(ui, 11, items, sel, Msg::Picked).into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, None), 200.0, 300.0);
+    let row_h = ui.theme().typography.body.line_height + 2.0 * ui.theme().spacing.xs;
+    assert_eq!(h.click(20.0, row_h * 2.0 + 2.0), vec![Msg::Picked(2)]);
+    assert_eq!(ui.focused(), Some(11));
+    let mut h = Harness::new(&ui, mk(&ui, Some(2)), 200.0, 300.0);
+    assert_eq!(h.key(Key::Named("ArrowDown".into())), vec![Msg::Picked(3)]);
+    assert_eq!(h.key(Key::Named("ArrowUp".into())), vec![Msg::Picked(1)]);
+    let mut h = Harness::new(&ui, mk(&ui, Some(4)), 200.0, 300.0);
+    assert_eq!(
+        h.key(Key::Named("ArrowDown".into())),
+        vec![Msg::Picked(4)],
+        "clamped at the end"
+    );
+}
+
+#[test]
+fn list_selected_row_is_highlighted() {
+    let ui = ui();
+    let items = (0..3)
+        .map(|i| Text::new(&ui, format!("r{i}")).into_element())
+        .collect();
+    let h = Harness::new(
+        &ui,
+        List::new(&ui, 11, items, Some(1), Msg::Picked).into_element(),
+        200.0,
+        200.0,
+    );
+    let sel = ui.theme().palette.selection;
+    let n = h
+        .draw()
+        .0
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::Quad { fill, .. } if *fill == sel))
+        .count();
+    assert_eq!(n, 1);
+}
+
+#[test]
+fn no_idle_work_without_events() {
+    // Drawing twice yields identical lists: widgets hold no hidden animation state.
+    let ui = ui();
+    let h = Harness::new(
+        &ui,
+        Button::new(&ui, "A").on_press(Msg::Clicked).into_element(),
+        100.0,
+        50.0,
+    );
+    assert_eq!(h.draw(), h.draw());
+}

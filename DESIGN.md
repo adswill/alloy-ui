@@ -18,3 +18,8 @@ Alloy's default theme must not look AI-generated. Rules distilled from Impeccabl
 - Small, restrained radii; shadows only to express real elevation.
 - Motion only for meaningful state change, short and eased out, never bouncy.
 - Golden-image tests double as the visual review surface.
+
+## Direction from the project owner (2026-11-20)
+Alloy should look like iced and Tauri apps merged, and be genuinely polished and distinctive: iced's honest native-widget clarity with the finish, calm density and typography of a well-made Tauri/web-quality desktop app. Slint is only a loose reference (the owner does not like it much). Quality bar is "very good" at first look: the demos are judged on how they look.
+
+Concretely: confident type hierarchy, generous but not uniform spacing, one restrained accent, crisp 1px borders over shadows, subtle state transitions (hover, press, focus) with ease-out timing, dense-but-calm tool layouts for editor and dashboard, and real content in demos (no lorem ipsum, no placeholder stats).

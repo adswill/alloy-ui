@@ -53,6 +53,12 @@ pub struct Outcome {
     pub redraw: bool,
     /// The application asked to exit.
     pub exit: bool,
+    /// Some widget is animating: the shell should deliver [`Event::Tick`](crate::Event::Tick) again in about 16 ms.
+    pub tick: bool,
+}
+
+fn tree_animating<M>(e: &Element<M>) -> bool {
+    e.0.animating() || e.0.children().iter().any(tree_animating)
 }
 
 /// Computes absolute layout for a view tree at a window size.
@@ -163,7 +169,11 @@ impl<A: Application> Runtime<A> {
         let frame = self.draw();
         let redraw = frame != self.last_frame;
         self.last_frame = frame;
-        Outcome { redraw, exit }
+        Outcome {
+            redraw,
+            exit,
+            tick: tree_animating(&self.view),
+        }
     }
 }
 
