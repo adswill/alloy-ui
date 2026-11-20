@@ -1064,3 +1064,50 @@ fn editor_undo_restores_deleted_line() {
         vec![Msg::Text("ab\ncd".into())]
     );
 }
+
+fn people(ui: &Ui, sel: Option<usize>) -> Element<Msg> {
+    let cell = |s: &str| Text::new(ui, s).into_element();
+    Table::new(
+        ui,
+        70,
+        vec![
+            TableColumn::new("Name", Length::Fill(1)),
+            TableColumn::new("Qty", Length::Fixed(60.0)).right(),
+        ],
+        Msg::Picked,
+    )
+    .row(vec![cell("Ada"), cell("3")])
+    .row(vec![cell("Grace Hopper"), cell("12")])
+    .selected(sel)
+    .into_element()
+}
+
+#[test]
+fn table_columns_line_up_and_rows_select() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, people(&ui, None), 400.0, 300.0);
+    // Cells of both rows start at the same x; the fixed column ends at the table edge.
+    let texts: Vec<(String, f32)> = h
+        .draw()
+        .0
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::Text {
+                content, origin, ..
+            } => Some((content.clone(), origin.x)),
+            _ => None,
+        })
+        .collect();
+    let x = |s: &str| texts.iter().find(|(t, _)| t == s).unwrap().1;
+    assert_eq!(x("Ada"), x("Grace Hopper"));
+    assert_eq!(x("Name"), x("Ada"), "header aligns with cells");
+    assert!(
+        x("12") < x("3") && x("3") > 300.0,
+        "{texts:?}: numbers right-align"
+    );
+    // Click the second row (below header + rule + first row).
+    let th = &ui.theme();
+    let row_h = th.typography.body.line_height + 2.0 * th.spacing.xs;
+    let top = h.layout.children[0].children[2].bounds.origin.y;
+    assert_eq!(h.click(20.0, top + row_h * 1.5), vec![Msg::Picked(1)]);
+}
