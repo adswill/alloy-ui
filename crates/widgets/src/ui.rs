@@ -91,6 +91,7 @@ struct Inner {
     hit: Option<(u64, Point)>,
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
+    slots: HashMap<u64, i64>,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -149,6 +150,7 @@ impl Ui {
             hit: None,
             clip: None,
             histories: HashMap::new(),
+            slots: HashMap::new(),
         })))
     }
 
@@ -382,6 +384,18 @@ impl Ui {
     /// Run `f` on the undo history of text field `id`. `f` must not call back into `Ui`.
     pub(crate) fn with_history<R>(&self, id: u64, f: impl FnOnce(&mut History) -> R) -> R {
         f(self.0.borrow_mut().histories.entry(id).or_default())
+    }
+
+    /// A small integer remembered for widget `id` (e.g. the month a date picker shows).
+    pub(crate) fn slot(&self, id: u64) -> Option<i64> {
+        self.0.borrow().slots.get(&id).copied()
+    }
+    pub(crate) fn set_slot(&self, id: u64, v: Option<i64>) {
+        let mut s = self.0.borrow_mut();
+        match v {
+            Some(v) => s.slots.insert(id, v),
+            None => s.slots.remove(&id),
+        };
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {

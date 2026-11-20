@@ -12,6 +12,8 @@ enum Msg {
     Text(String),
     Picked(usize),
     Submit,
+    Num(f64),
+    Day(Date),
 }
 
 struct Harness {
@@ -1113,4 +1115,61 @@ fn table_columns_line_up_and_rows_select() {
     let row_h = th.typography.body.line_height + 2.0 * th.spacing.xs;
     let top = h.layout.children[0].children[2].bounds.origin.y;
     assert_eq!(h.click(20.0, top + row_h * 1.5), vec![Msg::Picked(1)]);
+}
+
+#[test]
+fn date_math_round_trips() {
+    assert_eq!(Date::new(1970, 1, 1).weekday(), 3); // Thursday
+    assert_eq!(Date::new(2026, 11, 20).weekday(), 4); // Friday
+    assert_eq!(Date::from_days(Date::new(2024, 2, 29).to_days()), Date::new(2024, 2, 29));
+    assert_eq!(Date::new(2024, 1, 31).add_months(1), Date::new(2024, 2, 29));
+    assert_eq!(Date::new(2024, 12, 15).add_months(1), Date::new(2025, 1, 15));
+    assert_eq!(days_in_month(1900, 2), 28);
+    assert_eq!(Date::new(2026, 3, 5).to_string(), "2026-03-05");
+}
+
+#[test]
+fn number_input_steps_and_clamps() {
+    let ui = ui();
+    let mk = |v| {
+        NumberInput::new(&ui, 20, v)
+            .range(0.0, 1.0)
+            .step(0.1)
+            .on_change(Msg::Num)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(0.3), 200.0, 40.0);
+    let b = h.layout.children[0].bounds;
+    assert_eq!(h.click(b.origin.x + b.size.width - 5.0, 10.0), vec![Msg::Num(0.4)]);
+    assert_eq!(h.click(5.0, 10.0), vec![Msg::Num(0.2)]);
+    assert_eq!(h.key(Key::Named("ArrowUp".into())), vec![Msg::Num(0.4)]);
+    assert_eq!(h.key(Key::Named("End".into())), vec![Msg::Num(1.0)]);
+    let mut h = Harness::new(&ui, mk(1.0), 200.0, 40.0);
+    ui.set_focus(Some(20));
+    assert!(h.key(Key::Named("ArrowUp".into())).is_empty(), "clamped at max");
+}
+
+#[test]
+fn date_picker_opens_navigates_and_selects() {
+    let ui = ui();
+    let sel = Date::new(2026, 11, 20);
+    let mk = |ui: &Ui| DatePicker::new(ui, 30, Some(sel)).on_select(Msg::Day).into_element();
+    let mut h = Harness::new(&ui, mk(&ui), 400.0, 400.0);
+    assert!(h.click(5.0, 5.0).is_empty());
+    assert_eq!(ui.popup(), Some(30));
+    let _ = h.draw(); // lays out the popup region on the overlay
+    let fh = h.layout.children[0].bounds.size.height;
+    let (px, py) = (0.0, fh + 4.0);
+    // next month arrow: top right of the popup
+    h.click(px + 7.0 * 34.0 + 16.0 - 8.0 - 17.0, py + 20.0);
+    let _ = h.draw();
+    // 2026-12-01 is a Tuesday: first cell of row 0 is Monday, so the 1st is column 1.
+    let cell = |w: f32, d: f32| (px + 8.0 + d * 34.0 + 17.0, py + 8.0 + 40.0 + (w + 1.0) * 34.0 + 17.0);
+    let (x, y) = cell(0.0, 1.0);
+    assert_eq!(h.click(x, y), vec![Msg::Day(Date::new(2026, 12, 1))]);
+    assert_eq!(ui.popup(), None);
+    // keyboard: arrow moves a day, PageDown a month
+    ui.set_focus(Some(30));
+    assert_eq!(h.key(Key::Named("ArrowRight".into())), vec![Msg::Day(Date::new(2026, 11, 21))]);
+    assert_eq!(h.key(Key::Named("PageDown".into())), vec![Msg::Day(Date::new(2026, 12, 20))]);
 }
