@@ -182,7 +182,7 @@ impl Application for Dashboard {
 pub fn demo() -> Demo<Dashboard> {
     Demo {
         name: "dashboard",
-        app: Dashboard::new(&Ui::new(Theme::light())),
+        app: Dashboard::new(&crate::run::headless_ui(Theme::light())),
         size: (520.0, 460.0),
         steps: vec![Step::Click("12 days")],
     }

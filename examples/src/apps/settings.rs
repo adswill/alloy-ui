@@ -208,7 +208,7 @@ impl Application for Settings {
 pub fn demo() -> Demo<Settings> {
     Demo {
         name: "settings",
-        app: Settings::new(&Ui::new(Theme::light())),
+        app: Settings::new(&crate::run::headless_ui(Theme::light())),
         size: (560.0, 300.0),
         steps: vec![
             Step::Click("Dark"),

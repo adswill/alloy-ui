@@ -4,7 +4,7 @@ use alloy_ui_examples::apps::{counter, dashboard, settings, text_editor, todo};
 use alloy_ui_examples::run::{apply, click_text, render_demo, runtime, Step};
 
 fn ui() -> alloy_ui_widgets::Ui {
-    alloy_ui_widgets::Ui::new(alloy_ui_theme::Theme::light())
+    alloy_ui_examples::run::headless_ui(alloy_ui_theme::Theme::light())
 }
 
 #[test]

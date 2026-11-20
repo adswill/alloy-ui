@@ -6,6 +6,24 @@ use alloy_ui_render::{CpuRenderer, HeadlessRenderer, Image};
 
 use crate::custom::layouter;
 
+struct Measured(alloy_ui_render::TextMeasurer);
+
+impl alloy_ui_widgets::TextMetrics for Measured {
+    fn width(&self, text: &str, size: f32) -> f32 {
+        self.0.measure(text, size, 400, None).width
+    }
+}
+
+/// A [`Ui`](alloy_ui_widgets::Ui) with real text metrics, like the one `alloy_ui::run`
+/// hands to windowed apps, so headless frames match what a window shows.
+pub fn headless_ui(theme: alloy_ui_theme::Theme) -> alloy_ui_widgets::Ui {
+    let ui = alloy_ui_widgets::Ui::new(theme);
+    ui.set_metrics(std::rc::Rc::new(Measured(
+        alloy_ui_render::TextMeasurer::new(),
+    )));
+    ui
+}
+
 /// One scripted user action.
 #[derive(Debug, Clone)]
 pub enum Step {

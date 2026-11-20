@@ -205,7 +205,7 @@ impl Application for Todo {
 pub fn demo() -> Demo<Todo> {
     Demo {
         name: "todo",
-        app: Todo::new(&Ui::new(Theme::light())),
+        app: Todo::new(&crate::run::headless_ui(Theme::light())),
         size: (420.0, 340.0),
         steps: vec![
             Step::Click("What needs doing?"),

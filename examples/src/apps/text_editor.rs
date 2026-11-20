@@ -122,7 +122,7 @@ impl Application for TextEditor {
         .width(Length::Fill(1))
         .into_element();
         let body = Column::new(vec![
-            editor(self.lines.clone(), self.caret, p, Msg::Input).into(),
+            editor(self.lines.clone(), self.caret, ui, Msg::Input).into(),
             status,
         ])
         .spacing(8.0)
@@ -146,7 +146,7 @@ impl Application for TextEditor {
 pub fn demo() -> Demo<TextEditor> {
     Demo {
         name: "text_editor",
-        app: TextEditor::new(&Ui::new(Theme::light())),
+        app: TextEditor::new(&crate::run::headless_ui(Theme::light())),
         size: (520.0, 260.0),
         steps: vec![
             Step::Type("Typed text lands at the caret."),

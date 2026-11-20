@@ -91,7 +91,7 @@ impl Application for Counter {
 pub fn demo() -> Demo<Counter> {
     Demo {
         name: "counter",
-        app: Counter::new(&Ui::new(Theme::light())),
+        app: Counter::new(&crate::run::headless_ui(Theme::light())),
         size: (360.0, 180.0),
         steps: vec![
             Step::Click("Add"),

@@ -97,6 +97,7 @@ pub struct Editor<M> {
     caret: (usize, usize),
     on_input: fn(Input) -> M,
     pal: alloy_ui_theme::Palette,
+    metrics: std::rc::Rc<dyn alloy_ui_widgets::TextMetrics>,
     height: Length,
 }
 
@@ -104,14 +105,15 @@ pub struct Editor<M> {
 pub fn editor<M>(
     lines: Vec<String>,
     caret: (usize, usize),
-    pal: &alloy_ui_theme::Palette,
+    ui: &alloy_ui_widgets::Ui,
     on_input: fn(Input) -> M,
 ) -> Editor<M> {
     Editor {
         lines,
         caret,
         on_input,
-        pal: pal.clone(),
+        pal: ui.theme().palette.clone(),
+        metrics: ui.metrics(),
         height: Length::Fill(1),
     }
 }
@@ -172,9 +174,15 @@ impl<M> Widget<M> for Editor<M> {
             });
         }
         let (cl, cc) = self.caret;
+        let prefix: String = self
+            .lines
+            .get(cl)
+            .map(|l| l.chars().take(cc).collect())
+            .unwrap_or_default();
+        let caret_x = self.metrics.width(&prefix, MONO);
         out.push(quad(
             Rectangle::new(
-                Point::new(x0 + cc as f32 * MONO * 0.6, y0 + cl as f32 * LINE_H),
+                Point::new(x0 + caret_x, y0 + cl as f32 * LINE_H),
                 Size::new(1.5, LINE_H - 2.0),
             ),
             p.accent,
