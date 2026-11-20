@@ -96,6 +96,8 @@ impl<M> Widget<M> for Label {
     }
     fn draw(&self, l: &Layout, out: &mut DrawList) {
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: l.bounds.origin,
             content: self.content.clone(),
             size: self.size,
@@ -190,6 +192,8 @@ impl<M: Clone> Widget<M> for Button<M> {
         out.push(quad(l.bounds, fill, 4.0, border));
         let tw = text_width(&self.text, 14.0);
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 l.bounds.origin.x + (l.bounds.size.width - tw) / 2.0,
                 l.bounds.origin.y + (l.bounds.size.height - 14.0 * 1.4) / 2.0,
@@ -276,6 +280,8 @@ impl<M: Clone> Widget<M> for Checkbox<M> {
             p.text
         };
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(o.x + 26.0, o.y + 2.0),
             content: self.text.clone(),
             size: 14.0,
@@ -499,6 +505,8 @@ impl<M> Widget<M> for Editor<M> {
         let (x0, y0) = (l.bounds.origin.x + 8.0, l.bounds.origin.y + 8.0);
         for (i, line) in self.lines.iter().enumerate() {
             out.push(DrawCommand::Text {
+                weight: 400,
+                line_height: None,
                 origin: Point::new(x0, y0 + i as f32 * LINE_H),
                 content: line.clone(),
                 size: MONO,

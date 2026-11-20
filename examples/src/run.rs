@@ -38,7 +38,11 @@ pub fn runtime<A: Application>(app: A, size: (f32, f32)) -> Runtime<A> {
 pub fn find_text<A: Application>(rt: &Runtime<A>, text: &str) -> Option<Point> {
     rt.draw().0.iter().find_map(|c| match c {
         DrawCommand::Text {
-            origin, content, ..
+            weight: 400,
+            line_height: None,
+            origin,
+            content,
+            ..
         } if content == text => Some(Point::new(origin.x + 3.0, origin.y + 3.0)),
         _ => None,
     })
