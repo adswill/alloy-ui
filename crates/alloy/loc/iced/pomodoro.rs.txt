@@ -1,0 +1,171 @@
+use iced::widget::{button, checkbox, column, container, progress_bar, row, slider, text};
+use iced::{time, Center, Element, Fill, Subscription};
+use std::time::Duration;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mode {
+    Focus,
+    Short,
+    Long,
+}
+
+impl Mode {
+    const ALL: [Mode; 3] = [Mode::Focus, Mode::Short, Mode::Long];
+
+    fn label(self) -> &'static str {
+        match self {
+            Mode::Focus => "Focus",
+            Mode::Short => "Short break",
+            Mode::Long => "Long break",
+        }
+    }
+}
+
+struct Timer {
+    mode: Mode,
+    minutes: [u32; 3],
+    left: u32,
+    running: bool,
+    done: u32,
+    auto: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Pick(Mode),
+    Toggle,
+    Reset,
+    Tick,
+    Length(Mode, u32),
+    Auto(bool),
+}
+
+impl Timer {
+    fn new() -> Self {
+        Timer {
+            mode: Mode::Focus,
+            minutes: [25, 5, 15],
+            left: 25 * 60,
+            running: false,
+            done: 0,
+            auto: false,
+        }
+    }
+
+    fn total(&self) -> u32 {
+        self.minutes[self.mode as usize] * 60
+    }
+
+    fn switch(&mut self, mode: Mode) {
+        self.mode = mode;
+        self.left = self.total();
+    }
+}
+
+fn update(s: &mut Timer, message: Message) {
+    match message {
+        Message::Pick(mode) => {
+            s.running = false;
+            s.switch(mode);
+        }
+        Message::Toggle => s.running = !s.running,
+        Message::Reset => {
+            s.running = false;
+            s.left = s.total();
+        }
+        Message::Length(mode, m) => {
+            s.minutes[mode as usize] = m;
+            if mode == s.mode && !s.running {
+                s.left = s.total();
+            }
+        }
+        Message::Auto(on) => s.auto = on,
+        Message::Tick => {
+            s.left = s.left.saturating_sub(1);
+            if s.left == 0 {
+                let next = if s.mode != Mode::Focus {
+                    Mode::Focus
+                } else {
+                    s.done += 1;
+                    if s.done % 4 == 0 {
+                        Mode::Long
+                    } else {
+                        Mode::Short
+                    }
+                };
+                s.switch(next);
+                s.running = s.auto;
+            }
+        }
+    }
+}
+
+fn subscription(s: &Timer) -> Subscription<Message> {
+    if s.running {
+        time::every(Duration::from_secs(1)).map(|_| Message::Tick)
+    } else {
+        Subscription::none()
+    }
+}
+
+fn view(s: &Timer) -> Element<'_, Message> {
+    let modes = row(Mode::ALL.map(|m| {
+        button(m.label())
+            .on_press(Message::Pick(m))
+            .style(if m == s.mode {
+                button::primary
+            } else {
+                button::secondary
+            })
+            .into()
+    }))
+    .spacing(8);
+    let clock = text(format!("{:02}:{:02}", s.left / 60, s.left % 60)).size(72);
+    let progress = progress_bar(0.0..=s.total() as f32, (s.total() - s.left) as f32);
+    let controls = row![
+        button(if s.running { "Pause" } else { "Start" }).on_press(Message::Toggle),
+        button("Reset")
+            .on_press(Message::Reset)
+            .style(button::secondary),
+    ]
+    .spacing(8);
+    let lengths = column(Mode::ALL.map(|m| {
+        let v = s.minutes[m as usize];
+        row![
+            text(m.label()).width(110),
+            slider(1..=60, v, move |v| Message::Length(m, v)),
+            text(format!("{v} min")).width(60),
+        ]
+        .spacing(12)
+        .align_y(Center)
+        .into()
+    }))
+    .spacing(8);
+    container(
+        column![
+            modes,
+            clock,
+            progress,
+            controls,
+            text(format!("Sessions completed: {}", s.done)),
+            lengths,
+            checkbox(s.auto)
+                .label("Auto-start next session")
+                .on_toggle(Message::Auto),
+        ]
+        .spacing(18)
+        .align_x(Center)
+        .max_width(420),
+    )
+    .center_x(Fill)
+    .padding(24)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Timer::new, update, view)
+        .title("Pomodoro")
+        .subscription(subscription)
+        .window_size((480.0, 560.0))
+        .run()
+}

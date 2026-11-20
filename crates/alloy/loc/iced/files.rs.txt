@@ -1,0 +1,212 @@
+use iced::widget::{button, checkbox, column, container, row, rule, scrollable, text, text_input};
+use iced::{Center, Element, Fill, Length};
+use std::path::PathBuf;
+
+#[derive(Clone, Debug)]
+struct Entry {
+    name: String,
+    dir: bool,
+    size: u64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Column {
+    Name,
+    Size,
+}
+
+struct Files {
+    dir: PathBuf,
+    entries: Result<Vec<Entry>, String>,
+    hidden: bool,
+    query: String,
+    sort: Option<(Column, bool)>,
+    selected: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Open(String),
+    Up,
+    Hidden(bool),
+    Query(String),
+    Sort(Column),
+    Select(String),
+}
+
+fn load(dir: &PathBuf) -> Result<Vec<Entry>, String> {
+    let mut entries: Vec<Entry> = std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .filter_map(|e| {
+            let meta = e.metadata().ok()?;
+            Some(Entry {
+                name: e.file_name().to_string_lossy().into_owned(),
+                dir: meta.is_dir(),
+                size: meta.len(),
+            })
+        })
+        .collect();
+    entries.sort_by(|a, b| b.dir.cmp(&a.dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    Ok(entries)
+}
+
+fn human(n: u64) -> String {
+    match n {
+        0..1024 => format!("{n} B"),
+        1024..1_048_576 => format!("{:.1} KB", n as f64 / 1024.0),
+        _ => format!("{:.1} MB", n as f64 / 1_048_576.0),
+    }
+}
+
+impl Files {
+    fn new() -> Self {
+        let dir = std::env::args_os()
+            .nth(1)
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
+        Files {
+            entries: load(&dir),
+            dir,
+            hidden: false,
+            query: String::new(),
+            sort: None,
+            selected: None,
+        }
+    }
+
+    fn go(&mut self, dir: PathBuf) {
+        self.entries = load(&dir);
+        self.dir = dir;
+        self.selected = None;
+        self.query.clear();
+    }
+
+    fn visible(&self, entries: &[Entry]) -> Vec<Entry> {
+        let q = self.query.to_lowercase();
+        let mut rows: Vec<Entry> = entries
+            .iter()
+            .filter(|e| (self.hidden || !e.name.starts_with('.')) && e.name.to_lowercase().contains(&q))
+            .cloned()
+            .collect();
+        if let Some((col, desc)) = self.sort {
+            rows.sort_by(|a, b| {
+                let o = match col {
+                    Column::Name => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
+                    Column::Size => a.size.cmp(&b.size),
+                };
+                if desc {
+                    o.reverse()
+                } else {
+                    o
+                }
+            });
+        }
+        rows
+    }
+}
+
+fn update(s: &mut Files, message: Message) {
+    match message {
+        Message::Open(name) => s.go(s.dir.join(name)),
+        Message::Up => {
+            if let Some(p) = s.dir.parent() {
+                s.go(p.to_path_buf());
+            }
+        }
+        Message::Hidden(on) => s.hidden = on,
+        Message::Query(q) => s.query = q,
+        Message::Sort(c) => {
+            s.sort = match s.sort {
+                Some((o, false)) if o == c => Some((c, true)),
+                Some((o, true)) if o == c => None,
+                _ => Some((c, false)),
+            }
+        }
+        Message::Select(name) => s.selected = Some(name),
+    }
+}
+
+fn header<'a>(s: &Files, label: &'static str, col: Column, width: Length) -> Element<'a, Message> {
+    let arrow = match s.sort {
+        Some((c, false)) if c == col => " \u{2191}",
+        Some((c, true)) if c == col => " \u{2193}",
+        _ => "",
+    };
+    button(text(format!("{label}{arrow}")))
+        .on_press(Message::Sort(col))
+        .style(button::text)
+        .width(width)
+        .into()
+}
+
+fn view(s: &Files) -> Element<'_, Message> {
+    let bar = row![
+        button("Up").on_press_maybe(s.dir.parent().map(|_| Message::Up)),
+        text(s.dir.display().to_string()).width(Fill),
+        checkbox(s.hidden).label("Show hidden").on_toggle(Message::Hidden),
+        text_input("Filter", &s.query).on_input(Message::Query).width(200),
+    ]
+    .spacing(12)
+    .align_y(Center);
+    let body: Element<'_, Message> = match &s.entries {
+        Err(e) => container(text(format!("Cannot read folder: {e}")).style(text::danger))
+            .center(Fill)
+            .into(),
+        Ok(entries) => {
+            let rows = s.visible(entries);
+            if rows.is_empty() {
+                container(text("Nothing here")).center(Fill).into()
+            } else {
+                let head = row![
+                    header(s, "Name", Column::Name, Fill),
+                    header(s, "Size", Column::Size, Length::Fixed(100.0)),
+                ];
+                let count = rows.len();
+                let lines = rows.into_iter().map(|e| {
+                    let picked = s.selected.as_deref() == Some(e.name.as_str());
+                    let label = if e.dir { format!("{}/", e.name) } else { e.name.clone() };
+                    let size = if e.dir { String::new() } else { human(e.size) };
+                    let msg = if e.dir {
+                        Message::Open(e.name)
+                    } else {
+                        Message::Select(e.name)
+                    };
+                    button(row![text(label).width(Fill), text(size).width(100)])
+                        .on_press(msg)
+                        .width(Fill)
+                        .style(if picked { button::secondary } else { button::text })
+                        .into()
+                });
+                let list = column![head, scrollable(column(lines)).height(Fill)].width(Fill);
+                let picked = entries.iter().find(|e| s.selected.as_deref() == Some(e.name.as_str()));
+                let detail = picked.map(|e| {
+                    container(
+                        column![
+                            text(e.name.clone()).size(20),
+                            rule::horizontal(1),
+                            text(format!("Size: {}", human(e.size))),
+                            text(s.dir.join(&e.name).display().to_string()).size(12),
+                        ]
+                        .spacing(8),
+                    )
+                    .padding(16)
+                    .width(280)
+                    .style(container::bordered_box)
+                });
+                column![row![list].push(detail).spacing(16).height(Fill), text(format!("{count} items")).size(12)]
+                    .spacing(8)
+                    .height(Fill)
+                    .into()
+            }
+        }
+    };
+    column![bar, body].spacing(14).padding(20).into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Files::new, update, view)
+        .title("Files")
+        .window_size((900.0, 600.0))
+        .run()
+}

@@ -19,7 +19,7 @@ Rival cells are based on the sources linked in the differentiator sections. A da
 |---|---|---|---|---|---|---|---|
 | Elm-style State/Message/update/view | Have | Yes | No (own DSL and bindings) | No (immediate mode) | No (React-like) | No | No (web frontend) |
 | Own GPU renderer, no webview | Have | Yes | Yes | Yes | No (webview) | Yes | No (webview) |
-| Lines of code for a typical app | Goal: 4x to 10x fewer than iced; not yet measured | baseline | separate `.slint` markup plus Rust glue | small | small | large (text input alone is 700+ lines) | frontend plus Rust |
+| Lines of code for a typical app | About 1.6x fewer on ordinary apps; 9x to 14x on table/form/list-shaped apps (see BENCHMARKS.md, audit) | baseline | separate `.slint` markup plus Rust glue | small | small | large (text input alone is 700+ lines) | frontend plus Rust |
 | Basic text input widget | Have (`text_input`, `text_edit`, `text_editor`) | Yes | Yes | Yes | via DOM | No, you write it | via DOM |
 | Accessibility tree | Missing | Not visible to Narrator in 2025 test | - | Janky in 2025 test | Partial in 2025 test | Not visible in 2025 test | Browser-provided |
 | IME | Partial (unverified on every OS) | Added in 0.14 | - | Broke kanji selection in 2025 test | Works | Works | Browser-provided |

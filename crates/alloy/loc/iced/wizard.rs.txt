@@ -1,0 +1,242 @@
+use iced::widget::{button, checkbox, column, container, radio, row, text, text_input};
+use iced::{Center, Element, Fill};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Plan {
+    Free,
+    Pro,
+    Team,
+}
+
+impl Plan {
+    const ALL: [Plan; 3] = [Plan::Free, Plan::Pro, Plan::Team];
+
+    fn label(self) -> &'static str {
+        match self {
+            Plan::Free => "Free",
+            Plan::Pro => "Pro",
+            Plan::Team => "Team",
+        }
+    }
+
+    fn price(self) -> u32 {
+        match self {
+            Plan::Free => 0,
+            Plan::Pro => 12,
+            Plan::Team => 40,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Step {
+    Account,
+    Plan,
+    Review,
+    Done,
+}
+
+struct Wizard {
+    step: Step,
+    name: String,
+    email: String,
+    password: String,
+    plan: Plan,
+    yearly: bool,
+    terms: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Name(String),
+    Email(String),
+    Password(String),
+    Plan(Plan),
+    Yearly(bool),
+    Terms(bool),
+    Next,
+    Back,
+}
+
+impl Wizard {
+    fn email_error(&self) -> Option<&'static str> {
+        if self.email.is_empty() {
+            Some("Required")
+        } else if !self.email.contains('@') || !self.email.contains('.') {
+            Some("Enter a valid email")
+        } else {
+            None
+        }
+    }
+
+    fn password_error(&self) -> Option<&'static str> {
+        if self.password.len() < 8 {
+            Some("At least 8 characters")
+        } else {
+            None
+        }
+    }
+
+    fn valid(&self) -> bool {
+        match self.step {
+            Step::Account => {
+                !self.name.trim().is_empty()
+                    && self.email_error().is_none()
+                    && self.password_error().is_none()
+            }
+            Step::Review => self.terms,
+            _ => true,
+        }
+    }
+
+    fn monthly(&self) -> u32 {
+        self.plan.price() * if self.yearly { 10 } else { 12 } / 12
+    }
+}
+
+fn update(s: &mut Wizard, message: Message) {
+    match message {
+        Message::Name(v) => s.name = v,
+        Message::Email(v) => s.email = v,
+        Message::Password(v) => s.password = v,
+        Message::Plan(p) => s.plan = p,
+        Message::Yearly(y) => s.yearly = y,
+        Message::Terms(t) => s.terms = t,
+        Message::Next if s.valid() => {
+            s.step = match s.step {
+                Step::Account => Step::Plan,
+                Step::Plan => Step::Review,
+                _ => Step::Done,
+            }
+        }
+        Message::Next => {}
+        Message::Back => {
+            s.step = match s.step {
+                Step::Review => Step::Plan,
+                _ => Step::Account,
+            }
+        }
+    }
+}
+
+fn field<'a>(
+    label: &'a str,
+    input: text_input::TextInput<'a, Message>,
+    error: Option<&'static str>,
+) -> Element<'a, Message> {
+    column![text(label).size(12), input]
+        .push(error.map(|e| text(e).size(12).style(text::danger)))
+        .spacing(4)
+        .into()
+}
+
+fn view(s: &Wizard) -> Element<'_, Message> {
+    let titles = ["Account", "Plan", "Review"];
+    let index = s.step as usize;
+    let progress = row(titles.iter().enumerate().map(|(i, t)| {
+        let label = text(format!("{}. {t}", i + 1)).size(14);
+        if i == index {
+            label.style(text::primary).into()
+        } else {
+            label.into()
+        }
+    }))
+    .spacing(24);
+    let page: Element<'_, Message> = match s.step {
+        Step::Account => column![
+            field(
+                "Name",
+                text_input("Ada Lovelace", &s.name).on_input(Message::Name),
+                s.name.trim().is_empty().then_some("Required"),
+            ),
+            field(
+                "Email",
+                text_input("ada@example.com", &s.email).on_input(Message::Email),
+                s.email_error(),
+            ),
+            field(
+                "Password",
+                text_input("", &s.password)
+                    .secure(true)
+                    .on_input(Message::Password),
+                s.password_error(),
+            ),
+        ]
+        .spacing(14)
+        .into(),
+        Step::Plan => column![
+            column(Plan::ALL.map(|p| {
+                radio(
+                    format!("{} (${}/mo)", p.label(), p.price()),
+                    p,
+                    Some(s.plan),
+                    Message::Plan,
+                )
+                .into()
+            }))
+            .spacing(8),
+            checkbox(s.yearly)
+                .label("Bill yearly (2 months free)")
+                .on_toggle(Message::Yearly),
+        ]
+        .spacing(14)
+        .into(),
+        Step::Review => column![
+            text(format!("Name: {}", s.name)),
+            text(format!("Email: {}", s.email)),
+            text(format!(
+                "Plan: {} at ${}/mo, billed {}",
+                s.plan.label(),
+                s.monthly(),
+                if s.yearly { "yearly" } else { "monthly" }
+            )),
+            checkbox(s.terms)
+                .label("I accept the terms")
+                .on_toggle(Message::Terms),
+        ]
+        .spacing(10)
+        .into(),
+        Step::Done => container(
+            column![
+                text("You're all set").size(24),
+                text(format!("Welcome, {}.", s.name)),
+            ]
+            .spacing(8)
+            .align_x(Center),
+        )
+        .center_x(Fill)
+        .into(),
+    };
+    let nav = row![
+        button("Back")
+            .on_press_maybe((s.step == Step::Plan || s.step == Step::Review).then_some(Message::Back))
+            .style(button::secondary),
+        container(button(if s.step == Step::Review { "Create account" } else { "Next" })
+            .on_press_maybe(s.valid().then_some(Message::Next)))
+        .align_right(Fill),
+    ];
+    let mut body = column![progress, page].spacing(24);
+    if s.step != Step::Done {
+        body = body.push(nav);
+    }
+    container(body.max_width(440)).center_x(Fill).padding(28).into()
+}
+
+fn main() -> iced::Result {
+    iced::application(
+        || Wizard {
+            step: Step::Account,
+            name: String::new(),
+            email: String::new(),
+            password: String::new(),
+            plan: Plan::Pro,
+            yearly: false,
+            terms: false,
+        },
+        update,
+        view,
+    )
+    .title("Sign up")
+    .window_size((520.0, 520.0))
+    .run()
+}
