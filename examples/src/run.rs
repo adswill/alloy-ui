@@ -37,9 +37,9 @@ pub fn runtime<A: Application>(app: A, size: (f32, f32)) -> Runtime<A> {
 /// Find the first text command with exactly this content and return a point inside it.
 pub fn find_text<A: Application>(rt: &Runtime<A>, text: &str) -> Option<Point> {
     rt.draw().0.iter().find_map(|c| match c {
-        DrawCommand::Text { origin, content, .. } if content == text => {
-            Some(Point::new(origin.x + 3.0, origin.y + 3.0))
-        }
+        DrawCommand::Text {
+            origin, content, ..
+        } if content == text => Some(Point::new(origin.x + 3.0, origin.y + 3.0)),
         _ => None,
     })
 }
@@ -47,7 +47,9 @@ pub fn find_text<A: Application>(rt: &Runtime<A>, text: &str) -> Option<Point> {
 /// Send a real click (move, press, release) at the first text matching `text`.
 /// Returns false if no such text is on screen.
 pub fn click_text<A: Application>(rt: &mut Runtime<A>, text: &str) -> bool {
-    let Some(p) = find_text(rt, text) else { return false };
+    let Some(p) = find_text(rt, text) else {
+        return false;
+    };
     rt.handle_event(&Event::CursorMoved(p));
     rt.handle_event(&Event::MousePressed(MouseButton::Left));
     rt.handle_event(&Event::MouseReleased(MouseButton::Left));
@@ -94,5 +96,9 @@ pub fn main_headless<A: Application>(demo: Demo<A>) {
     let path = std::path::Path::new(&dir).join(format!("{name}.png"));
     let png = img.encode_png().expect("png encode");
     std::fs::write(&path, png).expect("write png");
-    println!("{name}: headless run in {:.1} ms, wrote {}", t0.elapsed().as_secs_f64() * 1e3, path.display());
+    println!(
+        "{name}: headless run in {:.1} ms, wrote {}",
+        t0.elapsed().as_secs_f64() * 1e3,
+        path.display()
+    );
 }

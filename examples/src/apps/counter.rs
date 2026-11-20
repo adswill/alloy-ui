@@ -1,7 +1,7 @@
 //! Counter: the smallest complete Elm-style app.
 use crate::kit::{button, column, label, row, spacer, Emphasis};
-use alloy_ui_core::style::{Align, Length, Padding};
 use crate::run::{Demo, Step};
+use alloy_ui_core::style::{Align, Length, Padding};
 use alloy_ui_core::{Application, Command, Element};
 use alloy_ui_theme::Theme;
 
@@ -74,6 +74,11 @@ pub fn demo() -> Demo<Counter> {
         name: "counter",
         app: Counter::new(Theme::light()),
         size: (360.0, 180.0),
-        steps: vec![Step::Click("Add"), Step::Click("Add"), Step::Click("Add"), Step::Click("Subtract")],
+        steps: vec![
+            Step::Click("Add"),
+            Step::Click("Add"),
+            Step::Click("Add"),
+            Step::Click("Subtract"),
+        ],
     }
 }

@@ -34,7 +34,10 @@ fn build_node<M>(e: &Element<M>, avail: Size) -> Node {
         n.style = style;
         n
     } else {
-        let mut n = Node::container(style.axis, kids.iter().map(|k| build_node(k, avail)).collect());
+        let mut n = Node::container(
+            style.axis,
+            kids.iter().map(|k| build_node(k, avail)).collect(),
+        );
         n.style = style;
         n
     }
@@ -46,7 +49,13 @@ pub fn layouter<M>(root: &Element<M>, size: Size) -> Layout {
 }
 
 fn quad(bounds: Rectangle, fill: Color, radius: f32, border: Option<Border>) -> DrawCommand {
-    DrawCommand::Quad { bounds, fill, radius, border, shadow: None }
+    DrawCommand::Quad {
+        bounds,
+        fill,
+        radius,
+        border,
+        shadow: None,
+    }
 }
 
 /// Text label.
@@ -59,7 +68,12 @@ pub struct Label {
 
 /// Build a label.
 pub fn label(content: impl Into<String>, size: f32, color: Color) -> Label {
-    Label { content: content.into(), size, color, width: Length::Shrink }
+    Label {
+        content: content.into(),
+        size,
+        color,
+        width: Length::Shrink,
+    }
 }
 
 impl Label {
@@ -72,7 +86,10 @@ impl Label {
 
 impl<M> Widget<M> for Label {
     fn style(&self) -> Style {
-        Style { width: self.width, ..Style::default() }
+        Style {
+            width: self.width,
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::new(text_width(&self.content, self.size), self.size * 1.4)
@@ -114,8 +131,19 @@ pub struct Button<M> {
 }
 
 /// Build a button.
-pub fn button<M>(text: impl Into<String>, emphasis: Emphasis, pal: &alloy_ui_theme::Palette, on_press: M) -> Button<M> {
-    Button { text: text.into(), emphasis, on_press, pal: pal.clone(), selected: false }
+pub fn button<M>(
+    text: impl Into<String>,
+    emphasis: Emphasis,
+    pal: &alloy_ui_theme::Palette,
+    on_press: M,
+) -> Button<M> {
+    Button {
+        text: text.into(),
+        emphasis,
+        on_press,
+        pal: pal.clone(),
+        selected: false,
+    }
 }
 
 impl<M> Button<M> {
@@ -141,8 +169,22 @@ impl<M: Clone> Widget<M> for Button<M> {
         let p = &self.pal;
         let (fill, fg, border) = match (self.emphasis, self.selected) {
             (Emphasis::Primary, _) => (p.accent, p.on_accent, None),
-            (_, true) => (p.selection, p.text, Some(Border { color: p.accent, width: 1.0 })),
-            (Emphasis::Secondary, _) => (p.surface_raised, p.text, Some(Border { color: p.border_strong, width: 1.0 })),
+            (_, true) => (
+                p.selection,
+                p.text,
+                Some(Border {
+                    color: p.accent,
+                    width: 1.0,
+                }),
+            ),
+            (Emphasis::Secondary, _) => (
+                p.surface_raised,
+                p.text,
+                Some(Border {
+                    color: p.border_strong,
+                    width: 1.0,
+                }),
+            ),
             (Emphasis::Quiet, _) => (Color::TRANSPARENT, p.accent, None),
         };
         out.push(quad(l.bounds, fill, 4.0, border));
@@ -174,13 +216,26 @@ pub struct Checkbox<M> {
 }
 
 /// Build a checkbox.
-pub fn checkbox<M>(text: impl Into<String>, checked: bool, pal: &alloy_ui_theme::Palette, on_toggle: M) -> Checkbox<M> {
-    Checkbox { text: text.into(), checked, on_toggle, pal: pal.clone() }
+pub fn checkbox<M>(
+    text: impl Into<String>,
+    checked: bool,
+    pal: &alloy_ui_theme::Palette,
+    on_toggle: M,
+) -> Checkbox<M> {
+    Checkbox {
+        text: text.into(),
+        checked,
+        on_toggle,
+        pal: pal.clone(),
+    }
 }
 
 impl<M: Clone> Widget<M> for Checkbox<M> {
     fn style(&self) -> Style {
-        Style { width: Length::Fill(1), ..Style::default() }
+        Style {
+            width: Length::Fill(1),
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::new(26.0 + text_width(&self.text, 14.0), 24.0)
@@ -205,9 +260,21 @@ impl<M: Clone> Widget<M> for Checkbox<M> {
                 None,
             ));
         } else {
-            out.push(quad(bx, p.surface_raised, 3.0, Some(Border { color: p.border_strong, width: 1.0 })));
+            out.push(quad(
+                bx,
+                p.surface_raised,
+                3.0,
+                Some(Border {
+                    color: p.border_strong,
+                    width: 1.0,
+                }),
+            ));
         }
-        let color = if self.checked { p.text_secondary } else { p.text };
+        let color = if self.checked {
+            p.text_secondary
+        } else {
+            p.text
+        };
         out.push(DrawCommand::Text {
             origin: Point::new(o.x + 26.0, o.y + 2.0),
             content: self.text.clone(),
@@ -232,12 +299,19 @@ pub struct Slider<M> {
 
 /// Build a slider.
 pub fn slider<M>(value: f32, pal: &alloy_ui_theme::Palette, on_change: fn(f32) -> M) -> Slider<M> {
-    Slider { value: value.clamp(0.0, 1.0), on_change, pal: pal.clone() }
+    Slider {
+        value: value.clamp(0.0, 1.0),
+        on_change,
+        pal: pal.clone(),
+    }
 }
 
 impl<M> Widget<M> for Slider<M> {
     fn style(&self) -> Style {
-        Style { width: Length::Fill(1), ..Style::default() }
+        Style {
+            width: Length::Fill(1),
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::new(120.0, 24.0)
@@ -253,12 +327,31 @@ impl<M> Widget<M> for Slider<M> {
     fn draw(&self, l: &Layout, out: &mut DrawList) {
         let b = l.bounds;
         let cy = b.origin.y + b.size.height / 2.0;
-        let track = Rectangle::new(Point::new(b.origin.x, cy - 2.0), Size::new(b.size.width, 4.0));
+        let track = Rectangle::new(
+            Point::new(b.origin.x, cy - 2.0),
+            Size::new(b.size.width, 4.0),
+        );
         out.push(quad(track, self.pal.border, 2.0, None));
         let w = b.size.width * self.value;
-        out.push(quad(Rectangle::new(track.origin, Size::new(w, 4.0)), self.pal.accent, 2.0, None));
-        let knob = Rectangle::new(Point::new(b.origin.x + w - 8.0, cy - 8.0), Size::new(16.0, 16.0));
-        out.push(quad(knob, self.pal.surface_raised, 8.0, Some(Border { color: self.pal.accent, width: 2.0 })));
+        out.push(quad(
+            Rectangle::new(track.origin, Size::new(w, 4.0)),
+            self.pal.accent,
+            2.0,
+            None,
+        ));
+        let knob = Rectangle::new(
+            Point::new(b.origin.x + w - 8.0, cy - 8.0),
+            Size::new(16.0, 16.0),
+        );
+        out.push(quad(
+            knob,
+            self.pal.surface_raised,
+            8.0,
+            Some(Border {
+                color: self.pal.accent,
+                width: 2.0,
+            }),
+        ));
     }
 }
 impl<M: 'static> From<Slider<M>> for Element<M> {
@@ -276,12 +369,20 @@ pub struct Bars {
 
 /// Build a bar chart over values in `0.0..=1.0`.
 pub fn bars(values: Vec<f32>, color: Color, track: Color) -> Bars {
-    Bars { values, color, track }
+    Bars {
+        values,
+        color,
+        track,
+    }
 }
 
 impl<M> Widget<M> for Bars {
     fn style(&self) -> Style {
-        Style { width: Length::Fill(1), height: Length::Fixed(120.0), ..Style::default() }
+        Style {
+            width: Length::Fill(1),
+            height: Length::Fixed(120.0),
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::new(0.0, 120.0)
@@ -294,8 +395,21 @@ impl<M> Widget<M> for Bars {
         for (i, v) in self.values.iter().enumerate() {
             let x = l.bounds.origin.x + i as f32 * (w + gap);
             let h = l.bounds.size.height * v.clamp(0.0, 1.0);
-            out.push(quad(Rectangle::new(Point::new(x, l.bounds.origin.y), Size::new(w, l.bounds.size.height)), self.track, 2.0, None));
-            out.push(quad(Rectangle::new(Point::new(x, base - h), Size::new(w, h)), self.color, 2.0, None));
+            out.push(quad(
+                Rectangle::new(
+                    Point::new(x, l.bounds.origin.y),
+                    Size::new(w, l.bounds.size.height),
+                ),
+                self.track,
+                2.0,
+                None,
+            ));
+            out.push(quad(
+                Rectangle::new(Point::new(x, base - h), Size::new(w, h)),
+                self.color,
+                2.0,
+                None,
+            ));
         }
     }
 }
@@ -324,8 +438,19 @@ pub struct Editor<M> {
 }
 
 /// Build an editor over `lines` with the caret at (line, column).
-pub fn editor<M>(lines: Vec<String>, caret: (usize, usize), pal: &alloy_ui_theme::Palette, on_input: fn(Input) -> M) -> Editor<M> {
-    Editor { lines, caret, on_input, pal: pal.clone(), height: Length::Fill(1) }
+pub fn editor<M>(
+    lines: Vec<String>,
+    caret: (usize, usize),
+    pal: &alloy_ui_theme::Palette,
+    on_input: fn(Input) -> M,
+) -> Editor<M> {
+    Editor {
+        lines,
+        caret,
+        on_input,
+        pal: pal.clone(),
+        height: Length::Fill(1),
+    }
 }
 
 impl<M> Editor<M> {
@@ -341,7 +466,12 @@ const LINE_H: f32 = 20.0;
 
 impl<M> Widget<M> for Editor<M> {
     fn style(&self) -> Style {
-        Style { width: Length::Fill(1), height: self.height, padding: Padding::all(8.0), ..Style::default() }
+        Style {
+            width: Length::Fill(1),
+            height: self.height,
+            padding: Padding::all(8.0),
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::new(0.0, LINE_H)
@@ -356,7 +486,15 @@ impl<M> Widget<M> for Editor<M> {
     }
     fn draw(&self, l: &Layout, out: &mut DrawList) {
         let p = &self.pal;
-        out.push(quad(l.bounds, p.surface_raised, 4.0, Some(Border { color: p.border, width: 1.0 })));
+        out.push(quad(
+            l.bounds,
+            p.surface_raised,
+            4.0,
+            Some(Border {
+                color: p.border,
+                width: 1.0,
+            }),
+        ));
         out.push(DrawCommand::PushClip(l.bounds));
         let (x0, y0) = (l.bounds.origin.x + 8.0, l.bounds.origin.y + 8.0);
         for (i, line) in self.lines.iter().enumerate() {
@@ -398,12 +536,30 @@ pub struct Flex<M> {
 
 /// A horizontal container.
 pub fn row<M>(children: Vec<Element<M>>) -> Flex<M> {
-    Flex { style: Style { axis: Axis::Horizontal, ..Style::default() }, children, fill: None, border: None, radius: 0.0 }
+    Flex {
+        style: Style {
+            axis: Axis::Horizontal,
+            ..Style::default()
+        },
+        children,
+        fill: None,
+        border: None,
+        radius: 0.0,
+    }
 }
 
 /// A vertical container.
 pub fn column<M>(children: Vec<Element<M>>) -> Flex<M> {
-    Flex { style: Style { axis: Axis::Vertical, ..Style::default() }, children, fill: None, border: None, radius: 0.0 }
+    Flex {
+        style: Style {
+            axis: Axis::Vertical,
+            ..Style::default()
+        },
+        children,
+        fill: None,
+        border: None,
+        radius: 0.0,
+    }
 }
 
 impl<M> Flex<M> {
@@ -439,7 +595,10 @@ impl<M> Flex<M> {
     }
     /// Draw a border with a corner radius.
     pub fn outline(mut self, c: Color, radius: f32) -> Self {
-        self.border = Some(Border { color: c, width: 1.0 });
+        self.border = Some(Border {
+            color: c,
+            width: 1.0,
+        });
         self.radius = radius;
         self
     }
@@ -465,7 +624,12 @@ impl<M> Widget<M> for Flex<M> {
     }
     fn draw(&self, l: &Layout, out: &mut DrawList) {
         if self.fill.is_some() || self.border.is_some() {
-            out.push(quad(l.bounds, self.fill.unwrap_or(Color::TRANSPARENT), self.radius, self.border));
+            out.push(quad(
+                l.bounds,
+                self.fill.unwrap_or(Color::TRANSPARENT),
+                self.radius,
+                self.border,
+            ));
         }
         for (c, cl) in self.children.iter().zip(&l.children) {
             c.0.draw(cl, out);
@@ -486,7 +650,11 @@ pub fn spacer() -> Spacer {
 }
 impl<M> Widget<M> for Spacer {
     fn style(&self) -> Style {
-        Style { width: Length::Fill(1), height: Length::Fill(1), ..Style::default() }
+        Style {
+            width: Length::Fill(1),
+            height: Length::Fill(1),
+            ..Style::default()
+        }
     }
     fn measure(&self, _: Size) -> Size {
         Size::default()
