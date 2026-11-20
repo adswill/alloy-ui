@@ -3,6 +3,7 @@
 
 use super::capture;
 use crate::{
+    dialog,
     menu::{Menu, MenuItem},
     theme,
     tray::TraySettings,
@@ -39,17 +40,54 @@ pub(crate) fn applescript_quote(s: &str) -> String {
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
+    Ok(open_panel(false)?.into_iter().next())
+}
+
+pub fn open_files() -> Result<Vec<PathBuf>, PlatformError> {
+    open_panel(true)
+}
+
+fn open_panel(multiple: bool) -> Result<Vec<PathBuf>, PlatformError> {
     use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
     let Some(mtm) = MainThreadMarker::new() else {
         // AppKit panels are main-thread only; fall back to osascript.
-        return Ok(capture("osascript", &["-e", "POSIX path of (choose file)"])
-            .map(|s| PathBuf::from(s.trim()))
-            .filter(|p| !p.as_os_str().is_empty()));
+        let script = if multiple {
+            "set fs to choose file with multiple selections allowed\nset out to \"\"\nrepeat with f in fs\nset out to out & POSIX path of f & linefeed\nend repeat\nreturn out"
+        } else {
+            "POSIX path of (choose file)"
+        };
+        return Ok(capture("osascript", &["-e", script])
+            .map(|s| dialog::parse_lines(&s))
+            .unwrap_or_default());
     };
     let panel = NSOpenPanel::openPanel(mtm);
     panel.setCanChooseFiles(true);
     panel.setCanChooseDirectories(false);
-    panel.setAllowsMultipleSelection(false);
+    panel.setAllowsMultipleSelection(multiple);
+    if panel.runModal() != NSModalResponseOK {
+        return Ok(Vec::new());
+    }
+    Ok(panel
+        .URLs()
+        .iter()
+        .filter_map(|u| u.path())
+        .map(|p| PathBuf::from(p.to_string()))
+        .collect())
+}
+
+pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
+    use objc2_app_kit::{NSModalResponseOK, NSSavePanel};
+    let Some(mtm) = MainThreadMarker::new() else {
+        let script = format!(
+            "POSIX path of (choose file name default name \"{}\")",
+            applescript_quote(name)
+        );
+        return Ok(capture("osascript", &["-e", &script])
+            .map(|s| PathBuf::from(s.trim()))
+            .filter(|p| !p.as_os_str().is_empty()));
+    };
+    let panel = NSSavePanel::savePanel(mtm);
+    panel.setNameFieldStringValue(&NSString::from_str(name));
     if panel.runModal() != NSModalResponseOK {
         return Ok(None);
     }
