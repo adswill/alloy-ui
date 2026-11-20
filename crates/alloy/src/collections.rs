@@ -317,15 +317,13 @@ impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
             .fill_w()
             .into()];
         if let Some(make) = b.new {
-            top.push(
-                button("New")
-                    .act(move |_: &mut S| {
-                        items.push(make());
-                        cur.set(items.len() - 1);
-                        query.set(String::new());
-                    })
-                    .into(),
-            );
+            let new = Act::new(move |_: &mut S| {
+                items.push(make());
+                cur.set(items.len() - 1);
+                query.set(String::new());
+            });
+            crate::keys::register(crate::Hotkey::new("mod+n", new.clone()).labelled("New"));
+            top.push(button("New").on(new).into());
         }
         let top: Node<Act<S>> = row(top).gap(8.0).into();
         let top: Node<Act<S>> = match by {
@@ -407,10 +405,16 @@ pub fn browse_of<T: crate::Record, S: 'static>(items: &Local<Vec<T>>) -> Browse<
             items.push(control(f, rec.get(i), put));
         }
         let end = foot.map_or_else(|| text("").into(), |f| f(&rec));
-        let del = button("Delete")
-            .ghost()
-            .act(move |_: &mut S| it.remove())
-            .confirm("Delete this item?");
+        let del = button("Delete").ghost().act(move |_: &mut S| {
+            it.remove();
+            crate::toast("Deleted").undo();
+        });
+        // With undo there is nothing to confirm: the toast takes it back.
+        let del: Node<Act<S>> = if crate::keys::undoable() {
+            del.into()
+        } else {
+            del.confirm("Delete this item?")
+        };
         items.push(
             row([end, crate::space(), del])
                 .align_center()

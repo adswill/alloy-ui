@@ -30,11 +30,13 @@ mod app;
 mod bind;
 mod blocks;
 mod chart;
+mod chrome;
 mod collections;
 mod cx;
 mod dsl;
 pub mod fs;
 mod inputs;
+mod keys;
 mod mock;
 mod persist;
 mod records;
@@ -61,6 +63,7 @@ pub use dsl::{
     toggle, vspace, Act, Choice, Variant,
 };
 pub use inputs::{number, stepper, Count, Stepper};
+pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use mock::{series, Mock};
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
@@ -81,7 +84,7 @@ pub mod prelude {
         wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Local, Node, Place,
         Record, Records, Resource, Stamp, TextCell, View, Wizard,
     };
-    pub use crate::{at, choices, col, row, vals};
+    pub use crate::{at, choices, col, redo, row, toast, undo, vals, Hotkey, Shortcuts};
     pub use alloy_ui_core::Color;
     pub use std::time::Duration;
 }
@@ -378,6 +381,22 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                 }
                 outcome
             }
+            PlatformEvent::MenuAction(id) => {
+                // A menu item or shortcut: replay it as the key press it stands for, so the
+                // focused widget and the page see it exactly as they would a typed one.
+                let Some(sc) = platform::shortcut::Shortcut::parse(&id) else {
+                    return;
+                };
+                let key = match sc.key.to_ascii_lowercase().as_str() {
+                    "enter" => Key::Enter,
+                    "tab" => Key::Tab,
+                    "backspace" => Key::Backspace,
+                    "escape" | "esc" => Key::Escape,
+                    _ if sc.key.chars().count() == 1 => Key::Character(sc.key.clone()),
+                    _ => Key::Named(sc.key.clone()),
+                };
+                rt.handle_window_event(win, &Event::KeyPressed(key, sc.mods))
+            }
             PlatformEvent::ScaleFactorChanged(_) => Outcome {
                 redraw: true,
                 ..Outcome::default()
@@ -407,6 +426,27 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         }
         if let Some(r) = self.renderers.get_mut(&win) {
             r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
+        }
+        if let Some(items) = keys::menu_changed() {
+            // Labelled shortcuts go in the menu bar (and, where the OS has no native one, are
+            // still matched by the shell). Fails quietly where there is no menu bar.
+            let mut edit = platform::menu::Menu::new("Edit");
+            let mut actions = platform::menu::Menu::new("Actions");
+            for (keys, label) in &items {
+                let target = if label == "Undo" || label == "Redo" {
+                    &mut edit
+                } else {
+                    &mut actions
+                };
+                *target = std::mem::take(target).action(keys, label, Some(keys));
+            }
+            let menus: Vec<_> = [actions, edit]
+                .into_iter()
+                .filter(|m| !m.items.is_empty())
+                .collect();
+            if let Err(e) = ctx.set_menu(&menus) {
+                log::debug!("no native menu bar: {e:?}");
+            }
         }
         if let Some(ui) = cx::window_ui(win).or_else(|| self.ui.clone()) {
             let nodes = access_nodes(&ui.accessibility());

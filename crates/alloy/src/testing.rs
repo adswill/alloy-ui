@@ -27,6 +27,7 @@ impl TextMetrics for Metrics {
 pub struct Harness<A: App> {
     rt: Runtime<Shell<A>>,
     size: (f32, f32),
+    now: u64,
 }
 
 impl<A: App> Harness<A> {
@@ -39,13 +40,14 @@ impl<A: App> Harness<A> {
         let ui = Ui::new(theme);
         ui.set_metrics(Rc::new(Metrics(TextMeasurer::new())));
         let rt = Runtime::new(
-            Shell { app, ui },
+            Shell::new(app, ui),
             Size::new(width, height),
             crate::layout_root::<A::Msg>,
         );
         Self {
             rt,
             size: (width, height),
+            now: 1000,
         }
     }
     fn texts(&self) -> Vec<(Point, String)> {
@@ -108,6 +110,23 @@ impl<A: App> Harness<A> {
     pub fn press(&mut self, key: Key) -> &mut Self {
         self.rt
             .handle_event(&Event::KeyPressed(key, Modifiers::default()));
+        self
+    }
+    /// Press a shortcut such as `"mod+s"` or `"mod+shift+z"`.
+    pub fn chord(&mut self, keys: &str) -> &mut Self {
+        let sc = alloy_ui_platform::shortcut::Shortcut::parse(keys)
+            .unwrap_or_else(|| panic!("bad shortcut {keys:?}"));
+        let key = match sc.key.as_str() {
+            "enter" | "Enter" => Key::Enter,
+            k => Key::Character(k.into()),
+        };
+        self.rt.handle_event(&Event::KeyPressed(key, sc.mods));
+        self
+    }
+    /// Let `ms` milliseconds pass: animations and toasts progress.
+    pub fn advance(&mut self, ms: u64) -> &mut Self {
+        self.now += ms;
+        self.rt.handle_event(&Event::Tick(self.now));
         self
     }
     /// The current frame's draw commands, for renderers and benchmarks.

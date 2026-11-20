@@ -23,6 +23,8 @@ fn main() {
             browse_of(&notes)
                 .foot(|n| caption(format!("{} words", n.body.split_whitespace().count())))
         })
+        .shortcut_as("mod+s", "Save", || toast("Saved"))
+        .undoable()
         .theme_page()
         .persist()
         .run()

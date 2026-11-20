@@ -341,3 +341,16 @@ of the running mode live (the same as the iced one after the `elapsed` change); 
 filter and hidden-file toggle behave as in iced, and its query also clears when you go up a folder.
 `crates/alloy/tests/audit_apps.rs` covers all four, `tests/ergonomics.rs` the new API. iced
 versions compiled in a scratch crate, not run in a window. Nothing run on macOS or Windows.
+
+### Pass 7: shortcuts, toasts and undo (notes)
+
+`notes.rs` gained `mod+s` (Save toast), `mod+n` (New, from `browse_of`), delete with an Undo toast
+instead of a confirmation, and `mod+z` / `mod+shift+z`, in two extra lines
+(`.shortcut_as("mod+s", "Save", || toast("Saved"))` and `.undoable()`), so 26 becomes 28 lines.
+The iced side, `loc/iced/notes_pro.rs.txt`, is the same notes app plus a keyboard subscription,
+snapshot history, a toast list with a timer subscription, and a `stack` overlay: 377 becomes 472
+lines (16.9x). That iced file is **not compiled** (written from the iced 0.14 API, no fades or
+slides, which Alloy's toasts have), so treat 16.9x as an estimate. The block-app ratio rises only
+because the features are free in Alloy; ordinary apps do not change. Verified on Linux by headless
+tests (`tests/keys.rs`); the macOS menu path is compiled only, and no native menu backend exists
+yet, so on Linux shortcuts go through the shell's own matching.
