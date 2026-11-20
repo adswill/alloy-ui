@@ -1013,3 +1013,54 @@ fn offscreen_list_rows_are_not_drawn() {
     let n = h.draw().0.len();
     assert!(n < 40, "drew {n} commands for a 100px viewport");
 }
+
+#[test]
+fn text_input_undo_redo_round_trip() {
+    let ui = ui();
+    let mk = |ui: &Ui, v: &str| TextInput::new(ui, 7, v).on_input(Msg::Text).into_element();
+    let mut h = Harness::new(&ui, mk(&ui, "ab"), 300.0, 40.0);
+    h.click(290.0, 20.0);
+    assert_eq!(typing(&mut h, "c"), vec![Msg::Text("abc".into())]);
+    let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
+    assert_eq!(h.key(Key::Backspace), vec![Msg::Text("ab".into())]);
+    let ctrl = Modifiers {
+        ctrl: true,
+        ..Default::default()
+    };
+    let z = Key::Character("z".into());
+    // app accepted "ab"; undo restores "abc", redo goes back
+    let mut h = Harness::new(&ui, mk(&ui, "ab"), 300.0, 40.0);
+    assert_eq!(
+        h.send(Event::KeyPressed(z.clone(), ctrl)),
+        vec![Msg::Text("abc".into())]
+    );
+    let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
+    let shift = Modifiers {
+        ctrl: true,
+        shift: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        h.send(Event::KeyPressed(z, shift)),
+        vec![Msg::Text("ab".into())]
+    );
+}
+
+#[test]
+fn editor_undo_restores_deleted_line() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, editor(&ui, "ab\ncd"), 300.0, 200.0);
+    h.click(290.0, 8.0);
+    h.key(Key::Named("ArrowDown".into()));
+    h.key(Key::Named("Home".into()));
+    assert_eq!(h.key(Key::Backspace), vec![Msg::Text("abcd".into())]);
+    let mut h = Harness::new(&ui, editor(&ui, "abcd"), 300.0, 200.0);
+    let m = Modifiers {
+        logo: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        h.send(Event::KeyPressed(Key::Character("z".into()), m)),
+        vec![Msg::Text("ab\ncd".into())]
+    );
+}

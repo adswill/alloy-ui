@@ -1,13 +1,13 @@
 //! Single-line text field with selection, clipboard and IME preedit.
 
 use crate::{
-    text_edit::{apply_key, sanitize, KeyOutcome},
+    text_edit::{apply_key, history_key, sanitize, Edit, KeyOutcome},
     ui::Ui,
     util::{self, focus_ring},
 };
 use alloy_ui_core::{
-    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point,
-    Rectangle, Size, Widget,
+    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, Modifiers,
+    MouseButton, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
 
@@ -89,9 +89,29 @@ impl<M: 'static> TextInput<M> {
         }
         best.0
     }
-    fn commit(&self, new: String, out: &mut Vec<M>) {
+    /// Emit `new` as an edit, remembering the old state for undo.
+    fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
+        let now = self.ui.now();
+        self.ui
+            .with_history(self.id, |h| h.record(&self.value, caret_before, &new, now));
         if let Some(f) = &self.on_input {
             out.push(f(new));
+        }
+    }
+    /// Undo/redo shortcut; returns true when the key was one.
+    fn history(&self, e: &mut Edit, k: &Key, m: &Modifiers, out: &mut Vec<M>) -> bool {
+        let Some(f) = &self.on_input else {
+            return false;
+        };
+        match self
+            .ui
+            .with_history(self.id, |h| history_key(e, h, &self.value, k, m))
+        {
+            Some(v) => {
+                out.push(f(v));
+                true
+            }
+            None => false,
         }
     }
 }
@@ -115,6 +135,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let len = self.value.chars().count();
         let mut e = self.ui.edit(self.id);
         e.clamp(len);
+        let caret0 = e.caret;
         let editable = self.on_input.is_some();
         let key = util::key_of(&b);
         let consumed = match event {
@@ -141,7 +162,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                 let clean = sanitize(s, false);
                 if editable && !clean.is_empty() {
                     let v = e.insert(&self.value, &clean);
-                    self.commit(v, out);
+                    self.commit(v, caret0, out);
                 }
                 true
             }
@@ -157,6 +178,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                     self.ui.set_focus(None);
                     true
                 }
+                Key::Character(_) if editable && self.history(&mut e, k, m, out) => true,
                 _ => match apply_key(
                     &mut e,
                     &self.value,
@@ -169,7 +191,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                     KeyOutcome::Ignored => false,
                     KeyOutcome::Handled => true,
                     KeyOutcome::Changed(v) => {
-                        self.commit(v, out);
+                        self.commit(v, caret0, out);
                         true
                     }
                 },

@@ -1,6 +1,9 @@
 //! Persistent UI state shared by widgets, text metrics and the clipboard seam.
 
-use crate::{text_edit::Edit, util};
+use crate::{
+    text_edit::{Edit, History},
+    util,
+};
 use alloy_ui_core::{
     DrawCommand, DrawList, Element, Event, Key, Layout, Point, Rectangle, Size, Widget,
 };
@@ -76,6 +79,7 @@ struct Inner {
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
     clip: Option<Rectangle>,
+    histories: HashMap<u64, History>,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -133,6 +137,7 @@ impl Ui {
             regions: Vec::new(),
             hit: None,
             clip: None,
+            histories: HashMap::new(),
         })))
     }
 
@@ -361,6 +366,11 @@ impl Ui {
     /// Open the popup of `id`, or close any popup with `None`.
     pub fn set_popup(&self, id: Option<u64>) {
         self.0.borrow_mut().popup = id;
+    }
+
+    /// Run `f` on the undo history of text field `id`. `f` must not call back into `Ui`.
+    pub(crate) fn with_history<R>(&self, id: u64, f: impl FnOnce(&mut History) -> R) -> R {
+        f(self.0.borrow_mut().histories.entry(id).or_default())
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {

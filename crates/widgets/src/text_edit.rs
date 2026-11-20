@@ -191,6 +191,78 @@ pub(crate) fn sanitize(text: &str, multiline: bool) -> String {
         .collect()
 }
 
+/// Undo/redo stack of one text field. Runs of single-character typing within
+/// a second collapse into one step, so Ctrl+Z removes a burst, not a letter.
+#[derive(Debug, Default)]
+pub(crate) struct History {
+    undo: Vec<(String, usize)>,
+    redo: Vec<(String, usize)>,
+    last_ms: u64,
+    typing: bool,
+}
+
+impl History {
+    const LIMIT: usize = 200;
+
+    /// Note that `before` (with the caret at `caret`) became `after` at time `now`.
+    pub(crate) fn record(&mut self, before: &str, caret: usize, after: &str, now: u64) {
+        let typing = after.chars().count() == before.chars().count() + 1;
+        let merge = typing
+            && self.typing
+            && !self.undo.is_empty()
+            && now.saturating_sub(self.last_ms) < 1000;
+        if !merge {
+            self.undo.push((before.to_owned(), caret));
+            if self.undo.len() > Self::LIMIT {
+                self.undo.remove(0);
+            }
+        }
+        self.redo.clear();
+        self.typing = typing;
+        self.last_ms = now;
+    }
+    fn undo(&mut self, current: &str, caret: usize) -> Option<(String, usize)> {
+        let prev = self.undo.pop()?;
+        self.redo.push((current.to_owned(), caret));
+        self.typing = false;
+        Some(prev)
+    }
+    fn redo(&mut self, current: &str, caret: usize) -> Option<(String, usize)> {
+        let next = self.redo.pop()?;
+        self.undo.push((current.to_owned(), caret));
+        self.typing = false;
+        Some(next)
+    }
+}
+
+/// Ctrl/Cmd+Z undoes, Shift+Ctrl/Cmd+Z and Ctrl+Y redo. Returns the value to
+/// switch to, with the caret already placed.
+pub(crate) fn history_key(
+    e: &mut Edit,
+    h: &mut History,
+    value: &str,
+    key: &Key,
+    m: &Modifiers,
+) -> Option<String> {
+    let Key::Character(c) = key else {
+        return None;
+    };
+    if !(m.ctrl || m.logo) {
+        return None;
+    }
+    let step = match c.to_lowercase().as_str() {
+        "z" if m.shift => h.redo(value, e.caret),
+        "z" => h.undo(value, e.caret),
+        "y" if m.ctrl && !m.logo => h.redo(value, e.caret),
+        _ => return None,
+    };
+    // A key that is undo/redo but has nothing to do still counts as handled.
+    let (v, caret) = step.unwrap_or_else(|| (value.to_owned(), e.caret));
+    e.caret = caret.min(v.chars().count());
+    e.anchor = e.caret;
+    Some(v)
+}
+
 /// Split `value` into lines (a trailing newline yields a final empty line).
 pub fn split_lines(value: &str) -> Vec<String> {
     value.split('\n').map(str::to_owned).collect()
@@ -298,6 +370,51 @@ mod tests {
         }
         assert_eq!(index_of(&lines, 0, 50), 2, "column clamps to line length");
         assert_eq!(index_of(&lines, 9, 0), 4, "line clamps to the last");
+    }
+    #[test]
+    fn history_undo_redo_and_typing_coalesce() {
+        let mut h = History::default();
+        let mut e = Edit::default();
+        h.record("", 0, "a", 100);
+        h.record("a", 1, "ab", 200); // merged with the first
+        h.record("ab", 2, "ab ", 300);
+        h.record("ab ", 3, "", 5000); // a deletion is its own step
+        let ctrl = Modifiers {
+            ctrl: true,
+            ..Default::default()
+        };
+        let z = Key::Character("z".into());
+        assert_eq!(
+            history_key(&mut e, &mut h, "", &z, &ctrl).as_deref(),
+            Some("ab ")
+        );
+        assert_eq!(e.caret, 3);
+        assert_eq!(
+            history_key(&mut e, &mut h, "ab ", &z, &ctrl).as_deref(),
+            Some("")
+        );
+        let shift = Modifiers {
+            ctrl: true,
+            shift: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            history_key(&mut e, &mut h, "", &z, &shift).as_deref(),
+            Some("ab ")
+        );
+        let y = Key::Character("y".into());
+        assert_eq!(
+            history_key(&mut e, &mut h, "ab ", &y, &ctrl).as_deref(),
+            Some("")
+        );
+        // nothing left to redo: still "handled", value unchanged
+        assert_eq!(
+            history_key(&mut e, &mut h, "", &y, &ctrl).as_deref(),
+            Some("")
+        );
+        // a new edit clears redo
+        h.record("", 0, "q", 9000);
+        assert!(h.redo.is_empty());
     }
     #[test]
     fn word_moves() {
