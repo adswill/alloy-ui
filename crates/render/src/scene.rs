@@ -157,7 +157,41 @@ pub(crate) fn flatten(
                 source: Source::Image(*id),
                 clip,
             }),
+            DrawCommand::Line {
+                from,
+                to,
+                width: stroke,
+                color,
+            } => {
+                // A stroke is a chain of round dots spaced under half a pixel apart.
+                let (dx, dy) = ((to.x - from.x) * scale, (to.y - from.y) * scale);
+                let len = (dx * dx + dy * dy).sqrt();
+                let steps = (len * 2.0).ceil().max(1.0) as u32;
+                let d = (stroke * scale).max(1.0);
+                for i in 0..=steps {
+                    let t = i as f32 / steps as f32;
+                    out.push(Prim {
+                        kind: Kind::Quad,
+                        rect: [
+                            from.x * scale + dx * t - d / 2.0,
+                            from.y * scale + dy * t - d / 2.0,
+                            d,
+                            d,
+                        ],
+                        pad: 1.0,
+                        radius: d / 2.0,
+                        border_w: 0.0,
+                        color: rgba(*color),
+                        border_color: rgba(*color),
+                        blur: 0.0,
+                        source: Source::None,
+                        clip,
+                    });
+                }
+            }
             DrawCommand::Text {
+                weight: _,
+                line_height: _,
                 origin,
                 content,
                 size,
