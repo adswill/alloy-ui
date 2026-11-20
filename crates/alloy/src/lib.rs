@@ -27,13 +27,17 @@
 #![warn(missing_docs)]
 
 mod app;
+mod blocks;
 mod chart;
 mod cx;
 mod dsl;
+mod persist;
+mod records;
 pub mod testing;
 pub mod view;
 
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
+pub use blocks::{field, local, shell, table, theme_switch, Local, Table};
 pub use chart::bars;
 pub use cx::{palette, set_dark, theme, ui};
 pub use dsl::{
@@ -41,14 +45,16 @@ pub use dsl::{
     progress, radio, rule, scroll, section, slider, space, tabs, text, toggle, Act, Choice,
     Variant,
 };
+pub use records::{crud, records, FieldInfo, Kind, Record, Records, Value};
 pub use view::{col, row, Boxed, Flex, Node, View};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::{
-        bars, button, caption, check, choose, custom, editor, every, gap, heading, input, nav,
-        options, palette, pick, progress, radio, rule, scroll, secs, section, set_dark, sketch,
-        slider, space, tabs, text, toggle, Act, App, Choice, Cmd, Node, View,
+        bars, button, caption, check, choose, crud, custom, editor, every, field, gap, heading,
+        input, local, nav, options, palette, pick, progress, radio, records, rule, scroll, secs,
+        section, set_dark, shell, sketch, slider, space, table, tabs, text, theme_switch, toggle,
+        Act, App, Choice, Cmd, Local, Node, Record, Records, View,
     };
     pub use crate::{col, row};
     pub use alloy_ui_core::Color;

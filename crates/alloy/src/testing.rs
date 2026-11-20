@@ -65,6 +65,13 @@ impl<A: App> Harness<A> {
     pub fn has_text(&self, text: &str) -> bool {
         self.texts().iter().any(|(_, t)| t == text)
     }
+    /// Where the first text equal to `text` is drawn.
+    pub fn position(&self, text: &str) -> Option<Point> {
+        self.texts()
+            .into_iter()
+            .find(|(_, t)| t == text)
+            .map(|(p, _)| p)
+    }
     /// Click the first widget showing exactly `text`. Panics if there is none.
     pub fn click(&mut self, text: &str) -> &mut Self {
         let (p, _) = self

@@ -1,0 +1,339 @@
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, slider, space, text,
+    text_input,
+};
+use iced::{Element, Fill, Theme};
+use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
+
+const ROLES: [&str; 4] = ["Engineer", "Designer", "Manager", "Support"];
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+enum Page {
+    People,
+    Settings,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Column {
+    Name,
+    Role,
+    Salary,
+    Status,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct Person {
+    name: String,
+    email: String,
+    role: usize,
+    salary: f32,
+    active: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct Saved {
+    page: Page,
+    people: Vec<Person>,
+    sel: Option<usize>,
+}
+
+struct Admin {
+    saved: Saved,
+    dark: bool,
+    query: String,
+    sort: Option<(Column, bool)>,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Page(Page),
+    Query(String),
+    Sort(Column),
+    Select(usize),
+    Delete(usize),
+    Add,
+    Name(String),
+    Email(String),
+    Role(&'static str),
+    Salary(f32),
+    Active(bool),
+    Dark(bool),
+}
+
+fn path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_default()
+        .join("iced-admin")
+        .join("state.json")
+}
+
+fn person(name: &str, role: usize, salary: f32, active: bool) -> Person {
+    Person {
+        name: name.into(),
+        email: format!("{}@acme.dev", name.to_lowercase().replace(' ', ".")),
+        role,
+        salary,
+        active,
+    }
+}
+
+impl Admin {
+    fn new() -> Self {
+        let saved = std::fs::read(path())
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+            .unwrap_or_else(|| Saved {
+                page: Page::People,
+                people: vec![
+                    person("Ada Lovelace", 0, 150.0, true),
+                    person("Grace Hopper", 2, 170.0, true),
+                    person("Linus Pauling", 3, 90.0, false),
+                    person("Dieter Rams", 1, 120.0, true),
+                ],
+                sel: None,
+            });
+        Self {
+            saved,
+            dark: false,
+            query: String::new(),
+            sort: None,
+        }
+    }
+
+    fn save(&self) {
+        if let Ok(json) = serde_json::to_vec_pretty(&self.saved) {
+            let path = path();
+            let _ = std::fs::create_dir_all(path.parent().unwrap());
+            let _ = std::fs::write(path, json);
+        }
+    }
+
+    fn selected(&mut self) -> Option<&mut Person> {
+        let i = self.saved.sel?;
+        self.saved.people.get_mut(i)
+    }
+
+    /// Indices of the rows to show, filtered and sorted.
+    fn visible(&self) -> Vec<usize> {
+        let q = self.query.to_lowercase();
+        let mut rows: Vec<usize> = (0..self.saved.people.len())
+            .filter(|&i| {
+                let p = &self.saved.people[i];
+                q.is_empty()
+                    || p.name.to_lowercase().contains(&q)
+                    || ROLES[p.role].to_lowercase().contains(&q)
+            })
+            .collect();
+        if let Some((col, desc)) = self.sort {
+            let p = &self.saved.people;
+            rows.sort_by(|&a, &b| {
+                let o = match col {
+                    Column::Name => p[a].name.to_lowercase().cmp(&p[b].name.to_lowercase()),
+                    Column::Role => p[a].role.cmp(&p[b].role),
+                    Column::Salary => p[a].salary.total_cmp(&p[b].salary),
+                    Column::Status => p[a].active.cmp(&p[b].active),
+                };
+                if desc {
+                    o.reverse()
+                } else {
+                    o
+                }
+            });
+        }
+        rows
+    }
+}
+
+fn update(s: &mut Admin, message: Message) {
+    match message {
+        Message::Page(p) => s.saved.page = p,
+        Message::Query(q) => s.query = q,
+        Message::Sort(c) => {
+            s.sort = match s.sort {
+                Some((o, false)) if o == c => Some((c, true)),
+                Some((o, true)) if o == c => None,
+                _ => Some((c, false)),
+            }
+        }
+        Message::Select(i) => s.saved.sel = Some(i),
+        Message::Delete(i) => {
+            s.saved.people.remove(i);
+            s.saved.sel = None;
+        }
+        Message::Add => {
+            s.saved.people.push(person("New person", 0, 80.0, true));
+            s.saved.people.last_mut().unwrap().email.clear();
+            s.saved.sel = Some(s.saved.people.len() - 1);
+        }
+        Message::Name(v) => s.selected().unwrap().name = v,
+        Message::Email(v) => s.selected().unwrap().email = v,
+        Message::Role(v) => {
+            s.selected().unwrap().role = ROLES.iter().position(|r| *r == v).unwrap();
+        }
+        Message::Salary(v) => s.selected().unwrap().salary = v,
+        Message::Active(v) => s.selected().unwrap().active = v,
+        Message::Dark(v) => s.dark = v,
+    }
+    s.save();
+}
+
+fn field<'a>(
+    label: &'a str,
+    body: impl Into<Element<'a, Message>>,
+    error: Option<&'a str>,
+) -> Element<'a, Message> {
+    let mut f = column![text(label).size(12), body.into()].spacing(4);
+    if let Some(e) = error {
+        f = f.push(text(e).size(12).style(text::danger));
+    }
+    f.into()
+}
+
+fn header<'a>(s: &Admin, label: &'static str, col: Column, width: iced::Length) -> Element<'a, Message> {
+    let arrow = match s.sort {
+        Some((c, false)) if c == col => " \u{2191}",
+        Some((c, true)) if c == col => " \u{2193}",
+        _ => "",
+    };
+    button(text(format!("{label}{arrow}")))
+        .on_press(Message::Sort(col))
+        .style(button::text)
+        .width(width)
+        .into()
+}
+
+fn people_page(s: &Admin) -> Element<'_, Message> {
+    let people = &s.saved.people;
+    let widths = [Fill, iced::Length::Fixed(96.0), iced::Length::Fixed(96.0), iced::Length::Fixed(96.0)];
+    let head = row![
+        header(s, "Name", Column::Name, widths[0]),
+        header(s, "Role", Column::Role, widths[1]),
+        header(s, "Salary", Column::Salary, widths[2]),
+        header(s, "Status", Column::Status, widths[3]),
+        space().width(76),
+    ];
+    let rows = s.visible().into_iter().map(|i| {
+        let p = &people[i];
+        let line = row![
+            text(&p.name).width(widths[0]),
+            text(ROLES[p.role]).width(widths[1]),
+            text(format!("${:.0}k", p.salary)).width(widths[2]),
+            text(if p.active { "Active" } else { "Away" }).width(widths[3]),
+            button("Delete").on_press(Message::Delete(i)).style(button::text),
+        ]
+        .align_y(iced::Center);
+        button(line)
+            .on_press(Message::Select(i))
+            .width(Fill)
+            .style(if s.saved.sel == Some(i) {
+                button::secondary
+            } else {
+                button::text
+            })
+            .into()
+    });
+    let table = column![head, scrollable(column(rows)).height(Fill)].width(Fill);
+
+    let detail = s.saved.sel.and_then(|i| people.get(i)).map(|p| {
+        container(
+            column![
+                text(&p.name).size(24),
+                field(
+                    "Name",
+                    text_input("", &p.name).on_input(Message::Name),
+                    p.name.is_empty().then_some("Required"),
+                ),
+                field(
+                    "Email",
+                    text_input("", &p.email).on_input(Message::Email),
+                    (!p.email.contains('@')).then_some("Enter a valid email"),
+                ),
+                field(
+                    "Role",
+                    pick_list(ROLES, Some(ROLES[p.role]), Message::Role),
+                    None,
+                ),
+                field(
+                    "Salary",
+                    slider(40.0..=200.0, p.salary, Message::Salary).step(5.0_f32),
+                    None,
+                ),
+                checkbox(p.active).label("Active").on_toggle(Message::Active),
+            ]
+            .spacing(14),
+        )
+        .padding(20)
+        .width(300)
+        .style(container::bordered_box)
+    });
+
+    column![
+        row![
+            text("People").size(24),
+            space().width(Fill),
+            text_input("Search", &s.query)
+                .on_input(Message::Query)
+                .width(220),
+            button("Add person").on_press(Message::Add),
+        ]
+        .spacing(12)
+        .align_y(iced::Center),
+        row![table].push(detail).spacing(16).height(Fill),
+    ]
+    .spacing(16)
+    .padding(24)
+    .into()
+}
+
+fn settings_page(s: &Admin) -> Element<'_, Message> {
+    let mode = |label, dark| {
+        button(label)
+            .on_press(Message::Dark(dark))
+            .style(if s.dark == dark {
+                button::secondary
+            } else {
+                button::text
+            })
+    };
+    column![
+        text("Settings").size(24),
+        column![text("Theme").size(12), row![mode("Light", false), mode("Dark", true)]].spacing(8),
+    ]
+    .spacing(20)
+    .padding(28)
+    .into()
+}
+
+fn view(s: &Admin) -> Element<'_, Message> {
+    let page = |label, p| {
+        button(label)
+            .on_press(Message::Page(p))
+            .width(Fill)
+            .style(if s.saved.page == p {
+                button::secondary
+            } else {
+                button::text
+            })
+    };
+    let nav = container(
+        column![page("People", Page::People), page("Settings", Page::Settings)].spacing(2),
+    )
+    .padding(12)
+    .width(170)
+    .height(Fill)
+    .style(container::rounded_box);
+    let body = match s.saved.page {
+        Page::People => people_page(s),
+        Page::Settings => settings_page(s),
+    };
+    row![nav, body].into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Admin::new, update, view)
+        .title("Admin")
+        .theme(|s: &Admin| if s.dark { Theme::Dark } else { Theme::Light })
+        .window_size((1200.0, 560.0))
+        .run()
+}

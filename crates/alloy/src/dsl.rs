@@ -289,6 +289,14 @@ macro_rules! value_widget {
             ) -> Self {
                 self.on(set_via(lens))
             }
+            /// Write the value into a [`Local`](crate::Local) view-state cell.
+            pub fn local(self, cell: &$crate::Local<$ty>) -> Self {
+                let cell = cell.clone();
+                self.on(move |v| {
+                    let cell = cell.clone();
+                    Act::new(move |_| cell.set(v.clone()))
+                })
+            }
         }
     };
 }

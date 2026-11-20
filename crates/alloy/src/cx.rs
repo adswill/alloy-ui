@@ -82,3 +82,26 @@ pub(crate) fn auto_id(salt: u64) -> u64 {
     // The top bit keeps generated ids clear of the small integers people pick by hand.
     (site.wrapping_add(n.wrapping_mul(0x9E37_79B9_7F4A_7C15))) | (1 << 63)
 }
+
+thread_local! {
+    static SLOTS: RefCell<HashMap<u64, Box<dyn std::any::Any>>> = RefCell::new(HashMap::new());
+}
+
+/// The persistent value stored for `id`, created with `init` the first time.
+pub(crate) fn slot<T: Send + 'static>(
+    id: u64,
+    init: impl FnOnce() -> T,
+) -> std::sync::Arc<std::sync::Mutex<T>> {
+    SLOTS.with(|s| {
+        let mut s = s.borrow_mut();
+        if let Some(v) = s
+            .get(&id)
+            .and_then(|b| b.downcast_ref::<std::sync::Arc<std::sync::Mutex<T>>>())
+        {
+            return v.clone();
+        }
+        let v = std::sync::Arc::new(std::sync::Mutex::new(init()));
+        s.insert(id, Box::new(v.clone()));
+        v
+    })
+}

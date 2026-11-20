@@ -43,6 +43,7 @@ pub struct Table<M> {
     rows: Vec<Vec<Element<M>>>,
     selected: Option<usize>,
     on_select: Box<dyn Fn(usize) -> M>,
+    header: Option<Vec<Element<M>>>,
 }
 
 impl<M: 'static> Table<M> {
@@ -61,6 +62,7 @@ impl<M: 'static> Table<M> {
             rows: Vec::new(),
             selected: None,
             on_select: Box::new(on_select),
+            header: None,
         }
     }
     /// Add a row; missing cells render empty, extra cells are dropped.
@@ -71,6 +73,12 @@ impl<M: 'static> Table<M> {
     /// Highlight a row.
     pub fn selected(mut self, index: Option<usize>) -> Self {
         self.selected = index;
+        self
+    }
+    /// Replace the plain text header with custom cells (for example sort buttons),
+    /// one per column, laid out with the column widths.
+    pub fn header_cells(mut self, cells: Vec<Element<M>>) -> Self {
+        self.header = Some(cells);
         self
     }
     fn line(ui: &Ui, columns: &[TableColumn], cells: Vec<Element<M>>) -> Element<M> {
@@ -89,6 +97,7 @@ impl<M: 'static> Table<M> {
             .collect();
         Row::new(cols)
             .spacing(ui.theme().spacing.md)
+            .align(Align::Center)
             .width(Length::Fill(1))
             .into_element()
     }
@@ -99,15 +108,17 @@ impl<M: 'static> Table<M> {
         let header = Self::line(
             &self.ui,
             &self.columns,
-            self.columns
-                .iter()
-                .map(|c| {
-                    Text::new(&self.ui, c.title.clone())
-                        .role(TextRole::Label)
-                        .secondary()
-                        .into_element()
-                })
-                .collect(),
+            self.header.unwrap_or_else(|| {
+                self.columns
+                    .iter()
+                    .map(|c| {
+                        Text::new(&self.ui, c.title.clone())
+                            .role(TextRole::Label)
+                            .secondary()
+                            .into_element()
+                    })
+                    .collect()
+            }),
         );
         let columns = self.columns;
         let ui = self.ui.clone();

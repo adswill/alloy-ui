@@ -166,15 +166,36 @@ impl<A: App> Application for Shell<A> {
     }
 }
 
+type Saver<S> = Box<dyn Fn(&S)>;
+
 /// An app with no message type: state plus a view whose handlers mutate it
 /// directly (`button("+").act(|n| *n += 1)`). Made by [`sketch`].
 pub struct Sketch<S: 'static, V> {
     state: S,
     view: V,
     tick: Option<(Duration, Act<S>)>,
+    save: Option<Saver<S>>,
 }
 
 impl<S: 'static, V> Sketch<S, V> {
+    /// Keep the state between runs: load it from the user's config directory
+    /// now (keeping the initial value if there is none) and save it after
+    /// every change. `name` picks the file, usually your app's name.
+    pub fn persist(mut self, name: &str) -> Self
+    where
+        S: serde::Serialize + serde::de::DeserializeOwned,
+    {
+        let path = crate::persist::path(name);
+        if let Some(s) = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+        {
+            self.state = s;
+        }
+        self.save = Some(Box::new(move |s| crate::persist::write(&path, s)));
+        self
+    }
+
     /// Run `f` on the state every `period`, for as long as the app runs.
     pub fn tick(mut self, period: Duration, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         self.tick = Some((period, Act::new(f)));
@@ -200,6 +221,7 @@ where
         state,
         view,
         tick: None,
+        save: None,
     }
 }
 
@@ -213,6 +235,9 @@ where
 
     fn update(&mut self, m: Act<S>) {
         (m.0)(&mut self.state);
+        if let Some(save) = &self.save {
+            save(&self.state);
+        }
     }
 
     fn view(&self) -> impl View<Act<S>> {

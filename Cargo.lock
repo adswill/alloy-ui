@@ -44,11 +44,14 @@ dependencies = [
  "alloy-ui-core",
  "alloy-ui-ipc",
  "alloy-ui-layout",
+ "alloy-ui-macros",
  "alloy-ui-platform",
  "alloy-ui-render",
  "alloy-ui-theme",
  "alloy-ui-widgets",
  "log",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -107,6 +110,15 @@ name = "alloy-ui-layout"
 version = "0.0.1"
 dependencies = [
  "alloy-ui-core",
+]
+
+[[package]]
+name = "alloy-ui-macros"
+version = "0.0.1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

@@ -92,3 +92,34 @@ What this does and does not say:
   widgets, and the numbers include it.
 - Elm style (`App` trait with a `Msg` enum) costs more: the counter is 37 lines (`counter_elm`).
   The closure style is the short path; both are typed.
+
+### Bigger app: CRUD admin panel (pass 2)
+
+Small demos cannot show a 10x gap because most of their lines are app logic. A realistic admin
+panel has a lot of UI plumbing that iced makes you hand-write. The app: sidebar with two pages;
+people table with search, sortable headers (text and numeric), row selection and per-row delete;
+add button; edit form for the selected person (text, email with validation, drop-down, slider,
+checkbox, "Required" and "Enter a valid email" messages); settings page with a Light/Dark switch;
+people, selection and page persisted to JSON in the config directory. The iced version
+(`loc/iced/admin.rs.txt`, 316 lines) was compiled with `iced = "0.14"` plus `serde_json` and `dirs`.
+
+| Alloy version | what it uses | Alloy lines | vs iced 316 (lines) | tokens |
+|---|---|---|---|---|
+| `admin_manual.rs` | `table`, `field`, `local`, `persist` only (no derive) | 156 | 2.0x | 2.2x |
+| `admin.rs` | `#[derive(Record)]`, `records()`, `shell`, `theme_switch`, `persist` | 48 | **6.6x** | **6.7x** |
+| `crud.rs` | `crud(title, rows)`: whole app is one struct plus one call | 18 | 17.6x | 19x |
+
+Read these honestly:
+
+- The 6.6x row is the same app feature for feature. It is not 10x: 48 lines remain (the struct
+  with its form attributes, the page enum and the `view` that picks a page, seed data).
+- The 17.6x row compares a CRUD-only app (no sidebar or settings page) against the full 316-line
+  iced app, so it flatters Alloy; against the roughly 270 lines of iced that implement the CRUD
+  part alone it is about 15x. It says what happens when an app is mostly a record editor.
+- The gap comes from the data-shaped blocks: one derive replaces the per-field form, validation,
+  message variants and update arms (iced needs a `Message` variant and an update arm per field);
+  `table` replaces header buttons, sort state, filtering and row buttons.
+- An iced user could write the same generic helper once. Alloy ships it, tested and styled.
+- Visuals differ, and the iced version was not tuned for looks.
+- Not measured: runtime performance of the table (it re-sorts every frame; fine for thousands of
+  rows, not for hundreds of thousands) and Windows/macOS rendering (CI is the source of truth).

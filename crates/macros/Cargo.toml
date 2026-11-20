@@ -1,0 +1,16 @@
+[package]
+name = "alloy-ui-macros"
+description = "Derive macros for Alloy: #[derive(Record)] turns a struct into a table row and an edit form"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "2"
+quote = "1"
+proc-macro2 = "1"
