@@ -67,13 +67,19 @@ impl<M: 'static> Widget<M> for Row<M> {
             _ => false,
         }
     }
+    fn animating(&self) -> bool {
+        util::any_animating(&self.child)
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let t = self.ui.theme();
         let b = layout.bounds;
+        let hot = self
+            .ui
+            .ease(Ui::anim_key(&b, 1), self.ui.hovered(&b) as u8 as f32);
         let fill = if self.selected {
             Some(t.palette.selection)
-        } else if self.ui.hovered(&b) {
-            Some(t.palette.surface)
+        } else if hot > 0.0 {
+            Some(t.palette.surface.with_alpha(hot))
         } else {
             None
         };

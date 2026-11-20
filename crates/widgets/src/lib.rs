@@ -18,12 +18,17 @@ mod button;
 mod checkbox;
 mod container;
 mod flex;
+mod image;
 mod list;
+mod pick_list;
+mod progress;
 mod scrollable;
 mod slider;
 mod text;
 mod text_edit;
 mod text_input;
+mod toggle;
+mod tooltip;
 mod ui;
 mod util;
 
@@ -31,11 +36,31 @@ pub use button::{Button, Variant};
 pub use checkbox::Checkbox;
 pub use container::Container;
 pub use flex::{Column, Row};
+pub use image::Image;
 pub use list::List;
+pub use pick_list::PickList;
+pub use progress::ProgressBar;
 pub use scrollable::Scrollable;
 pub use slider::Slider;
 pub use text::{Text, TextRole};
 pub use text_edit::Edit;
 pub use text_input::TextInput;
+pub use toggle::Toggle;
+pub use tooltip::Tooltip;
 pub use ui::{ApproxMetrics, Clipboard, MemoryClipboard, Root, TextMetrics, Ui};
 pub use util::arrange_widget;
+
+/// Lay out a view tree at window size `size`: the `Layouter` the runtime needs.
+///
+/// ```ignore
+/// alloy_ui::run(settings, app, alloy_ui_widgets::layout::<Message>)
+/// ```
+pub fn layout<M: 'static>(
+    root: &alloy_ui_core::Element<M>,
+    size: alloy_ui_core::Size,
+) -> alloy_ui_core::Layout {
+    arrange_widget(
+        root.0.as_ref(),
+        alloy_ui_core::Rectangle::new(alloy_ui_core::Point::default(), size),
+    )
+}

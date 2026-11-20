@@ -14,3 +14,6 @@ workspace = true
 alloy-ui-core.workspace = true
 alloy-ui-layout.workspace = true
 alloy-ui-theme.workspace = true
+
+[dev-dependencies]
+alloy-ui-render = { workspace = true }

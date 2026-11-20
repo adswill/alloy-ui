@@ -256,8 +256,15 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             }
             _ => false,
         };
+        if consumed {
+            e.blink_epoch = self.ui.now();
+        }
         self.ui.set_edit(self.id, e);
         consumed
+    }
+    fn animating(&self) -> bool {
+        // Only a focused, editable field blinks; everything else idles.
+        self.on_input.is_some() && self.ui.is_focused(Some(self.id))
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let t = self.ui.theme();
@@ -296,11 +303,12 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             },
             radius: t.radii.medium,
             border: Some(Border {
-                color: if focused || hover {
-                    p.border_strong
-                } else {
-                    p.border
-                },
+                color: crate::util::mix(
+                    p.border,
+                    p.border_strong,
+                    self.ui
+                        .ease(Ui::anim_key(&b, 4), (focused || hover) as u8 as f32),
+                ),
                 width: 1.0,
             }),
             shadow: None,
@@ -372,7 +380,8 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                 });
             }
         }
-        if focused && editable {
+        let blink_on = (self.ui.now().saturating_sub(e.blink_epoch) / 530) % 2 == 0;
+        if focused && editable && blink_on {
             out.push(DrawCommand::Quad {
                 bounds: Rectangle::new(Point::new(ox + caret_x, ty), Size::new(1.5, s.line_height)),
                 fill: p.text,

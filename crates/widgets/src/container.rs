@@ -102,6 +102,9 @@ impl<M: 'static> Widget<M> for Container<M> {
     ) -> bool {
         util::dispatch(&mut self.child, event, layout, cursor, out)
     }
+    fn animating(&self) -> bool {
+        util::any_animating(&self.child)
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         if self.background.is_some() || self.border.is_some() || self.shadow.is_some() {
             out.push(DrawCommand::Quad {

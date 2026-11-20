@@ -27,7 +27,7 @@ pub use error::RenderError;
 pub use gpu::GpuContext;
 pub use image::Image;
 pub use offscreen::GpuHeadlessRenderer;
-pub use text::{GlyphBitmap, TextSystem};
+pub use text::{GlyphBitmap, TextMeasurer, TextSystem};
 pub use window::WindowRenderer;
 
 /// Consumes a frame's draw list. Implemented by the wgpu window renderer and

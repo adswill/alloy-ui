@@ -23,12 +23,41 @@ impl<M> Command<M> {
     }
 }
 
-/// A long-lived source of messages (timers, channels, OS events).
+/// A long-lived source of messages. Returned from [`Application::subscription`];
+/// the shell starts and stops sources by diffing their `id`s after every update.
 pub struct Subscription<M> {
-    /// Stable identity so the runtime can diff subscriptions across updates.
+    /// Stable identity: the same id across updates keeps the source running.
     pub id: u64,
-    /// Builds the message stream; real implementation lands in the runtime workstream.
-    pub _marker: std::marker::PhantomData<M>,
+    /// What produces the messages.
+    pub kind: SubscriptionKind<M>,
+}
+
+/// The kinds of message source the shell can run.
+pub enum SubscriptionKind<M> {
+    /// Fire `make()` every `interval_ms` milliseconds.
+    Every {
+        /// Period in milliseconds (clamped to at least 1).
+        interval_ms: u64,
+        /// Builds each message.
+        make: std::sync::Arc<dyn Fn() -> M + Send + Sync>,
+    },
+}
+
+impl<M> Subscription<M> {
+    /// A timer producing `make()` every `interval`.
+    pub fn every(
+        id: u64,
+        interval: std::time::Duration,
+        make: impl Fn() -> M + Send + Sync + 'static,
+    ) -> Self {
+        Subscription {
+            id,
+            kind: SubscriptionKind::Every {
+                interval_ms: (interval.as_millis() as u64).max(1),
+                make: std::sync::Arc::new(make),
+            },
+        }
+    }
 }
 
 /// The Elm-style application contract.
@@ -40,7 +69,7 @@ pub trait Application: Sized {
     fn update(&mut self, message: Self::Message) -> Command<Self::Message>;
     /// Describe the UI for the current state.
     fn view(&self) -> Element<Self::Message>;
-    /// Background event sources for the current state.
+    /// Background event sources for the current state (e.g. timers).
     fn subscription(&self) -> Vec<Subscription<Self::Message>> {
         Vec::new()
     }
@@ -113,6 +142,11 @@ impl<A: Application> Runtime<A> {
         let mut list = crate::draw::DrawList::default();
         self.view.0.draw(&self.layout, &mut list);
         list
+    }
+
+    /// Current subscriptions; the shell diffs them by id.
+    pub fn subscriptions(&self) -> Vec<Subscription<A::Message>> {
+        self.app.subscription()
     }
 
     /// Futures requested by `update` since the last call; the shell spawns them.

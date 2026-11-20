@@ -60,6 +60,11 @@ impl CpuRenderer {
         &mut self.text
     }
 
+    /// A measurement handle sharing this renderer's fonts.
+    pub fn text_measurer(&self) -> crate::TextMeasurer {
+        self.text.measurer()
+    }
+
     /// The image produced by the most recent [`Renderer::render`] call.
     pub fn last_image(&self) -> Option<&Image> {
         self.last.as_ref()
