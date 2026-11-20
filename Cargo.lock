@@ -145,6 +145,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-ui-text-conformance"
+version = "0.0.1"
+dependencies = [
+ "alloy-ui-core",
+ "alloy-ui-theme",
+ "alloy-ui-widgets",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "alloy-ui-theme"
 version = "0.0.1"
 dependencies = [

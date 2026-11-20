@@ -1,0 +1,19 @@
+[package]
+name = "alloy-ui-text-conformance"
+description = "Text input and IME conformance suite for Alloy (not published)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-ui-core.workspace = true
+alloy-ui-widgets.workspace = true
+alloy-ui-theme.workspace = true
+# Test oracle only: UAX #29 grapheme/word segmentation to compare Alloy against.
+unicode-segmentation = "1.12"

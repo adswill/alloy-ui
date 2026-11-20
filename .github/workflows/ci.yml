@@ -29,3 +29,20 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+  text-conformance:
+    # Text input / IME conformance, driven through the real Runtime on every OS.
+    # Known-bug tests are #[ignore]d; the second step lists them without blocking.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Conformance (must pass)
+        run: cargo test -p alloy-ui-text-conformance --release
+      - name: Known bugs (reported, non-blocking)
+        continue-on-error: true
+        run: cargo test -p alloy-ui-text-conformance --release --no-fail-fast -- --ignored
