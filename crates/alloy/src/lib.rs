@@ -111,7 +111,7 @@ where
         Host {
             pending: Some((Box::new(build), size, layouter)),
             runtime: None,
-            renderer: None,
+            renderers: HashMap::new(),
             tasks: TaskRunner::new(move || {
                 task_proxy.wake();
             }),
@@ -162,7 +162,7 @@ type Pending<A> = (Build<A>, Size, Layouter<<A as Application>::Message>);
 struct Host<A: Application> {
     pending: Option<Pending<A>>,
     runtime: Option<Runtime<A>>,
-    renderer: Option<WindowRenderer>,
+    renderers: HashMap<WindowId, WindowRenderer>,
     tasks: TaskRunner<A::Message>,
     proxy: alloy_ui_platform::shell::ShellProxy,
     start: Instant,
@@ -179,8 +179,25 @@ impl<A: Application + 'static> Host<A> {
             ctx.exit();
             return;
         }
-        if outcome.redraw {
-            ctx.request_redraw();
+        if let Some(rt) = self.runtime.as_mut() {
+            for req in rt.take_window_requests() {
+                match req {
+                    WindowRequest::Open(id, spec) => ctx.open_window(
+                        platform::shell::WindowKey(id.0),
+                        WindowSettings {
+                            title: spec.title,
+                            size: spec.size,
+                        },
+                    ),
+                    WindowRequest::Close(id) => {
+                        self.renderers.remove(&id);
+                        ctx.close_window(platform::shell::WindowKey(id.0));
+                    }
+                }
+            }
+            for id in rt.take_dirty() {
+                ctx.request_redraw_of(platform::shell::WindowKey(id.0));
+            }
         }
         if outcome.tick && !self.tick_pending {
             // Animation is active: one short-lived timer thread per frame, so an
@@ -242,7 +259,9 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let size = ctx.logical_size();
         let (w, h) = ctx.physical_size();
         match WindowRenderer::new(ctx.window().clone(), w, h) {
-            Ok(r) => self.renderer = Some(r),
+            Ok(r) => {
+                self.renderers.insert(WindowId::MAIN, r);
+            }
             Err(e) => {
                 log::error!("renderer init failed: {e}");
                 ctx.exit();
@@ -255,7 +274,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             theme::Theme::light()
         };
         let ui = widgets::Ui::new(theme);
-        if let Some(r) = self.renderer.as_ref() {
+        if let Some(r) = self.renderers.get(&WindowId::MAIN) {
             ui.set_metrics(std::rc::Rc::new(MeasurerMetrics(r.text_measurer())));
         }
         ui.set_clipboard(std::rc::Rc::new(OsClipboard(std::cell::RefCell::new(
@@ -275,15 +294,20 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
+        let win = WindowId(ctx.window_key().0);
         let outcome = match event {
+            PlatformEvent::WindowClosed => {
+                self.renderers.remove(&win);
+                rt.window_closed(win)
+            }
             PlatformEvent::Input(Event::Resized(s)) => {
                 let (w, h) = ctx.physical_size();
-                if let Some(r) = self.renderer.as_mut() {
+                if let Some(r) = self.renderers.get_mut(&win) {
                     r.resize(w, h);
                 }
-                rt.handle_event(&Event::Resized(s))
+                rt.handle_window_event(win, &Event::Resized(s))
             }
-            PlatformEvent::Input(e) => rt.handle_event(&e),
+            PlatformEvent::Input(e) => rt.handle_window_event(win, &e),
             PlatformEvent::Wake => {
                 let mut outcome = Outcome::default();
                 if self.tick_due.swap(false, Ordering::AcqRel) {
@@ -313,9 +337,25 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
     }
 
     fn redraw(&mut self, ctx: &mut ShellContext) {
-        let (Some(rt), Some(r)) = (self.runtime.as_ref(), self.renderer.as_mut()) else {
+        let Some(rt) = self.runtime.as_ref() else {
             return;
         };
-        r.render(&rt.draw(), ctx.scale_factor() as f32);
+        let win = WindowId(ctx.window_key().0);
+        if let std::collections::hash_map::Entry::Vacant(slot) = self.renderers.entry(win) {
+            // A window opened by `Command::open_window`: build its surface on first paint.
+            let (w, h) = ctx.physical_size();
+            match WindowRenderer::new(ctx.window().clone(), w, h) {
+                Ok(r) => {
+                    slot.insert(r);
+                }
+                Err(e) => {
+                    log::error!("renderer init failed for {win:?}: {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(r) = self.renderers.get_mut(&win) {
+            r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
+        }
     }
 }
