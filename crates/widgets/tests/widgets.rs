@@ -958,3 +958,42 @@ fn space_pushes_siblings_apart_and_rule_is_one_pixel() {
         Size::new(400.0, 1.0)
     );
 }
+
+#[test]
+fn radio_selects_once_and_ignores_already_selected() {
+    let ui = ui();
+    let mk = |ui: &Ui, sel| {
+        Radio::new(ui, "Dark", sel)
+            .id(50)
+            .on_select(Msg::Clicked)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, false), 200.0, 40.0);
+    assert_eq!(h.click(4.0, 4.0), vec![Msg::Clicked]);
+    assert_eq!(h.key(Key::Character(" ".into())), vec![Msg::Clicked]);
+    let mut h = Harness::new(&ui, mk(&ui, true), 200.0, 40.0);
+    assert!(h.click(4.0, 4.0).is_empty(), "already selected");
+}
+
+#[test]
+fn segmented_click_and_arrow_keys() {
+    let ui = ui();
+    let mk = |ui: &Ui, sel| {
+        Segmented::new(
+            ui,
+            60,
+            vec!["Day".into(), "Week".into(), "Month".into()],
+            sel,
+        )
+        .on_select(Msg::Picked)
+        .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, 0), 400.0, 60.0);
+    let w = h.layout.children[0].bounds.size.width;
+    assert_eq!(h.click(w - 6.0, 10.0), vec![Msg::Picked(2)], "last segment");
+    assert!(h.click(6.0, 10.0).is_empty(), "already selected");
+    let mut h = Harness::new(&ui, mk(&ui, 1), 400.0, 60.0);
+    ui.set_focus(Some(60));
+    assert_eq!(h.key(Key::Named("ArrowRight".into())), vec![Msg::Picked(2)]);
+    assert_eq!(h.key(Key::Named("ArrowLeft".into())), vec![Msg::Picked(0)]);
+}

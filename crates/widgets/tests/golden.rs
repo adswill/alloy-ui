@@ -156,3 +156,37 @@ fn pick_list_open_light() {
     );
     check("pick_list_open", &img);
 }
+
+#[test]
+fn choices_light() {
+    let img = render(
+        Theme::light(),
+        |ui| {
+            page(
+                ui,
+                vec![
+                    Segmented::new(ui, 1, vec!["Day".into(), "Week".into(), "Month".into()], 1)
+                        .on_select(|_| ())
+                        .into_element(),
+                    Column::new(vec![
+                        Radio::new(ui, "System", false).on_select(()).into_element(),
+                        Radio::new(ui, "Light", true).on_select(()).id(2).into_element(),
+                        Radio::<()>::new(ui, "Dark", false).into_element(),
+                    ])
+                    .spacing(ui.theme().spacing.sm)
+                    .into_element(),
+                    Rule::horizontal(ui).into_element(),
+                    Row::new(vec![
+                        Tooltip::new(ui, Button::new(ui, "Hover me").on_press(()).into_element(), "x").into_element(),
+                        Space::fill().into_element(),
+                        Button::new(ui, "Done").variant(Variant::Primary).on_press(()).into_element(),
+                    ])
+                    .width(Length::Fill(1))
+                    .into_element(),
+                ],
+            )
+        },
+        |ui| ui.set_focus(Some(1)),
+    );
+    check("choices_light", &img);
+}
