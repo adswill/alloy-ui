@@ -116,6 +116,7 @@ version = "0.0.1"
 dependencies = [
  "alloy-ui-core",
  "alloy-ui-layout",
+ "alloy-ui-render",
  "alloy-ui-theme",
 ]
 
