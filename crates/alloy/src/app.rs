@@ -1,8 +1,10 @@
 //! The application trait, commands, subscriptions and the `run` entry points.
 
 use crate::{
+    chrome::Chrome,
     cx,
     dsl::Act,
+    keys::{self, Hotkey, Meta, Snap},
     view::{Node, View},
 };
 use alloy_ui_core::{Application, Command, Element, Subscription};
@@ -113,6 +115,28 @@ pub trait App: Sized + 'static {
         Vec::new()
     }
 
+    /// Keyboard shortcuts for the whole window: `vec![Hotkey::new("mod+s", Msg::Save)]`.
+    /// A key press goes to the focused widget first, so a text field keeps its own `mod+z`.
+    fn shortcuts(&self) -> Vec<Hotkey<Self::Msg>> {
+        Vec::new()
+    }
+
+    /// A copy of the state for undo, or `None` (the default) for an app without it.
+    /// `Some(Snap::new(self.clone()))` is usually all it takes, together with
+    /// [`restore`](Self::restore) and [`meta`](Self::meta).
+    fn snapshot(&self) -> Option<Snap> {
+        None
+    }
+
+    /// Put back a state captured by [`snapshot`](Self::snapshot).
+    fn restore(&mut self, _snap: Snap) {}
+
+    /// The message that calls [`undo`](crate::undo) or [`redo`](crate::redo), so `mod+z` and a
+    /// toast's Undo button can reach the app. `None` for an app without undo.
+    fn meta(&self, _what: Meta) -> Option<Self::Msg> {
+        None
+    }
+
     /// Open an 800x600 window and run until it closes.
     fn run(self, title: &str) {
         self.run_sized(title, 800.0, 600.0);
@@ -143,10 +167,7 @@ pub trait App: Sized + 'static {
             title: title.into(),
             size: alloy_ui_core::Size::new(width, height),
         };
-        let result = crate::run(settings, move |ui| Shell {
-            app: self,
-            ui: ui.clone(),
-        });
+        let result = crate::run(settings, move |ui| Shell::new(self, ui.clone()));
         if let Err(e) = result {
             eprintln!("{title}: {}", e.0);
             std::process::exit(1);
@@ -159,6 +180,19 @@ pub trait App: Sized + 'static {
 pub(crate) struct Shell<A: App> {
     pub(crate) app: A,
     pub(crate) ui: Ui,
+    undo: Vec<Snap>,
+    redo: Vec<Snap>,
+}
+
+impl<A: App> Shell<A> {
+    pub(crate) fn new(app: A, ui: Ui) -> Self {
+        Shell {
+            app,
+            ui,
+            undo: Vec::new(),
+            redo: Vec::new(),
+        }
+    }
 }
 
 impl<A: App> Application for Shell<A> {
@@ -166,7 +200,22 @@ impl<A: App> Application for Shell<A> {
 
     fn update(&mut self, m: A::Msg) -> Command<A::Msg> {
         let (app, ui) = (&mut self.app, self.ui.clone());
-        cx::enter(&ui, || app.update_cmd(m).0)
+        let before = app.snapshot();
+        let cmd = cx::enter(&ui, || app.update_cmd(m).0);
+        match keys::take_meta() {
+            Some(Meta::Undo) => step(app, &mut self.undo, &mut self.redo),
+            Some(Meta::Redo) => step(app, &mut self.redo, &mut self.undo),
+            None => {
+                if let (Some(b), Some(a)) = (before, app.snapshot()) {
+                    if !b.same(&a) {
+                        self.undo.push(b);
+                        self.undo.drain(..self.undo.len().saturating_sub(200));
+                        self.redo.clear();
+                    }
+                }
+            }
+        }
+        cmd
     }
 
     fn view(&self) -> Element<A::Msg> {
@@ -188,12 +237,37 @@ impl<A: App> Application for Shell<A> {
                 .width(alloy_ui_core::style::Length::Fill(1))
                 .height(alloy_ui_core::style::Length::Fill(1))
                 .into_element();
-            Root::new(&ui, page).into_element()
+            let mut hot = self.app.shortcuts();
+            hot.extend(keys::take_registered::<A::Msg>());
+            let undo = self.app.meta(Meta::Undo);
+            for (what, keys, label) in [
+                (Meta::Undo, "mod+z", "Undo"),
+                (Meta::Redo, "mod+shift+z", "Redo"),
+            ] {
+                if let Some(m) = self.app.meta(what) {
+                    hot.push(Hotkey::new(keys, m).labelled(label));
+                }
+            }
+            keys::publish_menu(
+                hot.iter()
+                    .filter_map(|h| Some((h.keys.clone(), h.label.clone()?)))
+                    .collect(),
+                undo.is_some(),
+            );
+            Root::new(&ui, Element::new(Chrome::new(&ui, page, hot, undo))).into_element()
         })
     }
 
     fn subscription(&self) -> Vec<Subscription<A::Msg>> {
         self.app.subscriptions().into_iter().map(|s| s.0).collect()
+    }
+}
+
+/// Swap the current state for the latest snapshot on `from`, keeping the old one on `to`.
+fn step<A: App>(app: &mut A, from: &mut Vec<Snap>, to: &mut Vec<Snap>) {
+    if let Some(prev) = from.pop() {
+        to.extend(app.snapshot());
+        app.restore(prev);
     }
 }
 
@@ -214,6 +288,13 @@ pub struct Sketch<S: 'static, V> {
     view: V,
     ticks: Vec<Tick<S>>,
     save: Option<Saver<S>>,
+    keys: Vec<(String, Option<String>, Act<S>)>,
+    undo: Option<Undo<S>>,
+}
+
+struct Undo<S> {
+    snap: fn(&S) -> Snap,
+    put: fn(&mut S, Snap),
 }
 
 impl<S: 'static, V> Sketch<S, V> {
@@ -232,6 +313,42 @@ impl<S: 'static, V> Sketch<S, V> {
             self.state = s;
         }
         self.save = Some(Box::new(move |s| crate::persist::write(&path, s)));
+        self
+    }
+
+    /// Run `f` on the state when `keys` is pressed (`"mod+s"`: Cmd on macOS, Ctrl elsewhere).
+    pub fn shortcut(mut self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.keys.push((keys.into(), None, Act::new(f)));
+        self
+    }
+
+    /// Like [`shortcut`](Self::shortcut), and listed in the menu bar as `label`.
+    pub fn shortcut_as(
+        mut self,
+        keys: &str,
+        label: &str,
+        f: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Self {
+        self.keys
+            .push((keys.into(), Some(label.into()), Act::new(f)));
+        self
+    }
+
+    /// Undo and redo for every change to the state, on `mod+z` and `mod+shift+z` (and the
+    /// Undo button of [`toast(..).undo()`](crate::toast)). Keeps a copy of the state per change,
+    /// so it needs `Clone + PartialEq`.
+    pub fn undoable(mut self) -> Self
+    where
+        S: Clone + PartialEq,
+    {
+        self.undo = Some(Undo {
+            snap: |s| Snap::new(s.clone()),
+            put: |s, snap| {
+                if let Some(v) = snap.take::<S>() {
+                    *s = v;
+                }
+            },
+        });
         self
     }
 
@@ -281,6 +398,8 @@ where
         view,
         ticks: Vec::new(),
         save: None,
+        keys: Vec::new(),
+        undo: None,
     }
 }
 
@@ -301,6 +420,36 @@ where
 
     fn view(&self) -> impl View<Act<S>> {
         (self.view)(&self.state)
+    }
+
+    fn shortcuts(&self) -> Vec<Hotkey<Act<S>>> {
+        self.keys
+            .iter()
+            .map(|(k, l, a)| {
+                let h = Hotkey::new(k, a.clone());
+                match l {
+                    Some(l) => h.labelled(l),
+                    None => h,
+                }
+            })
+            .collect()
+    }
+
+    fn snapshot(&self) -> Option<Snap> {
+        self.undo.as_ref().map(|u| (u.snap)(&self.state))
+    }
+
+    fn restore(&mut self, snap: Snap) {
+        if let Some(u) = &self.undo {
+            (u.put)(&mut self.state, snap);
+            if let Some(save) = &self.save {
+                save(&self.state);
+            }
+        }
+    }
+
+    fn meta(&self, what: Meta) -> Option<Act<S>> {
+        self.undo.as_ref().map(|_| keys::meta_act(what))
     }
 
     fn subscriptions(&self) -> Vec<Sub<Act<S>>> {

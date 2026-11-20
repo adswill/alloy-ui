@@ -447,6 +447,8 @@ pub struct Pages {
     pages: Vec<(String, PageFn)>,
     size: (f32, f32),
     save: Option<std::path::PathBuf>,
+    keys: Vec<(String, Option<String>, Act<()>)>,
+    undo: bool,
 }
 
 /// Start a multi-page app: `app("Admin").page("People", || ..).page("Settings", || ..).run()`.
@@ -456,6 +458,8 @@ pub fn app(title: &str) -> Pages {
         pages: Vec::new(),
         size: (1280.0, 720.0),
         save: None,
+        keys: Vec::new(),
+        undo: false,
     }
 }
 
@@ -485,6 +489,39 @@ impl Pages {
     ) -> Self {
         self.pages
             .push((name.into(), Box::new(move || view().into())));
+        self
+    }
+    /// Run `f` when `keys` is pressed (`"mod+n"`: Cmd on macOS, Ctrl elsewhere). Blocks such as
+    /// [`browse`](crate::browse) add their own (`mod+n` is New); to react to a key inside a page
+    /// use [`Shortcuts::shortcut`](crate::Shortcuts::shortcut).
+    pub fn shortcut<R>(self, keys: &str, f: impl Fn() -> R + Send + Sync + 'static) -> Self {
+        self.key(keys, None, f)
+    }
+    /// Like [`shortcut`](Self::shortcut), and listed in the menu bar as `label`.
+    pub fn shortcut_as<R>(
+        self,
+        keys: &str,
+        label: &str,
+        f: impl Fn() -> R + Send + Sync + 'static,
+    ) -> Self {
+        self.key(keys, Some(label), f)
+    }
+    fn key<R>(
+        mut self,
+        keys: &str,
+        label: Option<&str>,
+        f: impl Fn() -> R + Send + Sync + 'static,
+    ) -> Self {
+        let act = Act::new(move |_: &mut ()| {
+            f();
+        });
+        self.keys.push((keys.into(), label.map(Into::into), act));
+        self
+    }
+    /// Undo and redo for every change to a [`store`] (`mod+z`, `mod+shift+z`, and the Undo
+    /// button of [`toast(..).undo()`](crate::toast)). The theme and the open page are not undone.
+    pub fn undoable(mut self) -> Self {
+        self.undo = true;
         self
     }
     /// Window size in logical pixels.
@@ -523,6 +560,37 @@ impl App for Pages {
 
     fn subscriptions(&self) -> Vec<crate::Sub<Act<()>>> {
         crate::resource::pump_sub().into_iter().collect()
+    }
+
+    fn shortcuts(&self) -> Vec<crate::keys::Hotkey<Act<()>>> {
+        self.keys
+            .iter()
+            .map(|(k, l, a)| {
+                let h = crate::keys::Hotkey::new(k, a.clone());
+                match l {
+                    Some(l) => h.labelled(l),
+                    None => h,
+                }
+            })
+            .collect()
+    }
+
+    fn snapshot(&self) -> Option<crate::keys::Snap> {
+        self.undo
+            .then(|| crate::keys::Snap::new(cx::durable_data()))
+    }
+
+    fn restore(&mut self, snap: crate::keys::Snap) {
+        if let Some(v) = snap.take::<serde_json::Value>() {
+            cx::durable_restore(v);
+            if let Some(path) = &self.save {
+                crate::persist::write(path, &cx::durable_dump());
+            }
+        }
+    }
+
+    fn meta(&self, what: crate::keys::Meta) -> Option<Act<()>> {
+        self.undo.then(|| crate::keys::meta_act(what))
     }
 
     fn view(&self) -> impl View<Act<()>> {

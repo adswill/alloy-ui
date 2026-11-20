@@ -147,6 +147,7 @@ pub(crate) fn slot<T: Send + 'static>(
 struct Durable {
     loaded: HashMap<String, serde_json::Value>,
     live: std::collections::BTreeMap<String, Box<dyn Fn() -> serde_json::Value>>,
+    put: std::collections::BTreeMap<String, Box<dyn Fn(serde_json::Value)>>,
     scope: String,
     counts: HashMap<String, u32>,
 }
@@ -166,6 +167,32 @@ pub(crate) fn durable_dump() -> serde_json::Value {
         let d = d.borrow();
         serde_json::Value::Object(d.live.iter().map(|(k, f)| (k.clone(), f())).collect())
     })
+}
+
+/// The page data worth undoing: every `store` except the theme and the open page.
+pub(crate) fn durable_data() -> serde_json::Value {
+    match durable_dump() {
+        serde_json::Value::Object(m) => serde_json::Value::Object(
+            m.into_iter()
+                .filter(|(k, _)| k != "=dark" && !k.starts_with('#'))
+                .collect(),
+        ),
+        v => v,
+    }
+}
+
+/// Put back what [`durable_data`] returned.
+pub(crate) fn durable_restore(v: serde_json::Value) {
+    if let serde_json::Value::Object(m) = v {
+        DURABLE.with(|d| {
+            let d = d.borrow();
+            for (k, v) in m {
+                if let Some(put) = d.put.get(&k) {
+                    put(v);
+                }
+            }
+        });
+    }
 }
 
 /// Name the page being built: its `store`s are keyed by this plus their order.
@@ -206,7 +233,16 @@ pub(crate) fn durable_keyed<T: serde::Serialize + serde::de::DeserializeOwned + 
             .unwrap_or_else(init)
     });
     DURABLE.with(|d| {
-        d.borrow_mut().live.entry(key).or_insert_with(|| {
+        let mut d = d.borrow_mut();
+        let s = slot.clone();
+        d.put.entry(key.clone()).or_insert_with(|| {
+            Box::new(move |v| {
+                if let Ok(v) = serde_json::from_value(v) {
+                    *s.lock().unwrap() = v;
+                }
+            })
+        });
+        d.live.entry(key).or_insert_with(|| {
             let s = slot.clone();
             Box::new(move || serde_json::to_value(&*s.lock().unwrap()).unwrap_or_default())
         });
