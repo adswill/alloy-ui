@@ -9,28 +9,34 @@ macOS and Windows have not been run yet; run the harness there and add a section
 
 `cargo run --release -p alloy-ui-bench`
 
-- **Frame build**: `update` + `view` + layout + draw-list construction through the real `Runtime`.
-- **CPU raster**: the software reference renderer at 2x scale, not the GPU path.
-- **Per no-op event**: runtime cost of an input event that changes nothing.
+- **Frame build**: `update` + `view` + layout + draw-list construction through the real `Runtime`, with real shaped text metrics (cosmic-text), as in a window.
+- **CPU raster**: the software reference renderer at 2x scale.
+- **wgpu offscreen**: the GPU renderer path rendering offscreen at 2x including read-back. On this machine the adapter is llvmpipe, a CPU rasteriser, so this is not GPU speed.
+- **Frames/s possible**: 1000 / (frame build + wgpu offscreen). An upper bound for the pipeline on this adapter, not a measured on-screen frame rate.
+- **Per no-op event**: runtime cost of an input event that changes nothing. It re-runs layout, so it is dominated by text measurement.
 - **Spawn to first frame**: wall time from spawning `counter --headless` to its PNG being written.
 - **Binary size**: the stripped release `counter` (opt-level z, fat LTO, windowed build).
 
     Finished `release` profile [optimized] target(s) in 0.12s
 ### linux / x86_64
 
-| Example | Frame build (median) | CPU raster 2x (median) | Per no-op event |
-|---|---|---|---|
-| counter | 3 us | 15.5 ms | 2432 ns |
-| todo | 7 us | 26.6 ms | 5131 ns |
-| text_editor | 4 us | 34.7 ms | 2574 ns |
-| settings | 5 us | 33.4 ms | 3986 ns |
-| dashboard | 14 us | 48.3 ms | 10638 ns |
+Offscreen wgpu adapter: llvmpipe (LLVM 20.1.2, 256 bits) (Cpu, Vulkan)
+
+| Example | Frame build | CPU raster 2x | wgpu offscreen 2x (with read-back) | Frames/s possible (wgpu) | Per no-op event |
+|---|---|---|---|---|---|
+| counter | 389 us | 16.6 ms | 3.0 ms | 293 | 251489 ns |
+| todo | 551 us | 26.8 ms | 8.2 ms | 114 | 444591 ns |
+| text_editor | 481 us | 34.5 ms | 8.4 ms | 112 | 307722 ns |
+| settings | 288 us | 33.7 ms | 8.7 ms | 111 | 272466 ns |
+| dashboard | 1035 us | 47.3 ms | 11.2 ms | 82 | 811323 ns |
 
 | Metric | Value | Target |
 |---|---|---|
-| counter release binary (windowed build, also runs headless) | 5.73 MB | < 10 MB |
-| counter spawn to first frame written (--headless, median of 7) | 25 ms | < 200 ms |
-| fps, ProMotion 120 fps | not measured (no frame counter in the shell yet) | 60 fps |
+| counter release binary (windowed build, also runs headless) | 5.74 MB | < 10 MB |
+| counter spawn to first frame written (--headless, median of 7) | 27 ms | < 200 ms |
+| on-screen fps, ProMotion 120 fps | not measured (the shell has no frame counter) | 60 fps |
+
+Finding: since the examples use real text metrics, a no-op event costs 0.25 to 0.8 ms (it was about 2 to 10 us with approximate metrics). Caching text measurements in the widget layer would remove most of that; it matters for idle CPU only if something triggers frequent re-layout.
 
 ## Windowed run (Linux, Xvfb, software GL)
 
@@ -52,6 +58,6 @@ A screenshot of the running dashboard window under Xvfb confirmed that the nativ
 
 ## Not measured yet
 
-- Frames per second (the shell has no frame counter; the 60 fps and 120 fps ProMotion targets are unverified).
+- On-screen frames per second (the shell has no frame counter; the 60 fps and 120 fps ProMotion targets are unverified). The headless table gives only an upper bound on llvmpipe.
 - Time to first painted frame in a window.
 - Anything on a real GPU, macOS or Windows.

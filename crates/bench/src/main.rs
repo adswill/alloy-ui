@@ -16,6 +16,7 @@ use std::time::Instant;
 use alloy_ui_core::{Application, Event, Point};
 use alloy_ui_examples::apps::{counter, dashboard, settings, text_editor, todo};
 use alloy_ui_examples::run::{apply, click_text, render, runtime, Demo};
+use alloy_ui_render::{GpuHeadlessRenderer, HeadlessRenderer};
 
 const FRAMES: usize = 300;
 
@@ -24,6 +25,7 @@ struct Row {
     frame_us: f64,
     raster_ms: f64,
     idle_ns: f64,
+    gpu_ms: Option<f64>,
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -59,6 +61,21 @@ fn measure<A: Application>(demo: Demo<A>) -> Row {
         })
         .collect();
     let raster_ms = median(raster);
+    // GPU path (offscreen wgpu, includes read-back); None when no adapter exists.
+    let (w, h) = (size.0 as u32 * 2, size.1 as u32 * 2);
+    let gpu_ms = GpuHeadlessRenderer::try_new(w, h).ok().map(|mut g| {
+        let list = rt.draw();
+        let _ = g.render_to_image(&list, w, h, 2.0);
+        median(
+            (0..20)
+                .map(|_| {
+                    let t = Instant::now();
+                    let _ = g.render_to_image(&list, w, h, 2.0);
+                    t.elapsed().as_secs_f64() * 1e3
+                })
+                .collect(),
+        )
+    });
     // Idle: no-op events that change nothing.
     let n = 20_000;
     let t = Instant::now();
@@ -71,6 +88,7 @@ fn measure<A: Application>(demo: Demo<A>) -> Row {
         frame_us,
         raster_ms,
         idle_ns,
+        gpu_ms,
     }
 }
 
@@ -123,11 +141,23 @@ fn main() {
 
     println!("### {} / {}", std::env::consts::OS, std::env::consts::ARCH);
     println!();
-    println!("| Example | Frame build (median) | CPU raster 2x (median) | Per no-op event |");
-    println!("|---|---|---|---|");
+    let adapter = GpuHeadlessRenderer::try_new(64, 64)
+        .map(|g| g.adapter_name())
+        .unwrap_or_else(|_| "none".into());
+    println!("Offscreen wgpu adapter: {adapter}");
+    println!();
+    println!("| Example | Frame build | CPU raster 2x | wgpu offscreen 2x (with read-back) | Frames/s possible (wgpu) | Per no-op event |");
+    println!("|---|---|---|---|---|---|");
     for r in &rows {
+        let (gpu, fps) = match r.gpu_ms {
+            Some(g) => (
+                format!("{g:.1} ms"),
+                format!("{:.0}", 1000.0 / (g + r.frame_us / 1e3)),
+            ),
+            None => ("n/a".into(), "n/a".into()),
+        };
         println!(
-            "| {} | {:.0} us | {:.1} ms | {:.0} ns |",
+            "| {} | {:.0} us | {:.1} ms | {gpu} | {fps} | {:.0} ns |",
             r.name, r.frame_us, r.raster_ms, r.idle_ns
         );
     }
