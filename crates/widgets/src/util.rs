@@ -75,20 +75,21 @@ pub(crate) fn key_of(r: &Rectangle) -> (i32, i32) {
     (r.origin.x.round() as i32, r.origin.y.round() as i32)
 }
 
-/// A focus ring drawn just outside `bounds`.
+/// A focus ring drawn just outside `bounds`: 2px wide with a 1px gap, so it reads as a halo
+/// and never merges with the control's own border.
 pub(crate) fn focus_ring(
     bounds: Rectangle,
     radius: f32,
     color: alloy_ui_core::Color,
 ) -> DrawCommand {
     let b = Rectangle::new(
-        Point::new(bounds.origin.x - 2.0, bounds.origin.y - 2.0),
-        Size::new(bounds.size.width + 4.0, bounds.size.height + 4.0),
+        Point::new(bounds.origin.x - 3.0, bounds.origin.y - 3.0),
+        Size::new(bounds.size.width + 6.0, bounds.size.height + 6.0),
     );
     DrawCommand::Quad {
         bounds: b,
         fill: alloy_ui_core::Color::TRANSPARENT,
-        radius: radius + 2.0,
+        radius: radius + 3.0,
         border: Some(alloy_ui_core::Border { color, width: 2.0 }),
         shadow: None,
     }
@@ -121,5 +122,20 @@ pub(crate) fn mix(
         g: l(a.g, b.g),
         b: l(a.b, b.b),
         a: l(a.a, b.a),
+    }
+}
+
+/// `top` painted over `base` (straight alpha); the result is as opaque as `base` and `top` allow.
+pub(crate) fn over(base: alloy_ui_core::Color, top: alloy_ui_core::Color) -> alloy_ui_core::Color {
+    let a = top.a + base.a * (1.0 - top.a);
+    if a <= 0.0 {
+        return alloy_ui_core::Color::TRANSPARENT;
+    }
+    let c = |t: f32, b: f32| (t * top.a + b * base.a * (1.0 - top.a)) / a;
+    alloy_ui_core::Color {
+        r: c(top.r, base.r),
+        g: c(top.g, base.g),
+        b: c(top.b, base.b),
+        a,
     }
 }

@@ -28,6 +28,9 @@ path = "src/bin/text_editor.rs"
 name = "settings"
 path = "src/bin/settings.rs"
 [[bin]]
+name = "gallery"
+path = "src/bin/gallery.rs"
+[[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
 

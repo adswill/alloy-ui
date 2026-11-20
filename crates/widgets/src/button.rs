@@ -135,6 +135,13 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let hover = enabled && self.ui.hovered(&b);
         let down = enabled && self.ui.is_pressed(&b) && hover;
         let h = self.ui.ease(Ui::anim_key(&b, 2), hover as u8 as f32);
+        let overlay = |base: alloy_ui_core::Color| {
+            if down {
+                util::over(base, p.pressed)
+            } else {
+                util::over(base, p.hover.with_alpha(p.hover.a * h))
+            }
+        };
         let (fill, border, text) = match (self.variant, enabled) {
             (Variant::Primary, true) => (
                 if down {
@@ -147,22 +154,22 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             ),
             (Variant::Primary, false) => (p.border, None, p.text_disabled),
             (Variant::Secondary, e) => (
-                if down {
-                    p.border
+                if e {
+                    overlay(p.surface_raised)
                 } else {
-                    util::mix(p.surface_raised, p.surface, h)
+                    p.surface
                 },
                 Some(Border {
-                    color: if e { p.border_strong } else { p.border },
+                    color: if e { p.border_control } else { p.border },
                     width: 1.0,
                 }),
                 if e { p.text } else { p.text_disabled },
             ),
             (Variant::Ghost, e) => (
-                if down {
-                    p.border
+                if e {
+                    overlay(p.surface.with_alpha(0.0))
                 } else {
-                    util::mix(p.surface.with_alpha(0.0), p.surface, h)
+                    p.surface.with_alpha(0.0)
                 },
                 None,
                 if e { p.text } else { p.text_disabled },

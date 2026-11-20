@@ -75,6 +75,13 @@ pub struct Palette {
     pub border: Color,
     /// Border of interactive controls (inputs, checkboxes); reaches 3:1.
     pub border_strong: Color,
+    /// Quiet outline for controls that already carry a text label and a fill
+    /// (buttons, segmented tracks, switch tracks); softer than `border_strong`.
+    pub border_control: Color,
+    /// Translucent overlay for hovered neutral controls and rows.
+    pub hover: Color,
+    /// Translucent overlay for pressed neutral controls.
+    pub pressed: Color,
     /// Primary text.
     pub text: Color,
     /// Secondary text (captions, hints).
@@ -109,6 +116,19 @@ impl Palette {
             surface_raised: Color::hex(0xFFFFFF),
             border: Color::hex(0xD5D9D9),
             border_strong: Color::hex(0x737A7A),
+            border_control: Color::hex(0xC2C9C9),
+            hover: Color {
+                r: 0.086,
+                g: 0.102,
+                b: 0.102,
+                a: 0.06,
+            },
+            pressed: Color {
+                r: 0.086,
+                g: 0.102,
+                b: 0.102,
+                a: 0.12,
+            },
             text: Color::hex(0x161A1A),
             text_secondary: Color::hex(0x474E4E),
             text_disabled: Color::hex(0x717878),
@@ -131,6 +151,19 @@ impl Palette {
             surface_raised: Color::hex(0x242929),
             border: Color::hex(0x343A3A),
             border_strong: Color::hex(0x7E8686),
+            border_control: Color::hex(0x485050),
+            hover: Color {
+                r: 0.93,
+                g: 0.94,
+                b: 0.94,
+                a: 0.07,
+            },
+            pressed: Color {
+                r: 0.93,
+                g: 0.94,
+                b: 0.94,
+                a: 0.13,
+            },
             text: Color::hex(0xEDF0F0),
             text_secondary: Color::hex(0xA9B1B1),
             text_disabled: Color::hex(0x7B8383),
