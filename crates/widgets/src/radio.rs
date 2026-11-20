@@ -1,5 +1,6 @@
 //! Radio button.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{focus_ring, key_of},
@@ -96,6 +97,11 @@ impl<M: Clone + 'static> Widget<M> for Radio<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::Radio, &self.label, &b, |n| {
+            n.id = self.id;
+            n.checked = Some(self.selected);
+            n.enabled = self.on_select.is_some();
+        });
         let enabled = self.on_select.is_some();
         let hover = enabled && self.ui.hovered(&b);
         let ring = Rectangle::new(

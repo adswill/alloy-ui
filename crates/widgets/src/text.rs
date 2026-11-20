@@ -1,5 +1,6 @@
 //! Static text.
 
+use crate::a11y::Role;
 use crate::{ui::Ui, util};
 use alloy_ui_core::{
     style::Style, Color, DrawCommand, DrawList, Element, Layout, Point, Size, Widget,
@@ -144,6 +145,7 @@ impl<M> Widget<M> for Text {
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
+        self.ui.describe(Role::Label, &self.content, &b, |_| {});
         for (i, line) in self.lines(b.size.width).into_iter().enumerate() {
             if line.is_empty() {
                 continue;

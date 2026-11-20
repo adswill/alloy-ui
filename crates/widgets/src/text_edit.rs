@@ -263,32 +263,6 @@ pub(crate) fn history_key(
     Some(v)
 }
 
-/// Split `value` into lines (a trailing newline yields a final empty line).
-pub fn split_lines(value: &str) -> Vec<String> {
-    value.split('\n').map(str::to_owned).collect()
-}
-
-/// The `(line, column)` of character index `idx`.
-pub fn line_col(lines: &[String], idx: usize) -> (usize, usize) {
-    let mut start = 0;
-    for (i, l) in lines.iter().enumerate() {
-        let n = l.chars().count();
-        if idx <= start + n {
-            return (i, idx - start);
-        }
-        start += n + 1;
-    }
-    let last = lines.len().saturating_sub(1);
-    (last, lines.get(last).map_or(0, |l| l.chars().count()))
-}
-
-/// The character index of `(line, col)`, clamping both into range.
-pub fn index_of(lines: &[String], line: usize, col: usize) -> usize {
-    let line = line.min(lines.len().saturating_sub(1));
-    let start: usize = lines[..line].iter().map(|l| l.chars().count() + 1).sum();
-    start + col.min(lines[line].chars().count())
-}
-
 /// Index of the start of the word before `from`.
 pub fn word_left(value: &str, from: usize) -> usize {
     let c: Vec<char> = value.chars().collect();
@@ -354,22 +328,6 @@ mod tests {
         assert_eq!(e.selected("éx😀"), "");
         e.select_all(3);
         assert_eq!(e.selected("éx😀"), "éx😀");
-    }
-    #[test]
-    fn line_math_round_trips() {
-        let lines = split_lines("ab\n\ncde");
-        assert_eq!(lines, ["ab", "", "cde"]);
-        assert_eq!(line_col(&lines, 0), (0, 0));
-        assert_eq!(line_col(&lines, 2), (0, 2));
-        assert_eq!(line_col(&lines, 3), (1, 0));
-        assert_eq!(line_col(&lines, 6), (2, 2));
-        assert_eq!(line_col(&lines, 99), (2, 3));
-        for i in 0..=7 {
-            let (l, c) = line_col(&lines, i);
-            assert_eq!(index_of(&lines, l, c), i);
-        }
-        assert_eq!(index_of(&lines, 0, 50), 2, "column clamps to line length");
-        assert_eq!(index_of(&lines, 9, 0), 4, "line clamps to the last");
     }
     #[test]
     fn history_undo_redo_and_typing_coalesce() {
