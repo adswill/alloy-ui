@@ -2,7 +2,7 @@
 //! `WAYLAND_DISPLAY` is set.
 
 use super::{capture, feed, unavailable};
-use crate::{theme, PlatformError};
+use crate::{menu::Menu, theme, tray::TraySettings, PlatformError};
 use std::path::PathBuf;
 
 fn wayland() -> bool {
@@ -68,3 +68,15 @@ fn which(prog: &str) -> bool {
         .map(|p| std::env::split_paths(&p).any(|d| d.join(prog).is_file()))
         .unwrap_or(false)
 }
+
+// winit has no menu bar on Linux and a tray needs D-Bus StatusNotifierItem,
+// which is not implemented yet.
+pub fn set_menu(_: &winit::window::Window, _: &[Menu]) -> Result<(), PlatformError> {
+    Err(PlatformError(
+        "native menu bar is not available on Linux".into(),
+    ))
+}
+pub fn set_tray(_: &winit::window::Window, _: &TraySettings) -> Result<(), PlatformError> {
+    Err(PlatformError("tray not implemented on Linux".into()))
+}
+pub fn clear_tray() {}

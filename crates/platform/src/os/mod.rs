@@ -10,8 +10,10 @@ use std::{
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
 mod macos;
 #[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
 mod windows;
 
 #[cfg(target_os = "linux")]
@@ -110,4 +112,37 @@ impl SystemTheme for SystemThemeImpl {
 #[allow(dead_code)]
 pub(crate) fn unavailable(what: &str) -> PlatformError {
     PlatformError(format!("{what}: no supported helper found on this system"))
+}
+
+/// Native menu bar / tray entry points; each backend implements these.
+pub(crate) use backend::{clear_tray, set_menu, set_tray};
+#[cfg(windows)]
+pub(crate) use windows::msg_hook;
+
+static PENDING: std::sync::Mutex<Vec<crate::PlatformEvent>> = std::sync::Mutex::new(Vec::new());
+static WAKER: std::sync::OnceLock<crate::shell::ShellProxy> = std::sync::OnceLock::new();
+
+/// Register the proxy used to wake the loop when native callbacks queue events.
+pub(crate) fn set_waker(p: crate::shell::ShellProxy) {
+    let _ = WAKER.set(p);
+}
+
+/// Queue an event produced by a native callback (menu click, tray click) and
+/// wake the loop so the shell delivers it on the main thread.
+#[allow(dead_code)] // unused on Linux, which has no native callbacks yet
+pub(crate) fn push_pending(e: crate::PlatformEvent) {
+    if let Ok(mut q) = PENDING.lock() {
+        q.push(e);
+    }
+    if let Some(w) = WAKER.get() {
+        w.wake();
+    }
+}
+
+/// Drain events queued by native callbacks.
+pub(crate) fn take_pending() -> Vec<crate::PlatformEvent> {
+    PENDING
+        .lock()
+        .map(|mut q| std::mem::take(&mut *q))
+        .unwrap_or_default()
 }
