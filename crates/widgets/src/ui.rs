@@ -75,6 +75,7 @@ struct Inner {
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
+    clip: Option<Rectangle>,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -131,6 +132,7 @@ impl Ui {
             overlay: Vec::new(),
             regions: Vec::new(),
             hit: None,
+            clip: None,
         })))
     }
 
@@ -208,6 +210,24 @@ impl Ui {
         s.order.clear();
         s.overlay.clear();
         s.regions.clear();
+    }
+
+    /// The innermost scroll viewport being drawn, if any. Widgets that are
+    /// entirely outside it can skip emitting commands.
+    pub(crate) fn clip(&self) -> Option<Rectangle> {
+        self.0.borrow().clip
+    }
+    pub(crate) fn set_clip(&self, c: Option<Rectangle>) {
+        self.0.borrow_mut().clip = c;
+    }
+    /// True when `r` lies wholly outside the current scroll viewport.
+    pub(crate) fn culled(&self, r: &Rectangle) -> bool {
+        self.clip().is_some_and(|c| {
+            r.origin.x >= c.origin.x + c.size.width
+                || r.origin.y >= c.origin.y + c.size.height
+                || r.origin.x + r.size.width <= c.origin.x
+                || r.origin.y + r.size.height <= c.origin.y
+        })
     }
 
     /// Monotonic milliseconds of the last `Event::Tick`.

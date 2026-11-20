@@ -997,3 +997,19 @@ fn segmented_click_and_arrow_keys() {
     assert_eq!(h.key(Key::Named("ArrowRight".into())), vec![Msg::Picked(2)]);
     assert_eq!(h.key(Key::Named("ArrowLeft".into())), vec![Msg::Picked(0)]);
 }
+
+#[test]
+fn offscreen_list_rows_are_not_drawn() {
+    let ui = ui();
+    let items = (0..500)
+        .map(|i| Text::new(&ui, format!("r{i}")).into_element())
+        .collect();
+    let h = Harness::new(
+        &ui,
+        List::new(&ui, 11, items, None, Msg::Picked).into_element(),
+        200.0,
+        100.0,
+    );
+    let n = h.draw().0.len();
+    assert!(n < 40, "drew {n} commands for a 100px viewport");
+}

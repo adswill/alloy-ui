@@ -149,7 +149,10 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         let b = layout.bounds;
         out.push(DrawCommand::PushClip(b));
         let shifted = self.shifted(layout);
+        let outer = self.ui.clip();
+        self.ui.set_clip(Some(b));
         util::draw_children(&self.child, &shifted, out);
+        self.ui.set_clip(outer);
         out.push(DrawCommand::PopClip);
 
         let content = Self::content_height(layout);

@@ -71,8 +71,11 @@ impl<M: 'static> Widget<M> for Row<M> {
         util::any_animating(&self.child)
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
-        let t = self.ui.theme();
         let b = layout.bounds;
+        if self.ui.culled(&b) {
+            return;
+        }
+        let t = self.ui.theme();
         let hot = self
             .ui
             .ease(Ui::anim_key(&b, 1), self.ui.hovered(&b) as u8 as f32);
