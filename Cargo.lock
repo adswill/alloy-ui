@@ -47,6 +47,7 @@ dependencies = [
  "alloy-ui-platform",
  "alloy-ui-render",
  "alloy-ui-theme",
+ "alloy-ui-widgets",
  "log",
 ]
 

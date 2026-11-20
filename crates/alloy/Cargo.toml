@@ -15,6 +15,7 @@ alloy-ui-core.workspace = true
 alloy-ui-layout.workspace = true
 alloy-ui-render.workspace = true
 alloy-ui-theme.workspace = true
+alloy-ui-widgets.workspace = true
 alloy-ui-platform.workspace = true
 alloy-ui-ipc.workspace = true
 log = "0.4"
