@@ -84,24 +84,50 @@ pub fn clipboard_write(text: &str) -> bool {
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
+    Ok(file_dialog(false, false, "")?.into_iter().next())
+}
+
+pub fn open_files() -> Result<Vec<PathBuf>, PlatformError> {
+    file_dialog(true, false, "")
+}
+
+pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
+    Ok(file_dialog(false, true, name)?.into_iter().next())
+}
+
+/// Shared GetOpenFileNameW / GetSaveFileNameW call. Empty result = cancelled.
+fn file_dialog(multi: bool, save: bool, name: &str) -> Result<Vec<PathBuf>, PlatformError> {
     use windows_sys::Win32::UI::Controls::Dialogs::{
-        GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+        GetOpenFileNameW, GetSaveFileNameW, OFN_ALLOWMULTISELECT, OFN_EXPLORER, OFN_FILEMUSTEXIST,
+        OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
     };
-    let mut buf = [0u16; 32768];
+    let mut buf = vec![0u16; 32768];
+    let init: Vec<u16> = name.encode_utf16().take(buf.len() - 1).collect();
+    buf[..init.len()].copy_from_slice(&init);
     // SAFETY: OPENFILENAMEW is zero-initialised then given its size and a
-    // buffer that outlives the (modal) call; the result is read up to the NUL.
-    unsafe {
+    // buffer that outlives the (modal) call; the result is read up to the
+    // terminating double NUL.
+    let ok = unsafe {
         let mut ofn: OPENFILENAMEW = std::mem::zeroed();
         ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
         ofn.lpstrFile = buf.as_mut_ptr();
         ofn.nMaxFile = buf.len() as u32;
-        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
-        if GetOpenFileNameW(&mut ofn) == 0 {
-            return Ok(None); // cancelled (or closed)
+        ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+        if save {
+            ofn.Flags |= OFN_OVERWRITEPROMPT;
+            GetSaveFileNameW(&mut ofn) != 0
+        } else {
+            ofn.Flags |= OFN_FILEMUSTEXIST;
+            if multi {
+                ofn.Flags |= OFN_ALLOWMULTISELECT;
+            }
+            GetOpenFileNameW(&mut ofn) != 0
         }
+    };
+    if !ok {
+        return Ok(Vec::new()); // cancelled (or closed)
     }
-    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
-    Ok(Some(PathBuf::from(String::from_utf16_lossy(&buf[..len]))))
+    Ok(crate::dialog::parse_multiselect(&buf))
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {

@@ -2,16 +2,27 @@
 //! `WAYLAND_DISPLAY` is set.
 
 use super::{capture, feed, unavailable};
-use crate::{menu::Menu, theme, tray::TraySettings, PlatformError, PlatformEvent};
+use crate::{dialog, menu::Menu, theme, tray::TraySettings, PlatformError, PlatformEvent};
 use std::path::PathBuf;
 
 fn wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
+fn x11() -> bool {
+    std::env::var_os("DISPLAY").is_some()
+}
+
+/// Order: Wayland helper (`wl-clipboard`) when on Wayland, our own X11
+/// selection client (also covers XWayland), then `xclip`/`xsel`.
 pub fn clipboard_read() -> Option<String> {
     if wayland() {
         if let Some(s) = capture("wl-paste", &["--no-newline"]) {
+            return Some(s);
+        }
+    }
+    if x11() {
+        if let Some(s) = super::x11_clip::read() {
             return Some(s);
         }
     }
@@ -21,25 +32,51 @@ pub fn clipboard_read() -> Option<String> {
 
 pub fn clipboard_write(text: &str) -> bool {
     (wayland() && feed("wl-copy", &[], text))
+        || (x11() && super::x11_clip::write(text))
         || feed("xclip", &["-selection", "clipboard"], text)
         || feed("xsel", &["--clipboard", "--input"], text)
 }
 
-pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
-    // zenity exits 1 on cancel and prints the path otherwise; kdialog likewise.
-    for (prog, args) in [
-        ("zenity", &["--file-selection"][..]),
-        ("kdialog", &["--getopenfilename"][..]),
-    ] {
+/// Run the first installed dialog helper. `Ok(None)` means it ran and the
+/// user cancelled; `Err` means no helper exists.
+fn run_dialog(
+    what: &str,
+    zenity: &[&str],
+    kdialog: &[&str],
+) -> Result<Option<String>, PlatformError> {
+    for (prog, args) in [("zenity", zenity), ("kdialog", kdialog)] {
         if let Some(out) = capture(prog, args) {
-            let p = out.trim();
-            return Ok((!p.is_empty()).then(|| PathBuf::from(p)));
+            return Ok(Some(out));
         }
         if which(prog) {
             return Ok(None); // present, but cancelled
         }
     }
-    Err(unavailable("open_file (needs zenity or kdialog)"))
+    Err(unavailable(&format!("{what} (needs zenity or kdialog)")))
+}
+
+pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
+    let out = run_dialog("open_file", &["--file-selection"], &["--getopenfilename"])?;
+    Ok(out.and_then(|o| dialog::parse_lines(&o).into_iter().next()))
+}
+
+pub fn open_files() -> Result<Vec<PathBuf>, PlatformError> {
+    let out = run_dialog(
+        "open_files",
+        &["--file-selection", "--multiple", "--separator=\n"],
+        &["--getopenfilename", ".", "--multiple", "--separate-output"],
+    )?;
+    Ok(out.map(|o| dialog::parse_lines(&o)).unwrap_or_default())
+}
+
+pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
+    let zname = format!("--filename={name}");
+    let out = run_dialog(
+        "save_file",
+        &["--file-selection", "--save", "--confirm-overwrite", &zname],
+        &["--getsavefilename", name],
+    )?;
+    Ok(out.and_then(|o| dialog::parse_lines(&o).into_iter().next()))
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
