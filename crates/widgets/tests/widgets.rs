@@ -568,3 +568,109 @@ fn no_idle_work_without_events() {
     );
     assert_eq!(h.draw(), h.draw());
 }
+
+#[test]
+fn toggle_flips_on_click_and_space() {
+    let ui = ui();
+    let t = Toggle::new(&ui, "Dark mode", false)
+        .id(5)
+        .on_toggle(Msg::Toggled);
+    let mut h = Harness::new(&ui, t.into_element(), 200.0, 40.0);
+    assert_eq!(h.click(4.0, 4.0), vec![Msg::Toggled(true)]);
+    assert_eq!(h.key(Key::Character(" ".into())), vec![Msg::Toggled(true)]);
+}
+
+#[test]
+fn pick_list_opens_selects_and_closes() {
+    let ui = ui();
+    let mk = |ui: &Ui, sel| {
+        PickList::new(ui, 12, vec!["a".into(), "b".into(), "c".into()], sel)
+            .on_select(Msg::Picked)
+            .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui, Some(0)), 200.0, 300.0);
+    assert!(h.click(5.0, 5.0).is_empty(), "opening emits nothing");
+    assert_eq!(ui.popup(), Some(12));
+    let field_h = h.layout.children[0].bounds.size.height;
+    let row_h = ui.theme().typography.body.line_height + 2.0 * ui.theme().spacing.xs;
+    // third option
+    let y = field_h + 4.0 + 4.0 + row_h * 2.5;
+    assert_eq!(h.click(5.0, y), vec![Msg::Picked(2)]);
+    assert_eq!(ui.popup(), None);
+    // click elsewhere closes without selecting
+    h.click(5.0, 5.0);
+    assert!(h.click(190.0, 290.0).is_empty());
+    assert_eq!(ui.popup(), None);
+    // keyboard
+    let mut h = Harness::new(&ui, mk(&ui, Some(0)), 200.0, 300.0);
+    h.click(5.0, 5.0);
+    h.key(Key::Escape);
+    assert_eq!(ui.popup(), None);
+    ui.set_focus(Some(12));
+    assert_eq!(h.key(Key::Named("ArrowDown".into())), vec![Msg::Picked(1)]);
+}
+
+#[test]
+fn progress_bar_fraction_and_bad_input() {
+    let ui = ui();
+    let quad_widths = |v: f32| {
+        let h = Harness::new(
+            &ui,
+            ProgressBar::new(&ui, 0.0, 10.0, v).into_element(),
+            100.0,
+            20.0,
+        );
+        h.draw()
+            .0
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Quad { bounds, .. } => Some(bounds.size.width),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(quad_widths(5.0), vec![100.0, 50.0]);
+    assert_eq!(quad_widths(-3.0), vec![100.0], "empty draws only the track");
+    assert_eq!(quad_widths(f32::NAN), vec![100.0]);
+    assert_eq!(quad_widths(99.0), vec![100.0, 100.0]);
+}
+
+#[test]
+fn tooltip_only_while_hovered() {
+    let ui = ui();
+    let tip = Tooltip::new(
+        &ui,
+        Button::new(&ui, "?").on_press(Msg::Clicked).into_element(),
+        "Help",
+    );
+    let mut h = Harness::new(&ui, tip.into_element(), 200.0, 100.0);
+    assert!(!h.texts().contains(&"Help".to_string()));
+    h.mv(5.0, 5.0);
+    assert!(h.texts().contains(&"Help".to_string()));
+    h.mv(190.0, 90.0);
+    assert!(!h.texts().contains(&"Help".to_string()));
+}
+
+#[test]
+fn image_emits_fixed_size_draw() {
+    let ui = ui();
+    let h = Harness::new(
+        &ui,
+        Image::new(7, Size::new(32.0, 24.0)).into_element(),
+        200.0,
+        100.0,
+    );
+    assert!(matches!(
+        h.draw().0.as_slice(),
+        [DrawCommand::Image { id: 7, bounds }] if bounds.size == Size::new(32.0, 24.0)
+    ));
+}
+
+#[test]
+fn layout_fn_matches_runtime_layouter_signature() {
+    let ui = ui();
+    let root: Element<Msg> = Root::new(&ui, Text::new(&ui, "hi").into_element()).into_element();
+    let f: Layouter<Msg> = alloy_ui_widgets::layout::<Msg>;
+    let l = f(&root, Size::new(300.0, 200.0));
+    assert_eq!(l.bounds.size, Size::new(300.0, 200.0));
+}

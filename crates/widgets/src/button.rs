@@ -79,7 +79,7 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let t = self.ui.theme();
         let s = t.typography.label;
         let w = self.ui.metrics().width(&self.label, s.size);
-        Size::new(w + 2.0 * t.spacing.lg, s.line_height + 2.0 * t.spacing.sm)
+        Size::new(w + 2.0 * t.spacing.md, s.line_height + 2.0 * t.spacing.sm)
     }
     fn on_event(
         &mut self,

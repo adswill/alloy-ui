@@ -67,6 +67,7 @@ struct Inner {
     pressed: Option<(i32, i32)>,
     scroll: HashMap<u64, f32>,
     edits: HashMap<u64, Edit>,
+    popup: Option<u64>,
 }
 
 /// Cheaply clonable handle to per-window widget state.
@@ -82,10 +83,12 @@ impl Ui {
             clipboard: Rc::new(MemoryClipboard::default()),
             focused: None,
             order: Vec::new(),
-            cursor: Point::default(),
+            // Off-screen until the first pointer event, so nothing starts hovered.
+            cursor: Point::new(-1.0e6, -1.0e6),
             pressed: None,
             scroll: HashMap::new(),
             edits: HashMap::new(),
+            popup: None,
         })))
     }
 
@@ -189,6 +192,15 @@ impl Ui {
     /// Set the scroll offset of `id` (clamped when next used).
     pub fn set_scroll_offset(&self, id: u64, offset: f32) {
         self.0.borrow_mut().scroll.insert(id, offset.max(0.0));
+    }
+
+    /// Id of the widget whose popup (e.g. an open pick list) is showing.
+    pub fn popup(&self) -> Option<u64> {
+        self.0.borrow().popup
+    }
+    /// Open the popup of `id`, or close any popup with `None`.
+    pub fn set_popup(&self, id: Option<u64>) {
+        self.0.borrow_mut().popup = id;
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {

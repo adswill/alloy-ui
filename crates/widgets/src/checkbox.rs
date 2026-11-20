@@ -138,7 +138,7 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
         if self.checked {
             // A check glyph; the renderer's font fallback supplies it.
             out.push(DrawCommand::Text {
-                origin: Point::new(bx.origin.x + 2.5, bx.origin.y + 0.5),
+                origin: Point::new(bx.origin.x + 2.5, bx.origin.y - 1.0),
                 content: "\u{2713}".into(),
                 size: 13.0,
                 color: if enabled {
