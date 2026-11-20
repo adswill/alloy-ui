@@ -1,67 +1,21 @@
 //! A starter Alloy app: a counter. Run it with `alloy dev`, package it with
 //! `alloy bundle`.
 
-use alloy_ui::platform::WindowSettings;
-use alloy_ui::style::Padding;
-use alloy_ui::theme::Theme;
-use alloy_ui::{Application, Command, Element, Layout, Point, Rectangle, Size};
-use alloy_ui_widgets::{arrange_widget, Button, Column, Root, Text, Ui};
+use alloy_ui::prelude::*;
 
-#[derive(Debug, Clone)]
-enum Message {
-    Increment,
-    Decrement,
-}
-
-struct Counter {
-    ui: Ui,
-    value: i64,
-}
-
-impl Application for Counter {
-    type Message = Message;
-
-    fn update(&mut self, message: Message) -> Command<Message> {
-        match message {
-            Message::Increment => self.value += 1,
-            Message::Decrement => self.value -= 1,
-        }
-        Command::None
-    }
-
-    fn view(&self) -> Element<Message> {
-        let content = Column::new(vec![
-            Text::new(&self.ui, format!("Count: {}", self.value)).into_element(),
-            Button::new(&self.ui, "Increment")
-                .on_press(Message::Increment)
-                .into_element(),
-            Button::new(&self.ui, "Decrement")
-                .on_press(Message::Decrement)
-                .into_element(),
-        ])
-        .spacing(12.0)
-        .padding(Padding::all(24.0))
-        .into_element();
-        Root::new(&self.ui, content).into_element()
-    }
-}
-
-fn layout(root: &Element<Message>, size: Size) -> Layout {
-    arrange_widget(root.0.as_ref(), Rectangle::new(Point::default(), size))
-}
-
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let settings = WindowSettings {
-        title: "@TITLE@".into(),
-        size: Size {
-            width: 360.0,
-            height: 260.0,
-        },
-    };
-    let app = Counter {
-        ui: Ui::new(Theme::light()),
-        value: 0,
-    };
-    alloy_ui::run(settings, app, layout)?;
-    Ok(())
+fn main() {
+    sketch(0i64, |n| {
+        col![
+            col![heading("@TITLE@"), text(format!("{n} so far")).dim()].gap(2.0),
+            row![
+                button("Subtract").act(|n| *n -= 1),
+                button("Add").primary().act(|n| *n += 1),
+            ]
+            .align_center(),
+        ]
+        .gap(18.0)
+        .pad(24.0)
+        .fill()
+    })
+    .run_sized("@TITLE@", 360.0, 200.0)
 }

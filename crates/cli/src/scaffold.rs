@@ -64,12 +64,10 @@ capabilities = [\"clipboard\"]
 
 fn cargo_toml(a: &NewApp, identifier: &str) -> String {
     let deps = match &a.source {
-        Source::Git => "alloy-ui = { git = \"https://github.com/adswill/alloy-ui\" }\nalloy-ui-widgets = { git = \"https://github.com/adswill/alloy-ui\" }\n".to_string(),
+        Source::Git => "alloy-ui = { git = \"https://github.com/adswill/alloy-ui\" }\n".to_string(),
         Source::Path(p) => {
             let root = p.display().to_string().replace('\\', "/");
-            format!(
-                "alloy-ui = {{ path = \"{root}/crates/alloy\" }}\nalloy-ui-widgets = {{ path = \"{root}/crates/widgets\" }}\n"
-            )
+            format!("alloy-ui = {{ path = \"{root}/crates/alloy\" }}\n")
         }
     };
     format!(
