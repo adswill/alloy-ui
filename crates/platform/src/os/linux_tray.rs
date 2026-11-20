@@ -2,12 +2,16 @@
 //! with the AppIndicator extension, implement). Built on our own minimal D-Bus
 //! client in `dbus.rs`.
 //!
-//! Supported: icon, tooltip, left-click (`Activate`). Not yet supported: a
-//! context menu (needs the `com.canonical.dbusmenu` interface); a right-click
-//! reports `TrayClicked` too.
+//! Supported: icon, tooltip, left-click (`Activate`), and a context menu
+//! exported over `com.canonical.dbusmenu` (labels, separators, submenus,
+//! disabled items; choosing an item reports `MenuAction(id)`).
 
 use super::dbus::{Connection, Kind, Message, Reader, Writer};
-use crate::{tray::TraySettings, PlatformError, PlatformEvent};
+use crate::{
+    menu::{Menu, MenuItem},
+    tray::TraySettings,
+    PlatformError, PlatformEvent,
+};
 use std::{net::Shutdown, os::unix::net::UnixStream, sync::Mutex};
 
 const ITEM_PATH: &str = "/StatusNotifierItem";
@@ -23,7 +27,101 @@ pub(crate) fn rgba_to_argb(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
+const MENU_PATH: &str = "/MenuBar";
+const MENU_IFACE: &str = "com.canonical.dbusmenu";
+
+/// One node of the exported menu tree. Id 0 is the invisible root.
+struct Node {
+    id: i32,
+    label: String,
+    enabled: bool,
+    separator: bool,
+    children: Vec<Node>,
+}
+
+/// Build the dbusmenu tree, numbering nodes from 1 and recording action ids.
+fn build_tree(items: &[MenuItem], next: &mut i32, actions: &mut Vec<(i32, String)>) -> Vec<Node> {
+    items
+        .iter()
+        .map(|item| {
+            *next += 1;
+            let id = *next;
+            match item {
+                MenuItem::Separator => Node {
+                    id,
+                    label: String::new(),
+                    enabled: true,
+                    separator: true,
+                    children: vec![],
+                },
+                MenuItem::Submenu(m) => Node {
+                    id,
+                    label: m.title.clone(),
+                    enabled: true,
+                    separator: false,
+                    children: build_tree(&m.items, next, actions),
+                },
+                MenuItem::Action {
+                    id: aid,
+                    label,
+                    enabled,
+                    ..
+                } => {
+                    actions.push((id, aid.clone()));
+                    Node {
+                        id,
+                        label: label.clone(),
+                        enabled: *enabled,
+                        separator: false,
+                        children: vec![],
+                    }
+                }
+            }
+        })
+        .collect()
+}
+
+/// Dbusmenu labels use `_` as a mnemonic marker; double it to show a literal one.
+fn escape_label(s: &str) -> String {
+    s.replace('_', "__")
+}
+
+/// Write `(ia{sv}av)` for `node`, descending `depth` levels (-1 = all).
+fn write_node(w: &mut Writer, node: &Node, depth: i32, root: bool) {
+    w.align(8);
+    w.i32(node.id);
+    w.array(8, |w| {
+        let prop = |w: &mut Writer, k: &str, sig: &str, f: &dyn Fn(&mut Writer)| {
+            w.align(8);
+            w.string(k);
+            w.variant(sig, |w| f(w));
+        };
+        if root {
+            prop(w, "children-display", "s", &|w| w.string("submenu"));
+        } else if node.separator {
+            prop(w, "type", "s", &|w| w.string("separator"));
+        } else {
+            prop(w, "label", "s", &|w| w.string(&escape_label(&node.label)));
+            if !node.enabled {
+                prop(w, "enabled", "b", &|w| w.bool(false));
+            }
+            if !node.children.is_empty() {
+                prop(w, "children-display", "s", &|w| w.string("submenu"));
+            }
+        }
+    });
+    w.array(1, |w| {
+        if depth != 0 {
+            for c in &node.children {
+                w.variant("(ia{sv}av)", |w| write_node(w, c, depth - 1, false));
+            }
+        }
+    });
+}
+
 struct Item {
+    menu: Option<Node>,
+    actions: Vec<(i32, String)>,
     tooltip: String,
     argb: Vec<u8>,
     w: u32,
@@ -59,7 +157,13 @@ impl Item {
                 w.string("");
             }),
             "ItemIsMenu" => w.variant("b", |w| w.bool(false)),
-            "Menu" => w.variant("o", |w| w.string("/NO_DMENU")),
+            "Menu" => w.variant("o", |w| {
+                w.string(if self.menu.is_some() {
+                    MENU_PATH
+                } else {
+                    "/NO_DMENU"
+                })
+            }),
             _ => return false,
         }
         true
@@ -85,8 +189,82 @@ const INTROSPECT: &str = r#"<node><interface name="org.kde.StatusNotifierItem">
 <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 </interface></node>"#;
 
+fn handle_menu(
+    conn: &mut Connection,
+    item: &Item,
+    m: &Message,
+) -> Result<(), super::dbus::DbusError> {
+    let Some(root) = &item.menu else {
+        return conn.reply_error(m, "org.freedesktop.DBus.Error.UnknownObject", MENU_PATH);
+    };
+    let member = m.member.as_deref().unwrap_or("");
+    match (m.interface.as_deref().unwrap_or(""), member) {
+        (MENU_IFACE, "GetLayout") => {
+            let mut r = Reader::new(&m.body);
+            let parent = r.i32()?;
+            let depth = r.i32()?;
+            let Some(node) = find(root, parent) else {
+                return conn.reply_error(
+                    m,
+                    "org.freedesktop.DBus.Error.InvalidArgs",
+                    "no such menu id",
+                );
+            };
+            let mut w = Writer::default();
+            w.u32(1); // revision
+            write_node(&mut w, node, depth, parent == 0);
+            conn.reply(m, "u(ia{sv}av)", &w.buf)
+        }
+        (MENU_IFACE, "Event") => {
+            let mut r = Reader::new(&m.body);
+            let id = r.i32()?;
+            let kind = r.string()?;
+            if kind == "clicked" {
+                if let Some((_, a)) = item.actions.iter().find(|(i, _)| *i == id) {
+                    super::push_pending(PlatformEvent::MenuAction(a.clone()));
+                }
+            }
+            conn.reply(m, "", &[])
+        }
+        (MENU_IFACE, "AboutToShow") => {
+            let mut w = Writer::default();
+            w.bool(false);
+            conn.reply(m, "b", &w.buf)
+        }
+        (PROPS, "Get") => {
+            let mut r = Reader::new(&m.body);
+            let _ = r.string()?;
+            let name = r.string()?;
+            let mut w = Writer::default();
+            match name.as_str() {
+                "Version" => w.variant("u", |w| w.u32(3)),
+                "TextDirection" => w.variant("s", |w| w.string("ltr")),
+                "Status" => w.variant("s", |w| w.string("normal")),
+                _ => {
+                    return conn.reply_error(m, "org.freedesktop.DBus.Error.UnknownProperty", &name)
+                }
+            }
+            conn.reply(m, "v", &w.buf)
+        }
+        _ => conn.reply_error(m, "org.freedesktop.DBus.Error.UnknownMethod", member),
+    }
+}
+
+fn find(n: &Node, id: i32) -> Option<&Node> {
+    if n.id == id {
+        return Some(n);
+    }
+    n.children.iter().find_map(|c| find(c, id))
+}
+
 fn handle(conn: &mut Connection, item: &Item, m: &Message) -> Result<(), super::dbus::DbusError> {
-    if m.kind != Kind::Call || m.path.as_deref() != Some(ITEM_PATH) {
+    if m.kind != Kind::Call {
+        return Ok(());
+    }
+    if m.path.as_deref() == Some(MENU_PATH) {
+        return handle_menu(conn, item, m);
+    }
+    if m.path.as_deref() != Some(ITEM_PATH) {
         return Ok(());
     }
     let (iface, member) = (
@@ -170,7 +348,17 @@ pub(crate) fn start(t: &TraySettings, register: bool) -> Result<(), PlatformErro
             )
         })?;
     }
+    let mut actions = Vec::new();
+    let menu = t.menu.as_ref().map(|m: &Menu| Node {
+        id: 0,
+        label: m.title.clone(),
+        enabled: true,
+        separator: false,
+        children: build_tree(&m.items, &mut 0, &mut actions),
+    });
     let item = Item {
+        menu,
+        actions,
         tooltip: t.tooltip.clone(),
         argb: rgba_to_argb(&t.icon_rgba),
         w: t.icon_width,
@@ -225,7 +413,12 @@ mod tests {
             icon_rgba: vec![255; 4 * 4 * 4],
             icon_width: 4,
             icon_height: 4,
-            menu: None,
+            menu: Some(
+                Menu::new("t")
+                    .action("open", "Open_me", None)
+                    .separator()
+                    .submenu(Menu::new("More").action("deep", "Deep", None)),
+            ),
         };
         start(&t, false).expect("start");
         let name = format!("org.kde.StatusNotifierItem-{}-1", std::process::id());
@@ -266,6 +459,29 @@ mod tests {
             .unwrap();
         assert!(o.status.success());
         assert!(super::super::take_pending().contains(&PlatformEvent::TrayClicked));
+        // Context menu over dbusmenu.
+        let call = |args: &[&str]| {
+            let o = std::process::Command::new("busctl")
+                .args([
+                    "--user",
+                    "call",
+                    "--",
+                    &name,
+                    MENU_PATH,
+                    "com.canonical.dbusmenu",
+                ])
+                .args(args)
+                .output()
+                .unwrap();
+            assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        let layout = call(&["GetLayout", "iias", "0", "-1", "0"]);
+        assert!(layout.contains("Open__me"), "{layout}");
+        assert!(layout.contains("separator"), "{layout}");
+        assert!(layout.contains("Deep"), "{layout}");
+        call(&["Event", "isvu", "4", "clicked", "i", "0", "0"]);
+        assert!(super::super::take_pending().contains(&PlatformEvent::MenuAction("deep".into())));
         stop();
     }
 }
