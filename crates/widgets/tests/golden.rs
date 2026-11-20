@@ -201,3 +201,28 @@ fn choices_light() {
     );
     check("choices_light", &img);
 }
+
+#[test]
+fn number_and_date_inputs_light() {
+    let img = render(
+        Theme::light(),
+        |ui| {
+            page(
+                ui,
+                vec![
+                    NumberInput::new(ui, 20, 12.0)
+                        .range(0.0, 20.0)
+                        .unit(" px")
+                        .on_change(|_| ())
+                        .into_element(),
+                    DatePicker::new(ui, 21, Some(Date::new(2026, 11, 3)))
+                        .today(Date::new(2026, 11, 2))
+                        .on_select(|_| ())
+                        .into_element(),
+                ],
+            )
+        },
+        |ui| ui.set_popup(Some(21)),
+    );
+    check("inputs_light", &img);
+}

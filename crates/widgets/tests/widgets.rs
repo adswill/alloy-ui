@@ -1292,3 +1292,47 @@ fn text_editor_wraps_long_lines_and_navigates_visual_rows() {
     let at = v.find('X').unwrap();
     assert!(at > 0 && at < 20, "caret on second row, got {at}: {v}");
 }
+
+#[test]
+fn text_widths_are_measured_once_per_string() {
+    use std::{cell::Cell, rc::Rc};
+    struct Counting(Rc<Cell<u32>>);
+    impl TextMetrics for Counting {
+        fn width(&self, t: &str, _s: f32) -> f32 {
+            self.0.set(self.0.get() + 1);
+            t.len() as f32
+        }
+    }
+    let n = Rc::new(Cell::new(0));
+    let ui = ui();
+    ui.set_metrics(Rc::new(Counting(n.clone())));
+    for _ in 0..5 {
+        ui.metrics().width("hello", 14.0);
+    }
+    ui.metrics().width("hello", 16.0);
+    assert_eq!(n.get(), 2);
+}
+
+#[test]
+fn bar_chart_scales_bars_and_labels_them() {
+    let ui = ui();
+    let chart = BarChart::new(&ui, [2.0, 4.0])
+        .labels(["a", "b"])
+        .height(100.0)
+        .into_element();
+    let h = Harness::new(&ui, chart, 200.0, 100.0);
+    let hs: Vec<f32> = h
+        .draw()
+        .0
+        .iter()
+        .filter_map(|c| match c {
+            DrawCommand::Quad { bounds, fill, .. } if *fill == ui.theme().palette.accent => {
+                Some(bounds.size.height)
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(hs.len(), 2);
+    assert!((hs[1] / hs[0] - 2.0).abs() < 1e-3);
+    assert_eq!(h.texts(), ["a", "b"]);
+}

@@ -53,6 +53,49 @@ impl TextMetrics for ApproxMetrics {
     }
 }
 
+/// Memoises a [`TextMetrics`]: shaping a string costs far more than a hash
+/// lookup, and a no-op event re-measures every visible label.
+struct CachedMetrics {
+    inner: Rc<dyn TextMetrics>,
+    seen: RefCell<HashMap<u64, f32>>,
+}
+
+impl CachedMetrics {
+    const CAP: usize = 8192;
+    fn memo(&self, key: impl std::hash::Hash, f: impl FnOnce() -> f32) -> f32 {
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut h);
+        let k = h.finish();
+        if let Some(w) = self.seen.borrow().get(&k) {
+            return *w;
+        }
+        let w = f();
+        let mut m = self.seen.borrow_mut();
+        if m.len() >= Self::CAP {
+            m.clear();
+        }
+        m.insert(k, w);
+        w
+    }
+}
+
+impl TextMetrics for CachedMetrics {
+    fn width(&self, text: &str, size: f32) -> f32 {
+        self.memo((text, size.to_bits()), || self.inner.width(text, size))
+    }
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        family: alloy_ui_core::FontFamily,
+    ) -> f32 {
+        let key = (text, size.to_bits(), weight, family as u8);
+        self.memo(key, || self.inner.width_styled(text, size, weight, family))
+    }
+}
+
 /// Clipboard seam. The platform crate supplies the real one.
 pub trait Clipboard {
     /// Current text contents.
@@ -170,8 +213,12 @@ impl Ui {
         self.0.borrow().metrics.clone()
     }
     /// Install renderer-backed text metrics.
+    /// Widths are cached, so install it once, after fonts are loaded.
     pub fn set_metrics(&self, m: Rc<dyn TextMetrics>) {
-        self.0.borrow_mut().metrics = m;
+        self.0.borrow_mut().metrics = Rc::new(CachedMetrics {
+            inner: m,
+            seen: RefCell::default(),
+        });
     }
     /// Clipboard in use.
     pub fn clipboard(&self) -> Rc<dyn Clipboard> {

@@ -16,6 +16,7 @@
 
 mod a11y;
 mod button;
+mod chart;
 mod checkbox;
 mod container;
 mod date_picker;
@@ -42,6 +43,7 @@ mod util;
 
 pub use a11y::{A11yNode, Role};
 pub use button::{Button, Variant};
+pub use chart::BarChart;
 pub use checkbox::Checkbox;
 pub use container::Container;
 pub use date_picker::{days_in_month, Date, DatePicker};
