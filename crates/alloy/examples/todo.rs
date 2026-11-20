@@ -42,7 +42,7 @@ fn view(s: &Todo) -> impl View<Act<Todo>> {
             check(&t.0, t.1).act(move |s: &mut Todo, v| s.tasks[i].1 = v)
         }))),
         row![
-            options(&s.filter).bind(|s: &mut Todo| &mut s.filter),
+            options(s.filter).bind(|s: &mut Todo| &mut s.filter),
             button("Clear done")
                 .ghost()
                 .act(|s: &mut Todo| s.tasks.retain(|t| !t.1)),

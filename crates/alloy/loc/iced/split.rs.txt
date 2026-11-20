@@ -1,0 +1,107 @@
+use iced::widget::{button, checkbox, column, container, row, slider, text, text_input};
+use iced::{Center, Element, Fill};
+
+struct Split {
+    bill: String,
+    tip: u32,
+    people: u32,
+    round_up: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Bill(String),
+    Tip(u32),
+    People(i32),
+    RoundUp(bool),
+}
+
+impl Split {
+    fn new() -> Self {
+        Split {
+            bill: "84.50".into(),
+            tip: 15,
+            people: 2,
+            round_up: false,
+        }
+    }
+
+    fn amount(&self) -> f64 {
+        self.bill.trim().parse().unwrap_or(0.0)
+    }
+
+    fn tip_amount(&self) -> f64 {
+        self.amount() * self.tip as f64 / 100.0
+    }
+
+    fn share(&self) -> f64 {
+        let share = (self.amount() + self.tip_amount()) / self.people as f64;
+        if self.round_up {
+            share.ceil()
+        } else {
+            share
+        }
+    }
+}
+
+fn update(s: &mut Split, message: Message) {
+    match message {
+        Message::Bill(b) => s.bill = b,
+        Message::Tip(t) => s.tip = t,
+        Message::People(d) => s.people = (s.people as i32 + d).max(1) as u32,
+        Message::RoundUp(on) => s.round_up = on,
+    }
+}
+
+fn view(s: &Split) -> Element<'_, Message> {
+    let bad = !s.bill.trim().is_empty() && s.bill.trim().parse::<f64>().is_err();
+    let people = row![
+        button("-").on_press(Message::People(-1)),
+        text(s.people.to_string()).width(40).align_x(Center),
+        button("+").on_press(Message::People(1)),
+    ]
+    .spacing(8)
+    .align_y(Center);
+    let summary = column![
+        text(format!("Tip: ${:.2}", s.tip_amount())),
+        text(format!("Total: ${:.2}", s.amount() + s.tip_amount())),
+        text(format!("Each pays ${:.2}", s.share())).size(28),
+    ]
+    .spacing(6);
+    container(
+        column![
+            column![
+                text("Bill"),
+                text_input("0.00", &s.bill).on_input(Message::Bill),
+                text(if bad { "Enter a number" } else { "" })
+                    .size(12)
+                    .style(text::danger),
+            ]
+            .spacing(4),
+            row![
+                text("Tip").width(110),
+                slider(0..=30, s.tip, Message::Tip),
+                text(format!("{} %", s.tip)).width(64),
+            ]
+            .spacing(12)
+            .align_y(Center),
+            row![text("People").width(110), people].spacing(12).align_y(Center),
+            checkbox(s.round_up)
+                .label("Round each share up")
+                .on_toggle(Message::RoundUp),
+            container(summary).padding(16).style(container::rounded_box),
+        ]
+        .spacing(18)
+        .max_width(420),
+    )
+    .center_x(Fill)
+    .padding(24)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Split::new, update, view)
+        .title("Split the bill")
+        .window_size((480.0, 520.0))
+        .run()
+}

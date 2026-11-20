@@ -1,6 +1,7 @@
 //! Widget helpers: one short function per widget, builder methods for options.
 
 use crate::{
+    bind::{Place, Val},
     cx::{self, auto_id},
     view::Node,
 };
@@ -127,6 +128,14 @@ impl Txt {
     pub fn accent_if(self, yes: bool) -> Self {
         if yes {
             self.accent()
+        } else {
+            self
+        }
+    }
+    /// Dim when `yes`.
+    pub fn dim_if(self, yes: bool) -> Self {
+        if yes {
+            self.dim()
         } else {
             self
         }
@@ -351,11 +360,12 @@ pub struct Input<M> {
 
 /// A single-line text field showing `value`.
 #[track_caller]
-pub fn input<M>(value: impl Into<String>) -> Input<M> {
+pub fn input<M>(value: impl Val<String, M>) -> Input<M> {
+    let (value, on) = value.split();
     Input {
-        value: value.into(),
+        value,
         hint: String::new(),
-        on: None,
+        on,
         enter: None,
         id: auto_id(2),
         wide: false,
@@ -439,11 +449,12 @@ pub struct Editor<M> {
 }
 /// A multi-line text area that fills the space it is given.
 #[track_caller]
-pub fn editor<M>(value: impl Into<String>) -> Editor<M> {
+pub fn editor<M>(value: impl Val<String, M>) -> Editor<M> {
+    let (value, on) = value.split();
     Editor {
-        value: value.into(),
+        value,
         hint: String::new(),
-        on: None,
+        on,
         id: auto_id(3),
     }
 }
@@ -490,11 +501,12 @@ macro_rules! switch {
         }
         #[doc = $doc]
         #[track_caller]
-        pub fn $fnname<M>(label: impl Into<String>, value: bool) -> $name<M> {
+        pub fn $fnname<M>(label: impl Into<String>, value: impl Val<bool, M>) -> $name<M> {
+            let (value, on) = value.split();
             $name {
                 label: label.into(),
                 value,
-                on: None,
+                on,
                 id: auto_id($salt),
             }
         }
@@ -547,6 +559,27 @@ impl<M: Clone + 'static> From<Radio<M>> for Node<M> {
     }
 }
 
+/// A column of radio options bound to a field: picking one writes its value there.
+///
+/// ```ignore
+/// radios(at!(s.plan), [("Free", Plan::Free), ("Pro", Plan::Pro)])
+/// ```
+#[track_caller]
+pub fn radios<S: 'static, T, L: Into<String>>(
+    place: Place<'_, S, T>,
+    options: impl IntoIterator<Item = (L, T)>,
+) -> crate::view::Flex<Act<S>>
+where
+    T: PartialEq + Clone + Send + Sync + 'static,
+{
+    let mut col = crate::view::col::<Act<S>, Node<Act<S>>>([]);
+    for (label, v) in options {
+        let on = *place.cur == v;
+        col = col.push(radio(label, on).on(place.writer(v)));
+    }
+    col
+}
+
 /// A horizontal slider. See [`slider`].
 pub struct Slide<M> {
     range: (f32, f32),
@@ -555,23 +588,38 @@ pub struct Slide<M> {
     on: Option<Box<dyn Fn(f32) -> M>>,
     id: u64,
     wide: bool,
+    label: Option<String>,
+    unit: Option<String>,
 }
 /// A slider over `range` showing `value`.
 #[track_caller]
-pub fn slider<M>(range: std::ops::RangeInclusive<f32>, value: f32) -> Slide<M> {
+pub fn slider<M>(range: std::ops::RangeInclusive<f32>, value: impl Val<f32, M>) -> Slide<M> {
+    let (value, on) = value.split();
     Slide {
         range: (*range.start(), *range.end()),
         value,
         step: None,
-        on: None,
+        on,
         id: auto_id(7),
         wide: true,
+        label: None,
+        unit: None,
     }
 }
 impl<M> Slide<M> {
     /// Snap to multiples of `s`.
     pub fn step(mut self, s: f32) -> Self {
         self.step = Some(s);
+        self
+    }
+    /// Put a label in front of the slider, aligned with other labelled sliders.
+    pub fn label(mut self, l: impl Into<String>) -> Self {
+        self.label = Some(l.into());
+        self
+    }
+    /// Show the value after the slider, followed by `unit`: `.unit("min")` reads `25 min`.
+    pub fn unit(mut self, u: impl Into<String>) -> Self {
+        self.unit = Some(u.into());
         self
     }
 }
@@ -593,7 +641,19 @@ impl<M: 'static> From<Slide<M>> for Node<M> {
         if s.wide {
             t = t.width(Length::Fill(1));
         }
-        Node(t.into_element())
+        let bar = Node(t.into_element());
+        if s.label.is_none() && s.unit.is_none() {
+            return bar;
+        }
+        let mut cells = vec![];
+        if let Some(l) = s.label {
+            cells.push(text(l).w(110.0).into());
+        }
+        cells.push(bar);
+        if let Some(u) = s.unit {
+            cells.push(text(format!("{} {u}", s.value)).w(64.0).into());
+        }
+        crate::view::row(cells).align_center().into()
     }
 }
 
@@ -615,11 +675,15 @@ pub struct Seg<M> {
 }
 /// A segmented control selecting an index.
 #[track_caller]
-pub fn tabs<M, L: Into<String>>(labels: impl IntoIterator<Item = L>, selected: usize) -> Seg<M> {
+pub fn tabs<M, L: Into<String>>(
+    labels: impl IntoIterator<Item = L>,
+    selected: impl Val<usize, M>,
+) -> Seg<M> {
+    let (selected, on) = selected.split();
     Seg {
         labels: labels.into_iter().map(Into::into).collect(),
         selected,
-        on: None,
+        on,
         id: auto_id(8),
     }
 }
@@ -646,17 +710,18 @@ pub struct Choose<T, M> {
 #[track_caller]
 pub fn choose<T: PartialEq, M, L: Into<String>>(
     opts: impl IntoIterator<Item = (L, T)>,
-    current: &T,
+    current: impl Val<T, M>,
 ) -> Choose<T, M> {
+    let (current, on) = current.split();
     let opts: Vec<(String, T)> = opts.into_iter().map(|(l, v)| (l.into(), v)).collect();
     let cur = opts
         .iter()
-        .position(|(_, v)| v == current)
+        .position(|(_, v)| *v == current)
         .unwrap_or(usize::MAX);
     Choose {
         opts,
         cur,
-        on: None,
+        on,
         id: auto_id(9),
     }
 }
@@ -789,14 +854,26 @@ pub trait Choice: Copy + PartialEq + 'static {
     }
 }
 
-/// Declare an enum usable with [`options`] and [`nav`]; labels are the variant names.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __choice_label {
+    ($v:ident) => {
+        stringify!($v)
+    };
+    ($v:ident, $l:literal) => {
+        $l
+    };
+}
+
+/// Declare an enum usable with [`options`] and [`nav`]; labels are the variant names unless a
+/// variant has one: `enum Mode { Focus, Short = "Short break" }`.
 ///
 /// ```
 /// alloy_ui::choices! { enum Filter { All, Open, Done } }
 /// ```
 #[macro_export]
 macro_rules! choices {
-    ($(#[$m:meta])* $vis:vis enum $name:ident { $($var:ident),+ $(,)? }) => {
+    ($(#[$m:meta])* $vis:vis enum $name:ident { $($var:ident $(= $label:literal)?),+ $(,)? }) => {
         $(#[$m])*
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
         $vis enum $name { $($var),+ }
@@ -819,7 +896,7 @@ macro_rules! choices {
         }
         impl $crate::Choice for $name {
             fn all() -> &'static [(&'static str, Self)] {
-                &[$((stringify!($var), $name::$var)),+]
+                &[$(($crate::__choice_label!($var $(, $label)?), $name::$var)),+]
             }
         }
     };
@@ -827,7 +904,7 @@ macro_rules! choices {
 
 /// A segmented control over every variant of a [`Choice`] enum.
 #[track_caller]
-pub fn options<T: Choice, M>(current: &T) -> Choose<T, M> {
+pub fn options<T: Choice, M>(current: impl Val<T, M>) -> Choose<T, M> {
     choose(T::all().iter().copied(), current)
 }
 
@@ -937,5 +1014,21 @@ impl<M: 'static> From<ListView<M>> for Node<M> {
             )
             .into_element(),
         )
+    }
+}
+
+/// Show what a fallible step produced: the view of its value, or `message: error` in red.
+///
+/// ```ignore
+/// attempt(fs::list(&s.dir), "Cannot read folder", |files| table(&files).col("Name", Entry::label))
+/// ```
+pub fn attempt<T, E: std::fmt::Display, M: 'static, V: Into<Node<M>>>(
+    result: Result<T, E>,
+    message: &str,
+    view: impl FnOnce(T) -> V,
+) -> Node<M> {
+    match result {
+        Ok(v) => view(v).into(),
+        Err(e) => text(format!("{message}: {e}")).danger().into(),
     }
 }

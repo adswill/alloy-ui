@@ -47,7 +47,7 @@ fn view(s: &Todo) -> impl View<Act<Todo>> {
             .gap(10.0)
         ),
         row![
-            options(&s.filter).bind(|s: &mut Todo| &mut s.filter),
+            options(s.filter).bind(|s: &mut Todo| &mut s.filter),
             space(),
             button("Clear done")
                 .ghost()

@@ -111,7 +111,7 @@ fn view(s: &Admin) -> impl View<Act<Admin>> {
             heading("Settings"),
             section(
                 "Theme",
-                choose([("Light", false), ("Dark", true)], &s.dark).act(|s: &mut Admin, d| {
+                choose([("Light", false), ("Dark", true)], s.dark).act(|s: &mut Admin, d| {
                     s.dark = d;
                     set_dark(d);
                 })

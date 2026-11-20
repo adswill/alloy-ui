@@ -333,7 +333,7 @@ impl<T: Send + 'static, S: 'static> From<Browse<T, S>> for Node<Act<S>> {
                 top,
                 crate::choose(
                     b.orders.iter().enumerate().map(|(i, o)| (o.0.clone(), i)),
-                    &l.get(),
+                    l.get(),
                 )
                 .local(&l)
                 .into(),
@@ -460,7 +460,7 @@ pub fn filter_by<T: Choice + Send + Sync, S: 'static>(
 ) -> crate::dsl::Choose<Option<T>, Act<S>> {
     crate::choose(
         std::iter::once(("All", None)).chain(T::all().iter().map(|&(l, v)| (l, Some(v)))),
-        &cell.get(),
+        cell.get(),
     )
     .local(cell)
 }
@@ -490,7 +490,7 @@ pub trait ChoiceCell<T: Choice>: Cell<T> {
     where
         T: Send + Sync,
     {
-        crate::options(&self.read()).local(&self)
+        crate::options(self.read()).local(&self)
     }
 }
 impl<T: Choice, C: Cell<T>> ChoiceCell<T> for C {}

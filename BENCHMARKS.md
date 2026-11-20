@@ -280,3 +280,64 @@ and Windows were not done.
 brings a table, form fields, async resource and persistence as built-ins. Those are real, they
 are worth 1.5x to 2x on ordinary apps and 9x or more on block-shaped ones. A claim of "10x fewer
 lines than iced" should say "for apps that are mostly a table, a form or a list".
+
+### Pass 6: general ergonomics for everyday apps
+
+Goal from the audit: raise the ratio on apps no block was built for, with features any app can
+use, not with new blocks. Measured with the same `loc/count.py`, same iced files (iced
+pomodoro now stores `elapsed` instead of `left`, 150 lines instead of 159, because the Alloy
+rewrite derives the remaining time and the iced app can do exactly the same).
+
+| App | iced | Alloy before | Alloy now | ratio before* | ratio now |
+|---|---|---|---|---|---|
+| `pomodoro` | 150 | 101 | 66 | 1.6x | **2.3x** |
+| `files` | 222 | 149 | 69 | 1.5x | **3.2x** |
+| `wizard` | 238 | 130 | 73 | 1.8x | **3.3x** |
+| `split` (new, unseen) | 100 | 61 | 47 | 1.6x | **2.1x** |
+| the three audit apps together | 610 | 380 | 208 | 1.6x | **2.9x** |
+| all four | 710 | 441 | 255 | 1.6x | **2.8x** |
+
+\* "before" ratios use the audit's iced file (pomodoro 159 lines); against the new 150-line iced file the old Alloy pomodoro would be 1.5x.
+
+**Not 4x.** Everyday apps sit at 2x to 3.3x. What is left in the Alloy files is state structs,
+domain logic (the pomodoro state machine, the bill maths), `format!` lines, and the vertical
+growth `rustfmt` gives any widget call with more than about 60 characters. None of that is
+framework boilerplate. 4x on ordinary apps would need blocks again (a countdown, a file
+browser), which is the thing the audit warned against.
+
+`split` was written (iced first, compiled) before looking for features. With the API as it was
+after the first batch of changes it was 61 lines (1.6x). It then showed two general gaps, a
+numeric text field and a `- n +` control, which were added (`number`, `stepper`, `.labelled`);
+that took it to 47. Treat its 2.1x as "seen once", not as an unbiased sample.
+
+What changed, all in `crates/alloy` (no core changes):
+
+- **Bindings: `at!(s.field)`.** `input(at!(s.name))`, `check("On", at!(s.on))`,
+  `slider(.., at!(s.volume))`, `choose(.., at!(s.mode))`, `options(..)`, `tabs(..)` read the field
+  and write edits back. A witness argument fixes the state type, so the closure annotation
+  `|s: &mut Timer|` is not needed on anything that takes an `at!`. Also `.toggle(at!(s.running))`,
+  `.set(at!(s.step), Step::Done)`, `.add(at!(s.n), 1)` on buttons, `radios(at!(s.plan), options)`,
+  nested fields and indexing (`at!(s.minutes[i])`). Plain values still work as before.
+- **Typed inputs:** `number(at!(s.price))` (parses as you type, refuses non-numbers),
+  `stepper(at!(s.people)).min(1).max(9)`, `.labelled("People")`.
+- **Layout defaults:** `.page()` is the root of a screen (theme page margins and group spacing);
+  `col!`/`row!` already take their gap from the theme. `Slider::label/unit`, `Txt::dim_if`,
+  `View::when(bool)`.
+- **Timers:** `sketch(..).tick_while(|s| s.running, secs(1.0), Timer::tick)` subscribes only while
+  the condition holds (no timer, no wake-ups, when paused); several ticks per app.
+- **Wizard:** `wizard(at!(s.step)).page("Account", valid, body)..finish("Create").done(body)`:
+  numbered header, Back/Next with Next gated by the page's validity.
+- **Files and forms:** `alloy_ui::fs` (`list` cached by directory mtime, folders first; `read`,
+  `write`, `human_size`, `Entry`) which honours an `alloy_ui::fs::grant(CapabilitySet)`
+  (`fs_read`/`fs_write` scopes; everything is allowed until a grant is installed), and
+  `alloy_ui::valid` (`required`, `email`, `min_len`).
+- **Tables and fallible views:** `Table::keep(pred)`, `.count("items")`, `.empty("Nothing here")`,
+  `.on_row(|s, row| ..)`, `.selected_where(pred)`; `attempt(result, "Cannot read folder", |v| view)`.
+- `choices!` accepts labels: `enum Mode { Focus, Short = "Short break" }`.
+
+Behaviour differences to the iced apps, not hidden: the Alloy `split` number field refuses
+letters instead of showing "Enter a number" under the field; the Alloy pomodoro changes the length
+of the running mode live (the same as the iced one after the `elapsed` change); the files app's
+filter and hidden-file toggle behave as in iced, and its query also clears when you go up a folder.
+`crates/alloy/tests/audit_apps.rs` covers all four, `tests/ergonomics.rs` the new API. iced
+versions compiled in a scratch crate, not run in a window. Nothing run on macOS or Windows.

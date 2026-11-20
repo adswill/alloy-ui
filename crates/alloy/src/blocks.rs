@@ -2,8 +2,9 @@
 
 use crate::{
     app::App,
+    bind::Place,
     cx::{self, auto_id},
-    dsl::{button, caption, text, Act},
+    dsl::{button, caption, space, text, Act},
     view::View,
     view::{col, Flex, Node},
 };
@@ -105,6 +106,9 @@ pub struct Table<'a, T, S> {
     detail: Option<Box<dyn Fn(&T) -> Node<Act<S>>>>,
     open: Local<Option<usize>>,
     id: u64,
+    keep: Option<Vec<bool>>,
+    count: Option<String>,
+    empty: Option<String>,
 }
 
 /// A table over `rows`. Add columns with `.col(title, |row| cell_text)`; the
@@ -127,6 +131,9 @@ pub fn table<T, S>(rows: &[T]) -> Table<'_, T, S> {
         detail: None,
         open: local(None),
         id: auto_id(21),
+        keep: None,
+        count: None,
+        empty: None,
     }
 }
 
@@ -164,6 +171,21 @@ impl<'a, T, S: 'static> Table<'a, T, S> {
         self.filter = query.to_lowercase();
         self
     }
+    /// Only show rows for which `keep` holds. Indices passed to handlers still refer to `rows`.
+    pub fn keep(mut self, keep: impl Fn(&T) -> bool) -> Self {
+        self.keep = Some(self.rows.iter().map(keep).collect());
+        self
+    }
+    /// A caption under the table with the number of rows shown: `.count("items")` reads `12 items`.
+    pub fn count(mut self, unit: &str) -> Self {
+        self.count = Some(unit.into());
+        self
+    }
+    /// What to show instead of the table when no row is left.
+    pub fn empty(mut self, message: &str) -> Self {
+        self.empty = Some(message.into());
+        self
+    }
     /// Highlight the row at this index of `rows`.
     pub fn selected(mut self, index: Option<usize>) -> Self {
         self.selected = index;
@@ -181,6 +203,19 @@ impl<'a, T, S: 'static> Table<'a, T, S> {
         self.detail = Some(Box::new(move |r| f(r).into()));
         self.selected(open.get())
             .on_select(move |_, i| open.set(Some(i)))
+    }
+    /// Like [`on_select`](Self::on_select) but called with the row itself: `.on_row(|s, f| s.open(f))`.
+    pub fn on_row(self, f: impl Fn(&mut S, &T) + Send + Sync + 'static) -> Self
+    where
+        T: Clone + Send + Sync + 'static,
+    {
+        let rows = Arc::new(self.rows.to_vec());
+        self.on_select(move |s, i| f(s, &rows[i]))
+    }
+    /// Highlight the first row for which `is` holds (none if none does).
+    pub fn selected_where(self, is: impl Fn(&T) -> bool) -> Self {
+        let at = self.rows.iter().position(is);
+        self.selected(at)
     }
     /// Bind the selected row to a [`local`] (`None` = nothing selected).
     pub fn pick(self, cell: &Local<Option<usize>>) -> Self {
@@ -215,6 +250,7 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             .map(|r| t.cols.iter().map(|c| (c.get)(r)).collect())
             .collect();
         let mut order: Vec<usize> = (0..cells.len())
+            .filter(|&i| t.keep.as_ref().map_or(true, |k| k[i]))
             .filter(|&i| {
                 t.filter.is_empty()
                     || cells[i]
@@ -271,6 +307,10 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             ));
         }
 
+        if let (true, Some(msg)) = (order.is_empty(), &t.empty) {
+            return caption(msg.clone()).dim().into();
+        }
+        let shown = order.len();
         let sort_cell = t.sort;
         let order_sel = order.clone();
         let on_select = t.on_select.clone();
@@ -320,7 +360,7 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             grid = grid.row(row);
         }
         let table = Node(grid.into_element());
-        match t
+        let node: Node<Act<S>> = match t
             .detail
             .as_ref()
             .zip(t.open.get())
@@ -338,6 +378,12 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             .fill()
             .into(),
             None => table,
+        };
+        match &t.count {
+            Some(unit) => crate::col![node, caption(format!("{shown} {unit}"))]
+                .fill()
+                .into(),
+            None => node,
         }
     }
 }
@@ -382,7 +428,7 @@ where
 /// A Light / Dark switch for the whole window.
 pub fn theme_switch<S: 'static>() -> Node<Act<S>> {
     let dark = store_as("dark", || false);
-    crate::choose([("Light", false), ("Dark", true)], &dark.get())
+    crate::choose([("Light", false), ("Dark", true)], dark.get())
         .on(move |d| {
             let dark = dark;
             Act::new(move |_: &mut S| dark.set(d))
@@ -506,5 +552,101 @@ impl App for Pages {
         crate::view::row([side.surface().w(170.0).fill_h().into(), body])
             .gap(0.0)
             .fill()
+    }
+}
+
+// ------------------------------------------------------------- wizard
+
+/// A multi-step flow: a numbered header, the current page, and Back / Next buttons where Next
+/// stays disabled until the page says it is valid. Made by [`wizard`].
+pub struct Wizard<S> {
+    at: usize,
+    lens: crate::bind::Lens<S, usize>,
+    pages: Vec<(String, bool, Node<Act<S>>)>,
+    finish: String,
+    on_finish: Option<Act<S>>,
+    done: Option<Node<Act<S>>>,
+}
+
+/// A step-by-step flow whose position lives in a `usize` field:
+///
+/// ```ignore
+/// wizard(at!(s.step))
+///     .page("Account", s.account_ok(), col![field("Name", input(at!(s.name)), None)])
+///     .page("Review", s.terms, col!["Check everything", check("I agree", at!(s.terms))])
+///     .finish("Create account")
+///     .on_finish(|s| s.submit())
+///     .done(col![heading("All set")])
+/// ```
+pub fn wizard<S: 'static>(step: Place<'_, S, usize>) -> Wizard<S> {
+    Wizard {
+        at: *step.cur,
+        lens: step.lens,
+        pages: Vec::new(),
+        finish: "Finish".into(),
+        on_finish: None,
+        done: None,
+    }
+}
+
+impl<S: 'static> Wizard<S> {
+    /// Add a page. `valid` gates the Next button.
+    pub fn page(mut self, title: &str, valid: bool, body: impl Into<Node<Act<S>>>) -> Self {
+        self.pages.push((title.into(), valid, body.into()));
+        self
+    }
+    /// Label of the last page's button (default "Finish").
+    pub fn finish(mut self, label: &str) -> Self {
+        self.finish = label.into();
+        self
+    }
+    /// Run `f` when the last page's button is pressed, before moving on.
+    pub fn on_finish(mut self, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.on_finish = Some(Act::new(f));
+        self
+    }
+    /// Shown after the last page's button was pressed.
+    pub fn done(mut self, body: impl Into<Node<Act<S>>>) -> Self {
+        self.done = Some(body.into());
+        self
+    }
+}
+
+impl<S: 'static> From<Wizard<S>> for Node<Act<S>> {
+    fn from(w: Wizard<S>) -> Self {
+        let n = w.pages.len();
+        let at = w.at.min(n);
+        let lens = w.lens;
+        if at == n {
+            return w.done.unwrap_or_else(|| Node::from(caption("Done")));
+        }
+        let header = crate::view::row(w.pages.iter().enumerate().map(|(i, (t, ..))| {
+            text(format!("{}. {t}", i + 1))
+                .accent_if(i == at)
+                .dim_if(i > at)
+        }))
+        .gap(24.0);
+        let (_, valid, body) = w.pages.into_iter().nth(at).unwrap();
+        let back = lens.clone();
+        let next = lens;
+        let last = at + 1 == n;
+        let on_finish = w.on_finish;
+        let go = button(if last { w.finish } else { "Next".into() })
+            .primary()
+            .enabled(valid)
+            .act(move |s| {
+                if last {
+                    if let Some(f) = &on_finish {
+                        (f.0)(s);
+                    }
+                }
+                *next(s) += 1;
+            });
+        let prev = button("Back")
+            .enabled(at > 0)
+            .act(move |s| *back(s) = back(s).saturating_sub(1));
+        crate::col![header, body, crate::row![prev, space(), go].fill_w()]
+            .gap(24.0)
+            .into()
     }
 }

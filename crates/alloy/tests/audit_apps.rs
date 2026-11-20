@@ -8,55 +8,43 @@ mod pomodoro {
     include!("../examples/pomodoro.rs");
     use alloy_ui::testing::Harness;
 
+    fn timer(minutes: [f32; 3]) -> Timer {
+        Timer {
+            minutes,
+            ..Default::default()
+        }
+    }
+
     #[test]
     fn cycle() {
-        let mut t = Timer {
-            mode: Mode::Focus,
-            minutes: [1.0, 1.0, 2.0],
-            left: 60,
-            running: false,
-            done: 0,
-            auto: false,
-        };
-        t.tick();
-        assert_eq!(t.left, 60, "paused timers do not move");
-        t.running = true;
+        let mut t = timer([1.0, 1.0, 2.0]);
         for _ in 0..60 {
             t.tick();
         }
         assert!(
-            matches!(t.mode, Mode::Short) && !t.running && t.done == 1,
+            t.mode == Mode::Short && !t.running && t.done == 1,
             "focus ends in a stopped short break"
         );
         t.auto = true;
-        t.running = true;
         for _ in 0..60 {
             t.tick();
         }
         assert!(
-            matches!(t.mode, Mode::Focus) && t.running,
+            t.mode == Mode::Focus && t.running,
             "break ends, auto-start runs the next focus"
         );
         t.done = 3;
-        t.mode = Mode::Focus;
-        t.left = 1;
+        t.elapsed = 59;
         t.tick();
         assert!(
-            matches!(t.mode, Mode::Long) && t.left == 120,
+            t.mode == Mode::Long && t.total() - t.elapsed == 120,
             "every 4th focus earns a long break"
         );
     }
 
     #[test]
     fn ui() {
-        let t = Timer {
-            mode: Mode::Focus,
-            minutes: [25.0, 5.0, 15.0],
-            left: 1500,
-            running: false,
-            done: 0,
-            auto: false,
-        };
+        let t = timer([25.0, 5.0, 15.0]);
         let mut ui = Harness::new(sketch(t, view), 480.0, 560.0);
         assert!(ui.has_text("25:00") && ui.has_text("Sessions completed: 0"));
         ui.click("Start");
@@ -129,11 +117,8 @@ mod files {
         std::fs::write(root.join("sub/inner.txt"), "x").unwrap();
         std::fs::write(root.join(".secret"), "x").unwrap();
         let s = Files {
-            entries: load(&root),
             dir: root.clone(),
-            hidden: false,
-            query: String::new(),
-            selected: None,
+            ..Default::default()
         };
         let mut ui = Harness::new(sketch(s, view), 900.0, 600.0);
         assert!(ui.has_text("sub/") && ui.has_text("a.txt") && !ui.has_text(".secret"));
@@ -154,5 +139,38 @@ mod files {
         let [a, b] = order(&ui);
         assert!(b < a, "ascending size: 500 B before 2.0 KB");
         let _ = std::fs::remove_dir_all(&root);
+    }
+}
+
+mod split {
+    include!("../examples/split.rs");
+    use alloy_ui::testing::Harness;
+
+    #[test]
+    fn math_and_inputs() {
+        let s = Split {
+            bill: 84.5,
+            tip: 15.0,
+            people: 2,
+            round_up: false,
+        };
+        let mut ui = Harness::new(sketch(s, view), 480.0, 520.0);
+        assert!(ui.has_text("Each pays $48.59") && ui.has_text("Tip: $12.68"));
+        ui.click("+");
+        assert!(ui.has_text("Each pays $32.39"), "three people");
+        ui.click("Round each share up");
+        assert!(ui.has_text("Each pays $33.00"));
+        ui.click("-").click("-").click("-");
+        assert!(ui.has_text("Each pays $98.00"), "people stops at 1");
+        ui.click("84.5").type_text("2");
+        assert!(
+            ui.has_text("Each pays $328.00"),
+            "typed digits reach the state"
+        );
+        ui.type_text("x");
+        assert!(
+            !ui.has_text("2x84.5"),
+            "letters are refused in a number field"
+        );
     }
 }

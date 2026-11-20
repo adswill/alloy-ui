@@ -58,7 +58,7 @@ fn view(d: &Dash) -> impl View<Act<Dash>> {
             .fill_w(),
             choose(
                 [("12 hours", Range::Hours), ("12 days", Range::Days)],
-                &d.range
+                d.range
             )
             .act(|d: &mut Dash, r| {
                 d.range = r;

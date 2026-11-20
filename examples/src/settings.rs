@@ -21,7 +21,7 @@ fn view(s: &S) -> impl View<Act<S>> {
             heading("Appearance"),
             section(
                 "Theme",
-                choose([("Light", false), ("Dark", true)], &s.dark).act(|s: &mut S, d| {
+                choose([("Light", false), ("Dark", true)], s.dark).act(|s: &mut S, d| {
                     s.dark = d;
                     set_dark(d);
                 })
