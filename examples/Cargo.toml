@@ -1,0 +1,34 @@
+[package]
+name = "alloy-ui-examples"
+description = "Example applications for the Alloy UI framework"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-ui-core.workspace = true
+alloy-ui-layout.workspace = true
+alloy-ui-render.workspace = true
+alloy-ui-theme.workspace = true
+
+[[bin]]
+name = "counter"
+path = "src/bin/counter.rs"
+[[bin]]
+name = "todo"
+path = "src/bin/todo.rs"
+[[bin]]
+name = "text_editor"
+path = "src/bin/text_editor.rs"
+[[bin]]
+name = "settings"
+path = "src/bin/settings.rs"
+[[bin]]
+name = "dashboard"
+path = "src/bin/dashboard.rs"

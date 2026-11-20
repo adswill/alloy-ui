@@ -2,10 +2,11 @@
 //! CPU renderers so both place identical glyph bitmaps.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 
+use alloy_ui_core::Size;
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent,
+    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight,
 };
 
 /// Line height as a multiple of font size.
@@ -39,11 +40,71 @@ pub struct PlacedGlyph {
     pub y: i32,
 }
 
-/// Owns the font database, shaper and glyph bitmap cache.
-pub struct TextSystem {
+struct Inner {
     fonts: FontSystem,
     swash: SwashCache,
     bitmaps: HashMap<CacheKey, Option<Arc<GlyphBitmap>>>,
+}
+
+/// Owns the font database, shaper and glyph bitmap cache. Cloning is cheap
+/// and yields a handle to the same shared state, so a [`TextMeasurer`] and a
+/// renderer use one font database.
+#[derive(Clone)]
+pub struct TextSystem {
+    inner: Arc<Mutex<Inner>>,
+}
+
+/// Cloneable, thread-safe text measurement handle sharing the renderer's
+/// fonts and shaper, so measured sizes match what is drawn.
+#[derive(Clone)]
+pub struct TextMeasurer {
+    sys: TextSystem,
+}
+
+impl TextMeasurer {
+    /// A measurer over a fresh system that loads the OS fonts.
+    pub fn new() -> Self {
+        Self {
+            sys: TextSystem::new(),
+        }
+    }
+
+    /// A measurer sharing `sys`'s fonts and caches.
+    pub fn from_text_system(sys: &TextSystem) -> Self {
+        Self { sys: sys.clone() }
+    }
+
+    /// Size in logical pixels of `text` at `size` (logical px) and `weight`
+    /// (100..=900), wrapped at `max_width` if given. Height uses the default
+    /// 1.25x line height per line.
+    pub fn measure(&self, text: &str, size: f32, weight: u16, max_width: Option<f32>) -> Size {
+        self.measure_with_line_height(text, size, weight, None, max_width)
+    }
+
+    /// As [`TextMeasurer::measure`] with an explicit line height (logical px).
+    pub fn measure_with_line_height(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        line_height: Option<f32>,
+        max_width: Option<f32>,
+    ) -> Size {
+        let (w, h) = self
+            .sys
+            .clone()
+            .extent(text, size, weight, line_height, max_width);
+        Size {
+            width: w,
+            height: h,
+        }
+    }
+}
+
+impl Default for TextMeasurer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Default for TextSystem {
@@ -69,15 +130,50 @@ impl TextSystem {
 
     fn from_font_system(fonts: FontSystem) -> Self {
         Self {
-            fonts,
-            swash: SwashCache::new(),
-            bitmaps: HashMap::new(),
+            inner: Arc::new(Mutex::new(Inner {
+                fonts,
+                swash: SwashCache::new(),
+                bitmaps: HashMap::new(),
+            })),
         }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, Inner> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// A measurement handle sharing this system's fonts.
+    pub fn measurer(&self) -> TextMeasurer {
+        TextMeasurer::from_text_system(self)
+    }
+
+    /// Logical extent `(width, height)` of laid-out text; see
+    /// [`TextMeasurer::measure`].
+    pub fn extent(
+        &mut self,
+        content: &str,
+        size: f32,
+        weight: u16,
+        line_height: Option<f32>,
+        max_width: Option<f32>,
+    ) -> (f32, f32) {
+        let mut g = self.lock();
+        let inner = &mut *g;
+        if size <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
+            return (0.0, 0.0);
+        }
+        let buffer = shaped(inner, content, size, weight, line_height, max_width);
+        let (mut w, mut h) = (0.0f32, 0.0f32);
+        for run in buffer.layout_runs() {
+            w = w.max(run.line_w);
+            h = h.max(run.line_top + run.line_height);
+        }
+        (w, h)
     }
 
     /// Number of font faces available. Zero means text cannot be drawn.
     pub fn face_count(&self) -> usize {
-        self.fonts.db().faces().count()
+        self.lock().fonts.db().faces().count()
     }
 
     /// Shape and lay out `content` at `size_px` (physical pixels), with the
@@ -86,19 +182,24 @@ impl TextSystem {
         &mut self,
         content: &str,
         size_px: f32,
+        weight: u16,
+        line_height_px: Option<f32>,
         max_width_px: Option<f32>,
         origin: (f32, f32),
     ) -> Vec<PlacedGlyph> {
-        if size_px <= 0.0 || content.is_empty() || self.face_count() == 0 {
+        let mut g = self.lock();
+        let inner = &mut *g;
+        if size_px <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
             return Vec::new();
         }
-        let mut buffer = Buffer::new(
-            &mut self.fonts,
-            Metrics::new(size_px, size_px * LINE_HEIGHT),
+        let buffer = shaped(
+            inner,
+            content,
+            size_px,
+            weight,
+            line_height_px,
+            max_width_px,
         );
-        buffer.set_size(&mut self.fonts, max_width_px, None);
-        buffer.set_text(&mut self.fonts, content, &Attrs::new(), Shaping::Advanced);
-        buffer.shape_until_scroll(&mut self.fonts, false);
         let ox = origin.0.round() as i32;
         let oy = origin.1.round() as i32;
         let mut out = Vec::new();
@@ -118,12 +219,17 @@ impl TextSystem {
 
     /// The rasterised bitmap for a glyph, if it has one (spaces do not).
     pub fn bitmap(&mut self, key: CacheKey) -> Option<Arc<GlyphBitmap>> {
-        if let Some(b) = self.bitmaps.get(&key) {
+        let mut g = self.lock();
+        let Inner {
+            fonts,
+            swash,
+            bitmaps,
+        } = &mut *g;
+        if let Some(b) = bitmaps.get(&key) {
             return b.clone();
         }
-        let made = self
-            .swash
-            .get_image(&mut self.fonts, key)
+        let made = swash
+            .get_image(fonts, key)
             .as_ref()
             .filter(|img| img.placement.width > 0 && img.placement.height > 0)
             .map(|img| {
@@ -163,7 +269,26 @@ impl TextSystem {
                     rgba,
                 })
             });
-        self.bitmaps.insert(key, made.clone());
+        bitmaps.insert(key, made.clone());
         made
     }
+}
+
+fn shaped(
+    inner: &mut Inner,
+    content: &str,
+    size: f32,
+    weight: u16,
+    line_height: Option<f32>,
+    max_width: Option<f32>,
+) -> Buffer {
+    let lh = line_height
+        .filter(|l| *l > 0.0)
+        .unwrap_or(size * LINE_HEIGHT);
+    let mut buffer = Buffer::new(&mut inner.fonts, Metrics::new(size, lh));
+    buffer.set_size(&mut inner.fonts, max_width, None);
+    let attrs = Attrs::new().weight(Weight(weight.clamp(1, 1000)));
+    buffer.set_text(&mut inner.fonts, content, &attrs, Shaping::Advanced);
+    buffer.shape_until_scroll(&mut inner.fonts, false);
+    buffer
 }

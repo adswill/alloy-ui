@@ -19,6 +19,11 @@ pub struct WindowRenderer {
 }
 
 impl WindowRenderer {
+    /// A measurement handle sharing this renderer's fonts.
+    pub fn text_measurer(&self) -> crate::TextMeasurer {
+        self.painter.text.measurer()
+    }
+
     /// Create a renderer for a window. `window` is anything wgpu accepts as a
     /// surface target, typically an `Arc<W>` where `W` implements
     /// `HasWindowHandle + HasDisplayHandle`. `width`/`height` are physical pixels.

@@ -72,6 +72,8 @@ impl<M: 'static> Widget<M> for Tooltip<M> {
             shadow: Some(t.elevation.medium),
         });
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(b.origin.x + px, b.origin.y + b.size.height + 6.0 + py),
             content: self.text.clone(),
             size: s.size,

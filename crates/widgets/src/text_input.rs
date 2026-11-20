@@ -314,6 +314,8 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let ty = b.origin.y + (b.size.height - s.line_height) / 2.0;
         if self.value.is_empty() && e.preedit.is_empty() {
             out.push(DrawCommand::Text {
+                weight: 400,
+                line_height: None,
                 origin: Point::new(ox, ty),
                 content: self.placeholder.clone(),
                 size: s.size,
@@ -344,6 +346,8 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             let mut text = |x: f32, content: String| {
                 if !content.is_empty() {
                     out.push(DrawCommand::Text {
+                        weight: 400,
+                        line_height: None,
                         origin: Point::new(ox + x, ty),
                         content,
                         size: s.size,

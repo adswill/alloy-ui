@@ -151,6 +151,8 @@ impl<M: 'static> Widget<M> for Toggle<M> {
         if !self.label.is_empty() {
             let s = t.typography.body;
             out.push(DrawCommand::Text {
+                weight: 400,
+                line_height: None,
                 origin: Point::new(
                     b.origin.x + W + t.spacing.sm,
                     b.origin.y + (b.size.height - s.line_height) / 2.0,

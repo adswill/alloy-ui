@@ -1,0 +1,39 @@
+# Owned by the `alloy-ui-cli` workstream. Builds a real app crate and bundles
+# it on each OS, then checks the artifacts (dpkg-deb, codesign, AppImage run,
+# NSIS compile). The general fmt/clippy/test matrix lives in ci.yml.
+name: alloy-cli
+on:
+  push:
+    paths: ["crates/cli/**", ".github/workflows/alloy-cli.yml"]
+  pull_request:
+    paths: ["crates/cli/**", ".github/workflows/alloy-cli.yml"]
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install appimagetool
+        if: runner.os == 'Linux'
+        run: |
+          curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          echo "ALLOY_APPIMAGETOOL=$PWD/appimagetool" >> "$GITHUB_ENV"
+          echo "ALLOY_REQUIRE_APPIMAGE=1" >> "$GITHUB_ENV"
+      - name: Install NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue) -and -not (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe")) {
+            choco install nsis -y --no-progress
+          }
+          "ALLOY_REQUIRE_NSIS=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Unit and end-to-end tests
+        run: cargo test -p alloy-ui-cli -- --nocapture

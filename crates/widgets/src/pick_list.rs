@@ -196,6 +196,8 @@ impl<M: 'static> Widget<M> for PickList<M> {
         });
         let empty = self.selected.is_none();
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 b.origin.x + t.spacing.md,
                 b.origin.y + (b.size.height - s.line_height) / 2.0,
@@ -212,6 +214,8 @@ impl<M: 'static> Widget<M> for PickList<M> {
             max_width: None,
         });
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 b.origin.x + b.size.width - t.spacing.md - 10.0,
                 b.origin.y + (b.size.height - s.line_height) / 2.0,
@@ -257,6 +261,8 @@ impl<M: 'static> Widget<M> for PickList<M> {
                     });
                 }
                 out.push(DrawCommand::Text {
+                    weight: 400,
+                    line_height: None,
                     origin: Point::new(
                         row.origin.x + t.spacing.sm,
                         row.origin.y + (row.size.height - s.line_height) / 2.0,
