@@ -608,6 +608,11 @@ impl<T, M> Choose<T, M> {
     }
 }
 impl<T: Clone + Send + Sync + 'static, S: 'static> Choose<T, Act<S>> {
+    /// Write the picked value into a [`Local`](crate::Local) view-state cell.
+    pub fn local(self, cell: &crate::Local<T>) -> Self {
+        let cell = cell.clone();
+        self.act(move |_, v| cell.set(v))
+    }
     /// Closure style: `.act(|state, picked| ..)`.
     pub fn act(self, f: impl Fn(&mut S, T) + Send + Sync + 'static) -> Self {
         self.on(set_with(f))

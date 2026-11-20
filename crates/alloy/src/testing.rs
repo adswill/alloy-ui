@@ -87,6 +87,18 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::MouseReleased(MouseButton::Left));
         self
     }
+    /// Wait (up to 5 s) for background [`resource`](crate::resource)s to finish and show their data.
+    pub fn settle(&mut self) -> &mut Self {
+        for _ in 0..200 {
+            crate::resource::pump();
+            self.rt.dispatch_all(Vec::new());
+            if crate::resource::idle() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        self
+    }
     /// Type text into the focused widget.
     pub fn type_text(&mut self, text: &str) -> &mut Self {
         self.rt.handle_event(&Event::TextInput(text.to_string()));

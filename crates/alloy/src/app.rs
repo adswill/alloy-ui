@@ -107,9 +107,11 @@ pub trait App: Sized + 'static {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(at) = args.iter().position(|a| a == "--headless") {
             let mut h = crate::testing::Harness::new(self, width, height);
+            h.settle();
             for pair in args.windows(2).filter(|p| p[0] == "--click") {
                 h.click(&pair[1]);
             }
+            h.settle();
             let out = args.get(at + 1).filter(|a| !a.starts_with("--"));
             let path = out
                 .cloned()
@@ -245,12 +247,10 @@ where
     }
 
     fn subscriptions(&self) -> Vec<Sub<Act<S>>> {
-        self.tick
-            .iter()
-            .map(|(period, act)| {
-                let act = act.clone();
-                every(*period, move || act.clone())
-            })
-            .collect()
+        let ticks = self.tick.iter().map(|(period, act)| {
+            let act = act.clone();
+            every(*period, move || act.clone())
+        });
+        ticks.chain(crate::resource::pump_sub()).collect()
     }
 }

@@ -220,13 +220,26 @@ fn show(f: &FieldInfo, v: &Value) -> String {
     match v {
         Value::Text(t) => t.clone(),
         Value::Num(n) if n.fract() == 0.0 => format!("{n:.0}"),
-        Value::Num(n) => format!("{n:.1}"),
+        Value::Num(n) => format!("{n:.2}"),
         Value::Bool(b) => if *b { "Yes" } else { "No" }.into(),
         Value::Pick(i) => match f.kind {
             Kind::Enum(labels) => labels().get(*i).copied().unwrap_or("").into(),
             _ => String::new(),
         },
     }
+}
+
+/// A read-only sortable table with one column per field of `T`, headers from the derive.
+pub fn table_of<T: Record, S: 'static>(rows: &[T]) -> crate::Table<'_, T, S> {
+    let mut grid = table(rows);
+    for (i, f) in T::fields().into_iter().enumerate() {
+        let get = move |r: &T| show(&f, &r.get(i));
+        grid = match f.kind {
+            Kind::Number { .. } => grid.num(f.label, get),
+            _ => grid.col(f.label, get),
+        };
+    }
+    grid
 }
 
 type Edit<S, T> = Arc<dyn Fn(&mut S, &mut dyn FnMut(&mut Records<T>)) + Send + Sync>;
@@ -251,15 +264,7 @@ pub fn records_in<S: 'static, T: Record>(
 fn editor<S: 'static, T: Record>(title: &str, data: &Records<T>, lens: Edit<S, T>) -> Node<Act<S>> {
     let fields = T::fields();
     let q = local(String::new());
-    let mut grid = table(&data.rows);
-    for (i, f) in fields.iter().enumerate() {
-        let f = *f;
-        let get = move |r: &T| show(&f, &r.get(i));
-        grid = match f.kind {
-            Kind::Number { .. } => grid.num(f.label, get),
-            _ => grid.col(f.label, get),
-        };
-    }
+    let grid = table_of(&data.rows);
     let (l1, l2, l3) = (lens.clone(), lens.clone(), lens.clone());
     let grid = grid
         .filter(&q.get())

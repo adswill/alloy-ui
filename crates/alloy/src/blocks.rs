@@ -389,6 +389,10 @@ impl App for Pages {
         }
     }
 
+    fn subscriptions(&self) -> Vec<crate::Sub<Act<()>>> {
+        crate::resource::pump_sub().into_iter().collect()
+    }
+
     fn view(&self) -> impl View<Act<()>> {
         let open = store(|| 0usize);
         let at = open.get().min(self.pages.len().saturating_sub(1));

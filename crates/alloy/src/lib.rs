@@ -33,6 +33,7 @@ mod cx;
 mod dsl;
 mod persist;
 mod records;
+mod resource;
 pub mod testing;
 pub mod view;
 
@@ -46,8 +47,9 @@ pub use dsl::{
     Variant,
 };
 pub use records::{
-    crud, crud_app, records, records_in, Field, FieldInfo, Kind, Record, Records, Value,
+    crud, crud_app, records, records_in, table_of, Field, FieldInfo, Kind, Record, Records, Value,
 };
+pub use resource::{block_on, resource, sleep, Resource};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use {serde, serde_json};
 
@@ -56,9 +58,9 @@ pub mod prelude {
     pub use crate::{
         app, bars, button, caption, check, choose, crud, crud_app, custom, editor, every, field,
         gap, heading, input, local, nav, options, palette, pick, progress, radio, records,
-        records_in, rule, scroll, secs, section, set_dark, shell, sketch, slider, space, store,
-        table, tabs, text, theme_switch, toggle, vspace, Act, App, Choice, Cmd, Local, Node,
-        Record, Records, View,
+        records_in, resource, rule, scroll, secs, section, set_dark, shell, sketch, sleep, slider,
+        space, store, table, table_of, tabs, text, theme_switch, toggle, vspace, Act, App, Choice,
+        Cmd, Local, Node, Record, Records, Resource, View,
     };
     pub use crate::{choices, col, row, vals};
     pub use alloy_ui_core::Color;
