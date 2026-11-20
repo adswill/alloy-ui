@@ -20,6 +20,10 @@ pub struct Layout {
 /// Widgets are rebuilt every `view`; persistent widget state (focus,
 /// scroll offset, caret) lives in the runtime's state tree keyed by position.
 pub trait Widget<M> {
+    /// Layout style (sizing, padding, direction). Default: shrink-wrapped.
+    fn style(&self) -> crate::style::Style {
+        crate::style::Style::default()
+    }
     /// Preferred size given the available space (layout engine entry point).
     fn measure(&self, available: Size) -> Size;
     /// Child elements, for layout and event traversal.

@@ -12,3 +12,14 @@ workspace = true
 
 [dependencies]
 alloy-ui-core.workspace = true
+wgpu = { version = "25", default-features = false, features = ["wgsl", "vulkan", "gles", "metal", "dx12"] }
+raw-window-handle = "0.6"
+cosmic-text = { version = "0.14", default-features = false, features = ["std", "swash", "fontconfig"] }
+bytemuck = { version = "1", features = ["derive"] }
+png = "0.17"
+log = "0.4"
+thiserror = "2"
+pollster = "0.4"
+
+[dev-dependencies]
+naga = { version = "25", features = ["wgsl-in"] }

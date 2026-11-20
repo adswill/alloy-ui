@@ -8,6 +8,7 @@ pub mod draw;
 pub mod event;
 pub mod geometry;
 pub mod runtime;
+pub mod style;
 pub mod widget;
 
 pub use draw::{Border, DrawCommand, DrawList, Shadow};
