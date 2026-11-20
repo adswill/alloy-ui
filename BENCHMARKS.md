@@ -1,34 +1,57 @@
 # Benchmarks
 
-Produced by `cargo run --release -p alloy-ui-bench`. Only numbers that were actually measured are listed.
+Only numbers that were actually measured are listed. Everything below ran on one
+machine: the Linux cloud development container (shared CPU, software rendering
+through Mesa llvmpipe under Xvfb). Treat it as indicative, not as a GPU result.
+macOS and Windows have not been run yet; run the harness there and add a section.
 
-## What is and is not measured
+## Headless harness
+
+`cargo run --release -p alloy-ui-bench`
 
 - **Frame build**: `update` + `view` + layout + draw-list construction through the real `Runtime`.
-- **CPU raster**: the software reference renderer at 2x scale. This is *not* the GPU path.
-- **Per no-op event**: runtime cost of an input event that changes nothing; a bound on idle work, not process CPU %.
-- **Startup**: wall time from spawning the example binary to its first frame written as PNG. The examples run headless because there is no windowed shell yet, so this is not window-visible time.
-- **Binary size**: the headless `counter` binary (it links the renderer). The windowed counter will differ.
-- **Not measured yet**: real fps, idle CPU %, windowed startup, ProMotion 120 fps. These need the platform shell.
+- **CPU raster**: the software reference renderer at 2x scale, not the GPU path.
+- **Per no-op event**: runtime cost of an input event that changes nothing.
+- **Spawn to first frame**: wall time from spawning `counter --headless` to its PNG being written.
+- **Binary size**: the stripped release `counter` (opt-level z, fat LTO, windowed build).
 
-## Results
-
-Run on the cloud development container (shared CPU, so treat as indicative). macOS and Windows: not run yet; run the harness there and add a section.
-
-   Compiling alloy-ui-examples v0.0.1 (/home/claude/alloy-ui/examples)
-    Finished `release` profile [optimized] target(s) in 31.12s
+    Finished `release` profile [optimized] target(s) in 0.12s
 ### linux / x86_64
 
 | Example | Frame build (median) | CPU raster 2x (median) | Per no-op event |
 |---|---|---|---|
-| counter | 3 us | 16.8 ms | 1238 ns |
-| todo | 3 us | 27.2 ms | 2374 ns |
-| text_editor | 2 us | 32.8 ms | 1212 ns |
-| settings | 2 us | 41.1 ms | 1325 ns |
-| dashboard | 12 us | 41.2 ms | 8042 ns |
+| counter | 3 us | 15.5 ms | 2432 ns |
+| todo | 7 us | 26.6 ms | 5131 ns |
+| text_editor | 4 us | 34.7 ms | 2574 ns |
+| settings | 5 us | 33.4 ms | 3986 ns |
+| dashboard | 14 us | 48.3 ms | 10638 ns |
 
 | Metric | Value | Target |
 |---|---|---|
-| counter release binary (headless build) | 1.99 MB | < 10 MB |
-| counter spawn to first frame written (headless, median of 7) | 19 ms | < 200 ms |
-| fps, idle CPU %, windowed startup | not measured (no platform shell yet) | 60 fps, < 1%, < 200 ms |
+| counter release binary (windowed build, also runs headless) | 5.73 MB | < 10 MB |
+| counter spawn to first frame written (--headless, median of 7) | 25 ms | < 200 ms |
+| fps, ProMotion 120 fps | not measured (no frame counter in the shell yet) | 60 fps |
+
+## Windowed run (Linux, Xvfb, software GL)
+
+`crates/bench/windowed.sh target/release counter todo text_editor settings dashboard`
+
+- **Window mapped**: from process spawn until an X window exists. This is not time to first painted frame.
+- **Idle CPU**: CPU time over 5 s after 1.5 s of settling, window untouched. The dashboard has a 1 s subscription that redraws, so it is not fully idle.
+- **Resident memory** is dominated by Mesa llvmpipe and wgpu in this container; a machine with a real GPU driver will differ.
+
+| Example | Window mapped | Idle CPU (5 s) | Resident memory |
+|---|---|---|---|
+| counter | 27 ms | 0.00% | 120 MB |
+| todo | 33 ms | 0.00% | 120 MB |
+| text_editor | 26 ms | 0.00% | 120 MB |
+| settings | 34 ms | 0.00% | 120 MB |
+| dashboard | 30 ms | 1.00% | 123 MB |
+
+A screenshot of the running dashboard window under Xvfb confirmed that the native window paints and that the subscription updates the chart.
+
+## Not measured yet
+
+- Frames per second (the shell has no frame counter; the 60 fps and 120 fps ProMotion targets are unverified).
+- Time to first painted frame in a window.
+- Anything on a real GPU, macOS or Windows.

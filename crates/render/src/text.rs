@@ -107,6 +107,16 @@ impl Default for TextMeasurer {
     }
 }
 
+/// IBM Plex Sans and Mono (SIL OFL 1.1), bundled for identical text on every OS.
+const BUNDLED_FONTS: [&[u8]; 6] = [
+    include_bytes!("../fonts/IBMPlexSans-Regular.ttf"),
+    include_bytes!("../fonts/IBMPlexSans-Medium.ttf"),
+    include_bytes!("../fonts/IBMPlexSans-SemiBold.ttf"),
+    include_bytes!("../fonts/IBMPlexSans-Bold.ttf"),
+    include_bytes!("../fonts/IBMPlexMono-Regular.ttf"),
+    include_bytes!("../fonts/IBMPlexMono-Medium.ttf"),
+];
+
 impl Default for TextSystem {
     fn default() -> Self {
         Self::new()
@@ -116,7 +126,14 @@ impl Default for TextSystem {
 impl TextSystem {
     /// Create a text system that loads the operating system's fonts.
     pub fn new() -> Self {
-        Self::from_font_system(FontSystem::new())
+        let mut fonts = FontSystem::new();
+        for data in BUNDLED_FONTS {
+            fonts.db_mut().load_font_data(data.to_vec());
+        }
+        // Plex leads; system fonts remain available as per-glyph fallback.
+        fonts.db_mut().set_sans_serif_family("IBM Plex Sans");
+        fonts.db_mut().set_monospace_family("IBM Plex Mono");
+        Self::from_font_system(fonts)
     }
 
     /// Create a text system using only the given font files (TTF/OTF bytes).

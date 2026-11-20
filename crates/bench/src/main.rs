@@ -111,6 +111,7 @@ fn main() {
     for _ in 0..7 {
         let t = Instant::now();
         let ok = Command::new(&counter_bin)
+            .arg("--headless")
             .arg(&tmp)
             .output()
             .map(|o| o.status.success())
@@ -133,7 +134,9 @@ fn main() {
     println!();
     println!("| Metric | Value | Target |");
     println!("|---|---|---|");
-    println!("| counter release binary (headless build) | {size_mb:.2} MB | < 10 MB |");
-    println!("| counter spawn to first frame written (headless, median of 7) | {startup_ms:.0} ms | < 200 ms |");
-    println!("| fps, idle CPU %, windowed startup | not measured (no platform shell yet) | 60 fps, < 1%, < 200 ms |");
+    println!("| counter release binary (windowed build, also runs headless) | {size_mb:.2} MB | < 10 MB |");
+    println!("| counter spawn to first frame written (--headless, median of 7) | {startup_ms:.0} ms | < 200 ms |");
+    println!(
+        "| fps, ProMotion 120 fps | not measured (no frame counter in the shell yet) | 60 fps |"
+    );
 }

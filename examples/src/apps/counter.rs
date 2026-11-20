@@ -1,15 +1,15 @@
 //! Counter: the smallest complete Elm-style app.
-use crate::kit::{button, column, label, row, spacer, Emphasis};
 use crate::run::{Demo, Step};
 use alloy_ui_core::style::{Align, Length, Padding};
 use alloy_ui_core::{Application, Command, Element};
 use alloy_ui_theme::Theme;
+use alloy_ui_widgets::{Button, Column, Container, Root, Row, Text, TextRole, Ui, Variant};
 
 /// Counter state.
 pub struct Counter {
     /// Current value.
     pub value: i64,
-    theme: Theme,
+    ui: Ui,
 }
 
 /// Counter messages.
@@ -25,8 +25,11 @@ pub enum Msg {
 
 impl Counter {
     /// A counter at zero.
-    pub fn new(theme: Theme) -> Self {
-        Self { value: 0, theme }
+    pub fn new(ui: &Ui) -> Self {
+        Self {
+            value: 0,
+            ui: ui.clone(),
+        }
     }
 }
 
@@ -43,28 +46,44 @@ impl Application for Counter {
     }
 
     fn view(&self) -> Element<Msg> {
-        let p = &self.theme.palette;
-        column(vec![
-            label("Counter", 20.0, p.text).into(),
-            label(format!("{} so far", self.value), 14.0, p.text_secondary).into(),
-            spacer().into(),
-            row(vec![
-                button("Subtract", Emphasis::Secondary, p, Msg::Dec).into(),
-                button("Add", Emphasis::Primary, p, Msg::Inc).into(),
-                spacer().into(),
-                button("Reset", Emphasis::Quiet, p, Msg::Reset).into(),
+        let ui = &self.ui;
+        let bg = ui.theme().palette.background;
+        let body = Column::new(vec![
+            Text::new(ui, "Counter")
+                .role(TextRole::Heading)
+                .into_element(),
+            Text::new(ui, format!("{} so far", self.value))
+                .secondary()
+                .into_element(),
+            Row::new(vec![
+                Button::new(ui, "Subtract")
+                    .on_press(Msg::Dec)
+                    .into_element(),
+                Button::new(ui, "Add")
+                    .on_press(Msg::Inc)
+                    .variant(Variant::Primary)
+                    .into_element(),
+                Button::new(ui, "Reset")
+                    .on_press(Msg::Reset)
+                    .variant(Variant::Ghost)
+                    .into_element(),
             ])
             .spacing(8.0)
             .align(Align::Center)
-            .width(Length::Fill(1))
-            .into(),
+            .into_element(),
         ])
-        .spacing(4.0)
+        .spacing(14.0)
         .padding(Padding::all(24.0))
-        .width(Length::Fill(1))
-        .height(Length::Fill(1))
-        .background(p.background)
-        .into()
+        .into_element();
+        Root::new(
+            ui,
+            Container::new(body)
+                .background(bg)
+                .width(Length::Fill(1))
+                .height(Length::Fill(1))
+                .into_element(),
+        )
+        .into_element()
     }
 }
 
@@ -72,7 +91,7 @@ impl Application for Counter {
 pub fn demo() -> Demo<Counter> {
     Demo {
         name: "counter",
-        app: Counter::new(Theme::light()),
+        app: Counter::new(&crate::run::headless_ui(Theme::light())),
         size: (360.0, 180.0),
         steps: vec![
             Step::Click("Add"),
