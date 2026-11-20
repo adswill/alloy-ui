@@ -1,0 +1,253 @@
+//! Shortcuts, toasts and undo: the per-thread registry that views and handlers write to and the
+//! shell reads from.
+
+use crate::{dsl::Act, view::View};
+use std::{any::Any, cell::RefCell};
+
+/// A keyboard shortcut and the message it sends. See [`App::shortcuts`](crate::App::shortcuts).
+pub struct Hotkey<M> {
+    pub(crate) keys: String,
+    pub(crate) label: Option<String>,
+    pub(crate) msg: M,
+}
+
+impl<M> Hotkey<M> {
+    /// `keys` is like `"mod+s"`, `"mod+shift+z"`, `"ctrl+enter"` or `"f5"`; `mod` is Cmd on macOS
+    /// and Ctrl elsewhere.
+    pub fn new(keys: &str, msg: M) -> Self {
+        Self {
+            keys: keys.into(),
+            label: None,
+            msg,
+        }
+    }
+    /// Also list the shortcut under this name in the native menu bar.
+    pub fn labelled(mut self, label: &str) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+/// What the history shortcuts ask the shell to do after the current message.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum Meta {
+    /// Step back one change.
+    Undo,
+    /// Step forward again.
+    Redo,
+}
+
+/// A copy of the app's state, for undo. Made by [`Snap::new`].
+pub struct Snap(Box<dyn Dyn>);
+
+trait Dyn {
+    fn same(&self, other: &dyn Any) -> bool;
+    fn any(&self) -> &dyn Any;
+    fn into_any(self: Box<Self>) -> Box<dyn Any>;
+}
+struct Held<T>(T);
+impl<T: PartialEq + 'static> Dyn for Held<T> {
+    fn same(&self, other: &dyn Any) -> bool {
+        other.downcast_ref::<T>().is_some_and(|o| *o == self.0)
+    }
+    fn any(&self) -> &dyn Any {
+        &self.0
+    }
+    fn into_any(self: Box<Self>) -> Box<dyn Any> {
+        Box::new(self.0)
+    }
+}
+
+impl Snap {
+    /// Wrap a copy of the state. Equal snapshots are not recorded as separate undo steps.
+    pub fn new<T: PartialEq + 'static>(v: T) -> Self {
+        Snap(Box::new(Held(v)))
+    }
+    /// The state back out, if it is a `T`.
+    pub fn take<T: 'static>(self) -> Option<T> {
+        self.0.into_any().downcast::<T>().ok().map(|b| *b)
+    }
+    pub(crate) fn same(&self, o: &Snap) -> bool {
+        self.0.same(o.0.any())
+    }
+}
+
+pub(crate) struct ToastItem {
+    pub id: u64,
+    pub text: String,
+    pub undo: bool,
+    pub error: bool,
+    pub secs: f32,
+    /// Tick time when it first showed; `None` until the next tick.
+    pub born: Option<u64>,
+}
+
+#[derive(Default)]
+struct Reg {
+    keys: Vec<(String, Option<String>, Box<dyn Any>)>,
+    meta: Option<Meta>,
+    toasts: Vec<ToastItem>,
+    next_toast: u64,
+    now: u64,
+    menu: Vec<(String, String)>,
+    menu_sent: Vec<(String, String)>,
+    undoable: bool,
+}
+
+thread_local! {
+    static REG: RefCell<Reg> = RefCell::new(Reg::default());
+}
+
+fn reg<R>(f: impl FnOnce(&mut Reg) -> R) -> R {
+    REG.with(|r| f(&mut r.borrow_mut()))
+}
+
+/// Remember a shortcut registered while building the view.
+pub(crate) fn register<M: 'static>(h: Hotkey<M>) {
+    reg(|r| r.keys.push((h.keys, h.label, Box::new(h.msg))));
+}
+
+/// The shortcuts registered since the last call, of message type `M`.
+pub(crate) fn take_registered<M: 'static>() -> Vec<Hotkey<M>> {
+    reg(|r| std::mem::take(&mut r.keys))
+        .into_iter()
+        .filter_map(|(keys, label, m)| {
+            m.downcast::<M>().ok().map(|m| Hotkey {
+                keys,
+                label,
+                msg: *m,
+            })
+        })
+        .collect()
+}
+
+pub(crate) fn publish_menu(items: Vec<(String, String)>, undoable: bool) {
+    reg(|r| {
+        r.menu = items;
+        r.undoable = undoable;
+    });
+}
+
+/// Whether the running app has undo, so a block can skip its "are you sure?" and offer a toast.
+pub(crate) fn undoable() -> bool {
+    reg(|r| r.undoable)
+}
+
+/// The menu entries (shortcut, label) if they changed since the last call.
+pub(crate) fn menu_changed() -> Option<Vec<(String, String)>> {
+    reg(|r| {
+        (r.menu != r.menu_sent).then(|| {
+            r.menu_sent = r.menu.clone();
+            r.menu.clone()
+        })
+    })
+}
+
+/// Undo the last change to the app's state (what `mod+z` does). Call it from a handler:
+/// `button("Undo").act(|_| undo())`. Needs [`Sketch::undoable`](crate::Sketch::undoable) or
+/// [`Pages::undoable`](crate::Pages::undoable).
+pub fn undo() {
+    reg(|r| r.meta = Some(Meta::Undo));
+}
+
+/// Redo what [`undo`] undid (`mod+shift+z`).
+pub fn redo() {
+    reg(|r| r.meta = Some(Meta::Redo));
+}
+
+pub(crate) fn take_meta() -> Option<Meta> {
+    reg(|r| r.meta.take())
+}
+
+pub(crate) fn meta_act<S: 'static>(m: Meta) -> Act<S> {
+    Act::new(move |_: &mut S| reg(|r| r.meta = Some(m)))
+}
+
+// ---------------------------------------------------------------- toasts
+
+/// A short message that fades in at the bottom of the window and goes away by itself:
+/// `toast("Saved")`, or `toast("Note deleted").undo()` with an Undo button that steps the
+/// app back (see [`Sketch::undoable`](crate::Sketch::undoable)). Call it from any handler.
+pub fn toast(text: impl Into<String>) -> Toast {
+    reg(|r| {
+        let text = text.into();
+        // The same message again replaces itself instead of stacking.
+        r.toasts.retain(|t| t.text != text);
+        r.next_toast += 1;
+        let id = r.next_toast;
+        r.toasts.push(ToastItem {
+            id,
+            text,
+            undo: false,
+            error: false,
+            secs: 3.0,
+            born: None,
+        });
+        // Keep a burst of toasts from piling up the screen.
+        if r.toasts.len() > 4 {
+            r.toasts.remove(0);
+        }
+        Toast(id)
+    })
+}
+
+/// The handle [`toast`] returns, to adjust the toast just shown.
+#[derive(Clone, Copy)]
+pub struct Toast(u64);
+
+impl Toast {
+    fn edit(self, f: impl FnOnce(&mut ToastItem)) -> Self {
+        reg(|r| {
+            if let Some(t) = r.toasts.iter_mut().find(|t| t.id == self.0) {
+                f(t)
+            }
+        });
+        self
+    }
+    /// Add an Undo button (stays 6 s unless [`secs`](Self::secs) says otherwise).
+    pub fn undo(self) -> Self {
+        self.edit(|t| {
+            t.undo = true;
+            t.secs = t.secs.max(6.0)
+        })
+    }
+    /// Show for this long.
+    pub fn secs(self, secs: f32) -> Self {
+        self.edit(|t| t.secs = secs)
+    }
+    /// Style as a failure.
+    pub fn error(self) -> Self {
+        self.edit(|t| t.error = true)
+    }
+}
+
+pub(crate) fn toasts<R>(f: impl FnOnce(&mut Vec<ToastItem>, u64) -> R) -> R {
+    reg(|r| f(&mut r.toasts, r.now))
+}
+
+pub(crate) fn set_now(ms: u64) {
+    reg(|r| r.now = ms);
+}
+
+// -------------------------------------------------------- view extension
+
+/// Register a shortcut from inside a view: `page.shortcut("mod+n", |s| s.new_note())`.
+pub trait Shortcuts<S: 'static>: View<Act<S>> + Sized {
+    /// Run `f` on the state when `keys` is pressed anywhere in the window (while this view is
+    /// shown). `mod` is Cmd on macOS and Ctrl elsewhere.
+    fn shortcut(self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        register(Hotkey::new(keys, Act::new(f)));
+        self
+    }
+    /// Like [`shortcut`](Self::shortcut), and listed in the menu bar as `label`.
+    fn shortcut_as(
+        self,
+        keys: &str,
+        label: &str,
+        f: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Self {
+        register(Hotkey::new(keys, Act::new(f)).labelled(label));
+        self
+    }
+}
+impl<S: 'static, V: View<Act<S>>> Shortcuts<S> for V {}
