@@ -9,12 +9,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
+name = "alloy-ui-bench"
+version = "0.0.1"
+dependencies = [
+ "alloy-ui-core",
+ "alloy-ui-examples",
+ "alloy-ui-render",
+]
+
+[[package]]
 name = "alloy-ui-cli"
 version = "0.0.1"
 
 [[package]]
 name = "alloy-ui-core"
 version = "0.0.1"
+
+[[package]]
+name = "alloy-ui-examples"
+version = "0.0.1"
+dependencies = [
+ "alloy-ui-core",
+ "alloy-ui-layout",
+ "alloy-ui-render",
+ "alloy-ui-theme",
+]
 
 [[package]]
 name = "alloy-ui-ipc"
