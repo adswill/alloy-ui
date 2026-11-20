@@ -15,6 +15,8 @@ USAGE:
 COMMANDS:
     build     Build the release binary
     bundle    Build, then package (default formats depend on the host OS)
+    new       Create a starter app: alloy new <name>
+    dev       Run the app (debug build) with its capability config
     check     Validate [package.metadata.alloy], icons and the capability config
     help      Show this text
     version   Show the version
@@ -24,18 +26,23 @@ OPTIONS:
     -p, --package <NAME>     Package to use in a workspace
     --bin <NAME>             Binary target to bundle
     --target <TRIPLE>        Cross-compile for this target
-    --format <LIST>          Comma list of: app, dmg, deb, appimage, exe, nsis
+    --format <LIST>          Comma list of: app, dmg, deb, rpm, appimage, exe, nsis, msi
     --out <DIR>              Output directory (default: <target>/alloy-bundle)
     --binary <PATH>          Bundle this prebuilt binary instead of building
+    --identifier <ID>        (new) reverse-DNS app identifier
+    --alloy-path <DIR>       (new) depend on a local Alloy checkout instead of git
+    --release                (dev) run the release build
     --skip-build             Bundle the existing release binary without building
 
 FORMATS:
     app        macOS .app bundle (ad-hoc signed when built on macOS)
     dmg        macOS disk image (macOS only, needs hdiutil)
     deb        Debian/Ubuntu package (built in pure Rust)
+    rpm        Fedora/RHEL/openSUSE package (built in pure Rust)
     appimage   Linux AppImage (needs `appimagetool`, or set ALLOY_APPIMAGETOOL)
-    exe        Windows portable executable
+    exe        Windows portable executable (icon embedded)
     nsis       Windows installer (needs `makensis`)
+    msi        Windows MSI installer (needs WiX 4+: `wix`, or ALLOY_WIX)
 ";
 
 /// A parsed command.
@@ -47,6 +54,10 @@ pub enum Command {
     Bundle,
     /// `alloy check`
     Check,
+    /// `alloy new`
+    New,
+    /// `alloy dev`
+    Dev,
     /// `alloy help`
     Help,
     /// `alloy version`
@@ -70,7 +81,16 @@ pub struct Args {
     pub binary: Option<PathBuf>,
     /// `--skip-build`.
     pub skip_build: bool,
-    /// Arguments after `--`, forwarded to cargo.
+    /// `alloy new`: the app name.
+    pub name: Option<String>,
+    /// `--identifier`.
+    pub identifier: Option<String>,
+    /// `--alloy-path`.
+    pub alloy_path: Option<PathBuf>,
+    /// `--release` (dev).
+    pub release: bool,
+    /// Arguments after `--`: forwarded to cargo (`build`, `bundle`) or to the
+    /// app itself (`dev`).
     pub cargo_args: Vec<String>,
 }
 
@@ -83,6 +103,8 @@ pub fn parse(args: &[String]) -> Result<Args> {
         Some("build") => Command::Build,
         Some("bundle") => Command::Bundle,
         Some("check") => Command::Check,
+        Some("new") => Command::New,
+        Some("dev") => Command::Dev,
         Some(other) => {
             return Err(Error::Usage(format!(
                 "unknown command `{other}`; try `alloy help`"
@@ -97,6 +119,10 @@ pub fn parse(args: &[String]) -> Result<Args> {
         out: None,
         binary: None,
         skip_build: false,
+        name: None,
+        identifier: None,
+        alloy_path: None,
+        release: false,
         cargo_args: vec![],
     };
     let value = |it: &mut std::slice::Iter<String>, flag: &str| -> Result<String> {
@@ -113,6 +139,9 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--out" => a.out = Some(value(&mut it, arg)?.into()),
             "--binary" => a.binary = Some(value(&mut it, arg)?.into()),
             "--skip-build" => a.skip_build = true,
+            "--release" => a.release = true,
+            "--identifier" => a.identifier = Some(value(&mut it, arg)?),
+            "--alloy-path" => a.alloy_path = Some(value(&mut it, arg)?.into()),
             "--format" => {
                 for f in value(&mut it, arg)?.split(',') {
                     let f = Format::parse(f.trim())?;
@@ -124,6 +153,9 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--" => {
                 a.cargo_args = it.cloned().collect();
                 break;
+            }
+            other if a.command == Command::New && a.name.is_none() && !other.starts_with('-') => {
+                a.name = Some(other.to_string())
             }
             other => return Err(Error::Usage(format!("unknown option `{other}`"))),
         }
@@ -157,6 +189,19 @@ mod tests {
         assert_eq!(a.formats, vec![Format::Deb, Format::App]);
         assert!(a.skip_build);
         assert_eq!(a.cargo_args, vec!["--features", "f"]);
+    }
+
+    #[test]
+    fn new_and_dev() {
+        let a = p("new my-app --identifier dev.x.y --alloy-path /a").unwrap();
+        assert_eq!(a.command, Command::New);
+        assert_eq!(a.name.as_deref(), Some("my-app"));
+        assert_eq!(a.identifier.as_deref(), Some("dev.x.y"));
+        let d = p("dev --release -- --flag").unwrap();
+        assert!(d.release);
+        assert_eq!(d.cargo_args, vec!["--flag"]);
+        assert!(p("bundle stray").is_err());
+        assert!(p("new a b").is_err());
     }
 
     #[test]

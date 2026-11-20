@@ -10,9 +10,12 @@
 pub mod args;
 pub mod bundle;
 pub mod compile;
+pub mod dev;
 pub mod error;
 pub mod icon;
+pub mod pe;
 pub mod project;
+pub mod scaffold;
 
 pub use error::{Error, Result};
 
@@ -33,6 +36,31 @@ pub fn run(argv: &[String]) -> Result<()> {
             println!("alloy {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
+        Command::New => {
+            let name = a
+                .name
+                .ok_or_else(|| Error::Usage("usage: alloy new <name>".into()))?;
+            let source = match a.alloy_path {
+                Some(p) => scaffold::Source::Path(
+                    p.canonicalize()
+                        .map_err(error::io(format!("{}", p.display())))?,
+                ),
+                None => scaffold::Source::Git,
+            };
+            let cwd = std::env::current_dir().map_err(error::io("current directory"))?;
+            let dir = scaffold::create(
+                &cwd,
+                &scaffold::NewApp {
+                    name,
+                    identifier: a.identifier,
+                    source,
+                },
+            )?;
+            println!("created {}", dir.display());
+            println!("next: cd {} && alloy dev", dir.display());
+            Ok(())
+        }
+        Command::Dev => dev::run_dev(&a),
         Command::Check => {
             let p = Project::load(&a.selector)?;
             let icons = IconSet::load(&p.icons)?;
