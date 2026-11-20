@@ -14,6 +14,7 @@ pub mod fonts;
 pub mod menu;
 mod os;
 pub mod shell;
+pub mod shortcut;
 pub mod theme;
 pub mod tray;
 
