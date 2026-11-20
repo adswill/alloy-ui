@@ -2,11 +2,18 @@
 # it on each OS, then checks the artifacts (dpkg-deb, codesign, AppImage run,
 # NSIS compile). The general fmt/clippy/test matrix lives in ci.yml.
 name: alloy-cli
+# Runner policy (DECISIONS 47): pull requests run Ubuntu only; pushes to the
+# integration branch and manual runs use the full macOS/Ubuntu/Windows matrix.
 on:
   push:
-    paths: ["crates/cli/**", ".github/workflows/alloy-cli.yml"]
+    branches: [main, claude/project-thread-6n01vk, claude/project-thread-jiaih7]
+    paths: ["crates/cli/**", "examples/**", ".github/workflows/alloy-cli.yml"]
   pull_request:
-    paths: ["crates/cli/**", ".github/workflows/alloy-cli.yml"]
+    paths: ["crates/cli/**", "examples/**", ".github/workflows/alloy-cli.yml"]
+  workflow_dispatch:
+concurrency:
+  group: alloy-cli-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/claude/project-thread-6n01vk' }}
 env:
   CARGO_TERM_COLOR: always
 jobs:
@@ -14,7 +21,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["macos-latest","ubuntu-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -47,6 +54,36 @@ jobs:
           "ALLOY_REQUIRE_NSIS=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Unit and end-to-end tests
         run: cargo test -p alloy-ui-cli -- --nocapture
+      - name: Show wix build options
+        if: runner.os == 'Windows'
+        shell: pwsh
+        continue-on-error: true
+        run: wix build -? | Select-Object -First 80
+
+      # Real artifacts: bundle the counter example and verify what comes out.
+      - name: Build alloy
+        run: cargo build --release -p alloy-ui-cli
+      - name: Linux system deps for the counter
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1
+      - name: Bundle and verify counter (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./crates/cli/ci/verify-windows.ps1 "$PWD\target\release\alloy.exe"
+      - name: Bundle and verify counter (macOS)
+        if: runner.os == 'macOS'
+        run: crates/cli/ci/verify-macos.sh "$PWD/target/release/alloy"
+      - name: Bundle and verify counter (Linux)
+        if: runner.os == 'Linux'
+        run: crates/cli/ci/verify-linux.sh "$PWD/target/release/alloy"
+      - name: Upload bundles
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-bundles-${{ runner.os }}
+          path: bundle-out/
+          if-no-files-found: ignore
+          retention-days: 7
 
   template:
     # `alloy new` output must keep compiling against the workspace crates.
