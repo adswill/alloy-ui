@@ -12,6 +12,13 @@ publish = false
 workspace = true
 
 
+[package.metadata.alloy]
+identifier = "dev.alloyui.examples"
+product-name = "Alloy Counter"
+publisher = "Alloy"
+category = "Utility"
+icons = ["assets/icon-32.png", "assets/icon-256.png", "assets/icon-512.png"]
+
 [dependencies]
 alloy-ui = { path = "../crates/alloy" }
 

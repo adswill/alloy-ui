@@ -148,10 +148,10 @@ pub fn msi(ctx: &Ctx<'_>) -> Result<PathBuf> {
     write_file(&wxs_path, src.as_bytes())?;
     let out = ctx.out_dir.join(format!("{}.msi", ctx.stem()));
     remove_if_exists(&out)?;
-    // -sval skips ICE validation: per-user components keyed on files trip
-    // ICE38/ICE64 even though the package installs and removes cleanly.
+    // WiX 5 has no `-sval` (that was WiX 3 light.exe); validation stays on and
+    // the CI job installs and removes the MSI to prove it works.
     run(Command::new(tool)
-        .args(["build", "-arch", wix_arch(&ctx.arch)?, "-sval", "-o"])
+        .args(["build", "-arch", wix_arch(&ctx.arch)?, "-o"])
         .arg(&out)
         .arg(&wxs_path))?;
     remove_if_exists(&stage)?;
