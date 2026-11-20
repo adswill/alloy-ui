@@ -162,16 +162,6 @@ impl Application for Todo {
             .align(Align::Center)
             .width(Length::Fill(1))
             .into_element(),
-            Scrollable::new(
-                ui,
-                LIST_ID,
-                Column::new(rows)
-                    .spacing(8.0)
-                    .width(Length::Fill(1))
-                    .into_element(),
-            )
-            .height(Length::Fill(1))
-            .into_element(),
             Row::new(vec![
                 seg("All", Filter::All),
                 seg("Open", Filter::Open),
@@ -183,8 +173,18 @@ impl Application for Todo {
             ])
             .spacing(4.0)
             .into_element(),
+            Scrollable::new(
+                ui,
+                LIST_ID,
+                Column::new(rows)
+                    .spacing(8.0)
+                    .width(Length::Fill(1))
+                    .into_element(),
+            )
+            .height(Length::Fill(1))
+            .into_element(),
         ])
-        .spacing(18.0)
+        .spacing(14.0)
         .padding(Padding::all(24.0))
         .width(Length::Fill(1))
         .height(Length::Fill(1))

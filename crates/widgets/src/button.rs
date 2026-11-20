@@ -180,7 +180,7 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let w = self.ui.metrics().width(&self.label, s.size);
         out.push(DrawCommand::Text {
             family: alloy_ui_core::FontFamily::Sans,
-            weight: 400,
+            weight: s.weight.0,
             line_height: None,
             origin: Point::new(
                 b.origin.x + (b.size.width - w) / 2.0,

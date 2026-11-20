@@ -49,6 +49,7 @@ pub struct Text {
     size: f32,
     line_height: f32,
     color: Color,
+    weight: u16,
     width: Length,
     wrap: bool,
 }
@@ -64,6 +65,7 @@ impl Text {
             size: s.size,
             line_height: s.line_height,
             color: t.palette.text,
+            weight: s.weight.0,
             width: Length::Shrink,
             wrap: true,
         }
@@ -82,9 +84,15 @@ impl Text {
         };
         self.size = s.size;
         self.line_height = s.line_height;
+        self.weight = s.weight.0;
         if role == TextRole::Caption {
             self.color = t.palette.text_secondary;
         }
+        self
+    }
+    /// Override the font weight (100..=900).
+    pub fn weight(mut self, w: u16) -> Self {
+        self.weight = w;
         self
     }
     /// Override the colour.
@@ -142,7 +150,7 @@ impl<M> Widget<M> for Text {
             }
             out.push(DrawCommand::Text {
                 family: alloy_ui_core::FontFamily::Sans,
-                weight: 400,
+                weight: self.weight,
                 line_height: None,
                 origin: Point::new(b.origin.x, b.origin.y + i as f32 * self.line_height),
                 content: line,
