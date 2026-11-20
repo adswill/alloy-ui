@@ -145,14 +145,20 @@ pub trait App: Sized + 'static {
     /// Open a window of the given logical size and run until it closes.
     ///
     /// `--headless [file.png]` renders one frame to a PNG instead (after
-    /// pressing every `--click <text>` target in order), for CI and docs.
+    /// pressing every `--click <text>`, `--chord <keys>` and `--type <text>` in order), for CI and docs.
     fn run_sized(self, title: &str, width: f32, height: f32) {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(at) = args.iter().position(|a| a == "--headless") {
             let mut h = crate::testing::Harness::new(self, width, height);
             h.settle();
-            for pair in args.windows(2).filter(|p| p[0] == "--click") {
-                h.click(&pair[1]);
+            // Scripted input, in order: `--click Text`, `--chord mod+k`, `--type text`.
+            for pair in args.windows(2) {
+                match pair[0].as_str() {
+                    "--click" => drop(h.click(&pair[1])),
+                    "--chord" => drop(h.chord(&pair[1])),
+                    "--type" => drop(h.type_text(&pair[1])),
+                    _ => {}
+                }
             }
             h.settle();
             let out = args.get(at + 1).filter(|a| !a.starts_with("--"));
@@ -250,6 +256,7 @@ impl<A: App> Application for Shell<A> {
             }
             keys::publish_menu(
                 hot.iter()
+                    .filter(|h| !h.keys.is_empty())
                     .filter_map(|h| Some((h.keys.clone(), h.label.clone()?)))
                     .collect(),
                 undo.is_some(),
@@ -319,6 +326,14 @@ impl<S: 'static, V> Sketch<S, V> {
     /// Run `f` on the state when `keys` is pressed (`"mod+s"`: Cmd on macOS, Ctrl elsewhere).
     pub fn shortcut(mut self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         self.keys.push((keys.into(), None, Act::new(f)));
+        self
+    }
+
+    /// Add `label` to the command palette (`mod+k`): `.command("Export CSV", |s| s.export())`.
+    /// Every shortcut is listed there too.
+    pub fn command(mut self, label: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.keys
+            .push((String::new(), Some(label.into()), Act::new(f)));
         self
     }
 

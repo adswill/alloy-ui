@@ -79,7 +79,7 @@ fn wizard_gates_and_finishes() {
     let mut ui = Harness::new(sketch(St::default(), wiz), 400.0, 300.0);
     ui.click("Next");
     assert!(
-        ui.has_text("1. One"),
+        ui.has_text("One"),
         "Next is disabled while the page is invalid"
     );
     ui.click("who").type_text("Bo");

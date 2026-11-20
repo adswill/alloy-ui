@@ -38,10 +38,12 @@ pub mod fs;
 mod inputs;
 mod keys;
 mod mock;
+mod palette;
 mod persist;
 mod records;
 mod resource;
 pub mod testing;
+mod tone;
 pub mod valid;
 pub mod view;
 
