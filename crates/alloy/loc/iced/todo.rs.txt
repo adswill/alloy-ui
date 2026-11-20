@@ -1,0 +1,135 @@
+use iced::widget::{button, checkbox, column, row, scrollable, text, text_input};
+use iced::{Center, Element, Fill};
+
+struct Task {
+    title: String,
+    done: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Filter {
+    All,
+    Open,
+    Done,
+}
+
+struct Todo {
+    tasks: Vec<Task>,
+    draft: String,
+    filter: Filter,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Draft(String),
+    Add,
+    Set(usize, bool),
+    Filter(Filter),
+    ClearDone,
+}
+
+impl Todo {
+    fn new() -> Self {
+        let t = |s: &str, done| Task {
+            title: s.into(),
+            done,
+        };
+        Self {
+            tasks: vec![
+                t("Order replacement fan", true),
+                t("Write release notes", false),
+                t("Book dentist", false),
+            ],
+            draft: String::new(),
+            filter: Filter::All,
+        }
+    }
+}
+
+fn update(s: &mut Todo, message: Message) {
+    match message {
+        Message::Draft(d) => s.draft = d,
+        Message::Add => {
+            let title = s.draft.trim();
+            if !title.is_empty() {
+                s.tasks.push(Task {
+                    title: title.to_string(),
+                    done: false,
+                });
+                s.draft.clear();
+            }
+        }
+        Message::Set(i, v) => {
+            if let Some(t) = s.tasks.get_mut(i) {
+                t.done = v;
+            }
+        }
+        Message::Filter(f) => s.filter = f,
+        Message::ClearDone => s.tasks.retain(|t| !t.done),
+    }
+}
+
+fn view(s: &Todo) -> Element<'_, Message> {
+    let open = s.tasks.iter().filter(|t| !t.done).count();
+    let rows = s
+        .tasks
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| match s.filter {
+            Filter::All => true,
+            Filter::Open => !t.done,
+            Filter::Done => t.done,
+        })
+        .map(|(i, t)| {
+            checkbox(t.done)
+                .label(&t.title)
+                .on_toggle(move |v| Message::Set(i, v))
+                .into()
+        });
+    let seg = |label, f| {
+        button(label)
+            .on_press(Message::Filter(f))
+            .style(if s.filter == f {
+                button::secondary
+            } else {
+                button::text
+            })
+    };
+    column![
+        column![
+            text("Tasks").size(24),
+            text(format!("{open} open")).size(12)
+        ]
+        .spacing(2),
+        row![
+            text_input("What needs doing?", &s.draft)
+                .on_input(Message::Draft)
+                .on_submit(Message::Add),
+            button("Add task")
+                .on_press(Message::Add)
+                .style(button::primary),
+        ]
+        .spacing(8)
+        .align_y(Center),
+        scrollable(column(rows).spacing(8)).height(Fill).width(Fill),
+        row![
+            seg("All", Filter::All),
+            seg("Open", Filter::Open),
+            seg("Done", Filter::Done),
+            button("Clear done")
+                .on_press(Message::ClearDone)
+                .style(button::text),
+        ]
+        .spacing(4),
+    ]
+    .spacing(18)
+    .padding(24)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Todo::new, update, view)
+        .title("Todo")
+        .window_size((420.0, 460.0))
+        .run()
+}

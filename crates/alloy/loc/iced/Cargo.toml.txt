@@ -1,0 +1,9 @@
+[package]
+name = "iced-ref"
+version = "0.0.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+iced = { version = "0.14", features = ["tokio"] }
