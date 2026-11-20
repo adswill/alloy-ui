@@ -1,9 +1,11 @@
 //! Settings panel: section list on the left, grouped controls on the right.
-use crate::kit::{button, checkbox, column, label, row, slider, Emphasis};
 use crate::run::{Demo, Step};
-use alloy_ui_core::style::{Length, Padding};
+use alloy_ui_core::style::{Align, Length, Padding};
 use alloy_ui_core::{Application, Command, Element};
 use alloy_ui_theme::{Appearance, Theme, ThemeMode};
+use alloy_ui_widgets::{
+    Button, Checkbox, Column, Container, Root, Row, Slider, Text, TextRole, Ui, Variant,
+};
 
 /// Which section is open.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,12 +22,13 @@ pub struct Settings {
     pub section: Section,
     /// Chosen theme mode.
     pub mode: ThemeMode,
-    /// Text scale as 0..=1 across 12..=20 px.
-    pub text_scale: f32,
+    /// Preview text size in px.
+    pub text_px: f32,
     /// Launch at login.
     pub launch_at_login: bool,
     /// Check for updates.
     pub auto_update: bool,
+    ui: Ui,
 }
 
 /// Settings messages.
@@ -35,12 +38,12 @@ pub enum Msg {
     Section(Section),
     /// Pick theme mode.
     Mode(ThemeMode),
-    /// Move text scale.
-    Scale(f32),
-    /// Toggle launch at login.
-    Login,
-    /// Toggle updates.
-    Update,
+    /// Move text size.
+    Size(f32),
+    /// Set launch at login.
+    Login(bool),
+    /// Set updates.
+    Update(bool),
 }
 
 impl Settings {
@@ -49,20 +52,11 @@ impl Settings {
         Self {
             section: Section::Appearance,
             mode: ThemeMode::default(),
-            text_scale: 0.25,
+            text_px: 14.0,
             launch_at_login: false,
             auto_update: true,
+            ui: Ui::new(Theme::light()),
         }
-    }
-
-    /// Text size in px for the current scale.
-    pub fn text_px(&self) -> f32 {
-        12.0 + 8.0 * self.text_scale
-    }
-
-    fn theme(&self) -> Theme {
-        // The panel previews a fixed system appearance of Light when following the system.
-        Theme::for_appearance(self.mode.resolve(Appearance::Light))
     }
 }
 
@@ -78,90 +72,145 @@ impl Application for Settings {
     fn update(&mut self, m: Msg) -> Command<Msg> {
         match m {
             Msg::Section(s) => self.section = s,
-            Msg::Mode(m) => self.mode = m,
-            Msg::Scale(v) => self.text_scale = v,
-            Msg::Login => self.launch_at_login = !self.launch_at_login,
-            Msg::Update => self.auto_update = !self.auto_update,
+            Msg::Mode(m) => {
+                self.mode = m;
+                // With no windowed shell there is no system setting; "System" previews as Light.
+                self.ui
+                    .set_theme(Theme::for_appearance(m.resolve(Appearance::Light)));
+            }
+            Msg::Size(v) => self.text_px = v,
+            Msg::Login(v) => self.launch_at_login = v,
+            Msg::Update(v) => self.auto_update = v,
         }
         Command::None
     }
 
     fn view(&self) -> Element<Msg> {
-        let t = self.theme();
-        let p = &t.palette;
+        let ui = &self.ui;
+        let p = ui.theme().palette.clone();
         let nav = |text: &'static str, s: Section| -> Element<Msg> {
-            button(text, Emphasis::Quiet, p, Msg::Section(s))
-                .selected(self.section == s)
-                .into()
+            let v = if self.section == s {
+                Variant::Secondary
+            } else {
+                Variant::Ghost
+            };
+            Button::new(ui, text)
+                .on_press(Msg::Section(s))
+                .variant(v)
+                .width(Length::Fill(1))
+                .into_element()
         };
         let mode = |text: &'static str, m: ThemeMode| -> Element<Msg> {
-            button(text, Emphasis::Secondary, p, Msg::Mode(m))
-                .selected(self.mode == m)
-                .into()
+            let v = if self.mode == m {
+                Variant::Secondary
+            } else {
+                Variant::Ghost
+            };
+            Button::new(ui, text)
+                .on_press(Msg::Mode(m))
+                .variant(v)
+                .into_element()
+        };
+        let group = |title: &str, rows: Vec<Element<Msg>>| -> Element<Msg> {
+            Column::new(vec![
+                Text::new(ui, title.to_string())
+                    .role(TextRole::Label)
+                    .secondary()
+                    .into_element(),
+                Column::new(rows).spacing(10.0).into_element(),
+            ])
+            .spacing(8.0)
+            .into_element()
         };
         let body: Vec<Element<Msg>> = match self.section {
             Section::Appearance => vec![
-                label("Appearance", 20.0, p.text).into(),
-                label("Theme", 14.0, p.text_secondary).into(),
-                row(vec![
-                    mode("System", ThemeMode::System),
-                    mode("Light", ThemeMode::Light),
-                    mode("Dark", ThemeMode::Dark),
-                ])
-                .spacing(6.0)
-                .into(),
-                label(
-                    format!("Text size {:.0} px", self.text_px()),
-                    14.0,
-                    p.text_secondary,
-                )
-                .into(),
-                slider(self.text_scale, p, Msg::Scale).into(),
-                label(
-                    "The quick brown fox jumps over the lazy dog.",
-                    self.text_px(),
-                    p.text,
-                )
-                .into(),
+                Text::new(ui, "Appearance")
+                    .role(TextRole::Heading)
+                    .into_element(),
+                group(
+                    "Theme",
+                    vec![Row::new(vec![
+                        mode("System", ThemeMode::System),
+                        mode("Light", ThemeMode::Light),
+                        mode("Dark", ThemeMode::Dark),
+                    ])
+                    .spacing(4.0)
+                    .into_element()],
+                ),
+                group(
+                    "Text size",
+                    vec![
+                        Slider::new(ui, 12.0, 20.0, self.text_px)
+                            .step(1.0)
+                            .on_change(Msg::Size)
+                            .width(Length::Fill(1))
+                            .into_element(),
+                        Text::new(ui, "The quick brown fox jumps over the lazy dog.")
+                            .color(p.text)
+                            .into_element(),
+                        Text::new(ui, format!("{:.0} px", self.text_px))
+                            .role(TextRole::Caption)
+                            .secondary()
+                            .into_element(),
+                    ],
+                ),
             ],
             Section::General => vec![
-                label("General", 20.0, p.text).into(),
-                checkbox("Launch at login", self.launch_at_login, p, Msg::Login).into(),
-                checkbox(
-                    "Check for updates automatically",
-                    self.auto_update,
-                    p,
-                    Msg::Update,
-                )
-                .into(),
+                Text::new(ui, "General")
+                    .role(TextRole::Heading)
+                    .into_element(),
+                group(
+                    "Startup",
+                    vec![
+                        Checkbox::new(ui, "Launch at login", self.launch_at_login)
+                            .on_toggle(Msg::Login)
+                            .into_element(),
+                        Checkbox::new(ui, "Check for updates automatically", self.auto_update)
+                            .on_toggle(Msg::Update)
+                            .into_element(),
+                    ],
+                ),
             ],
         };
-        row(vec![
-            column(vec![
+        let side = Container::new(
+            Column::new(vec![
                 nav("Appearance", Section::Appearance),
                 nav("General", Section::General),
             ])
-            .spacing(4.0)
+            .spacing(2.0)
             .padding(Padding::all(12.0))
-            .width(Length::Fixed(150.0))
-            .height(Length::Fill(1))
-            .background(p.surface)
-            .into(),
-            column(body)
-                .spacing(14.0)
-                .padding(Padding::all(28.0))
-                .width(Length::Fill(1))
-                .height(Length::Fill(1))
-                .into(),
-        ])
-        .width(Length::Fill(1))
+            .width(Length::Fill(1))
+            .into_element(),
+        )
+        .background(p.surface)
+        .width(Length::Fixed(170.0))
         .height(Length::Fill(1))
-        .background(p.background)
-        .into()
+        .into_element();
+        let main = Column::new(body)
+            .spacing(22.0)
+            .padding(Padding::all(28.0))
+            .align(Align::Start)
+            .width(Length::Fill(1))
+            .height(Length::Fill(1))
+            .into_element();
+        Root::new(
+            ui,
+            Container::new(
+                Row::new(vec![side, main])
+                    .width(Length::Fill(1))
+                    .height(Length::Fill(1))
+                    .into_element(),
+            )
+            .background(p.background)
+            .width(Length::Fill(1))
+            .height(Length::Fill(1))
+            .into_element(),
+        )
+        .into_element()
     }
 }
 
-/// Headless demo: dark mode, bigger text, then General with login on.
+/// Headless demo: dark mode, then General with launch at login ticked.
 pub fn demo() -> Demo<Settings> {
     Demo {
         name: "settings",

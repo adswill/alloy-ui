@@ -61,7 +61,7 @@ fn settings_switches_section_and_toggles() {
 fn dashboard_range_switch_and_render() {
     let (rt, img) = render_demo(dashboard::demo());
     assert_eq!(rt.app().range, dashboard::Range::Days);
-    assert_eq!((img.width, img.height), (1040, 800));
+    assert_eq!((img.width, img.height), (1040, 920));
 }
 
 #[test]

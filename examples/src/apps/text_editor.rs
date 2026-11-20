@@ -1,9 +1,10 @@
 //! Text editor: multi-line buffer with caret movement and a status line.
-use crate::kit::{column, editor, label, row, spacer, Input};
+use crate::custom::{editor, Input};
 use crate::run::{Demo, Step};
 use alloy_ui_core::style::{Length, Padding};
 use alloy_ui_core::{Application, Command, Element, Key};
 use alloy_ui_theme::Theme;
+use alloy_ui_widgets::{Column, Container, Root, Row, Text, TextRole, Ui};
 
 /// Editor state: lines plus a (line, column) caret in characters.
 pub struct TextEditor {
@@ -11,7 +12,7 @@ pub struct TextEditor {
     pub lines: Vec<String>,
     /// Caret as (line, column).
     pub caret: (usize, usize),
-    theme: Theme,
+    ui: Ui,
 }
 
 /// Editor messages.
@@ -32,7 +33,7 @@ impl TextEditor {
         Self {
             lines: text.split('\n').map(String::from).collect(),
             caret: (2, 0),
-            theme,
+            ui: Ui::new(theme),
         }
     }
 
@@ -96,33 +97,48 @@ impl Application for TextEditor {
     }
 
     fn view(&self) -> Element<Msg> {
-        let p = &self.theme.palette;
+        let ui = &self.ui;
+        let t = ui.theme();
+        let p = &t.palette;
         let words: usize = self
             .lines
             .iter()
             .map(|l| l.split_whitespace().count())
             .sum();
-        column(vec![
-            editor(self.lines.clone(), self.caret, p, Msg::Input).into(),
-            row(vec![
-                label(
-                    format!("Ln {}, Col {}", self.caret.0 + 1, self.caret.1 + 1),
-                    12.0,
-                    p.text_secondary,
-                )
-                .into(),
-                spacer().into(),
-                label(format!("{words} words"), 12.0, p.text_secondary).into(),
-            ])
+        let status = Row::new(vec![
+            Text::new(
+                ui,
+                format!("Ln {}, Col {}", self.caret.0 + 1, self.caret.1 + 1),
+            )
+            .role(TextRole::Caption)
+            .secondary()
             .width(Length::Fill(1))
-            .into(),
+            .into_element(),
+            Text::new(ui, format!("{words} words"))
+                .role(TextRole::Caption)
+                .secondary()
+                .into_element(),
+        ])
+        .width(Length::Fill(1))
+        .into_element();
+        let body = Column::new(vec![
+            editor(self.lines.clone(), self.caret, p, Msg::Input).into(),
+            status,
         ])
         .spacing(8.0)
         .padding(Padding::all(16.0))
         .width(Length::Fill(1))
         .height(Length::Fill(1))
-        .background(p.background)
-        .into()
+        .into_element();
+        Root::new(
+            ui,
+            Container::new(body)
+                .background(p.background)
+                .width(Length::Fill(1))
+                .height(Length::Fill(1))
+                .into_element(),
+        )
+        .into_element()
     }
 }
 

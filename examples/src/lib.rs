@@ -7,5 +7,5 @@
 #![warn(missing_docs)]
 
 pub mod apps;
-pub mod kit;
+pub mod custom;
 pub mod run;
