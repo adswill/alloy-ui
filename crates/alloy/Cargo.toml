@@ -1,0 +1,20 @@
+[package]
+name = "alloy-ui"
+description = "Alloy: native Rust desktop UI framework (facade crate)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-ui-core.workspace = true
+alloy-ui-layout.workspace = true
+alloy-ui-render.workspace = true
+alloy-ui-theme.workspace = true
+alloy-ui-platform.workspace = true
+alloy-ui-ipc.workspace = true
+log = "0.4"
