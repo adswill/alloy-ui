@@ -277,19 +277,43 @@ impl CapabilitySet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
-    const FULL: &str = r#"
+    /// Tests are written with POSIX-style absolute paths. A drive-less path such
+    /// as `/home/u` is *not* absolute on Windows (it is relative to the current
+    /// drive), so the validation correctly rejects it there; give the tests a
+    /// drive so they exercise the same logic on every OS.
+    fn p(path: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!("C:{path}"))
+        } else {
+            PathBuf::from(path)
+        }
+    }
+
+    /// Same, for TOML text containing quoted absolute paths.
+    fn abs(toml: &str) -> String {
+        if cfg!(windows) {
+            toml.replace("\"/", "\"C:/")
+        } else {
+            toml.to_string()
+        }
+    }
+
+    fn full() -> String {
+        abs(r#"
 capabilities = ["clipboard", "fs_read", "fs_write", "network"]
 [fs]
 read = ["/home/u/docs"]
 write = ["/home/u/docs/out"]
 [network]
 hosts = ["api.example.com", "*.cdn.example.org"]
-"#;
+"#)
+    }
 
     #[test]
     fn parses_full() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
+        let s = CapabilitySet::from_toml(&full()).unwrap();
         assert!(s.has(Capability::Clipboard));
         assert!(!s.has(Capability::Dialogs));
     }
@@ -306,7 +330,7 @@ hosts = ["api.example.com", "*.cdn.example.org"]
 
     #[test]
     fn check_granted_and_denied() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
+        let s = CapabilitySet::from_toml(&full()).unwrap();
         assert!(s.check(&Capability::Network).is_ok());
         assert!(s.check(&Capability::Notifications).is_err());
     }
@@ -348,7 +372,7 @@ hosts = ["api.example.com", "*.cdn.example.org"]
 
     #[test]
     fn scope_without_grant_rejected() {
-        let e = CapabilitySet::from_toml("[fs]\nwrite = [\"/tmp\"]").unwrap_err();
+        let e = CapabilitySet::from_toml(&abs("[fs]\nwrite = [\"/tmp\"]")).unwrap_err();
         assert_eq!(e, CapabilityError::ScopeWithoutGrant(Capability::FsWrite));
     }
 
@@ -361,53 +385,51 @@ hosts = ["api.example.com", "*.cdn.example.org"]
         ));
         let dd = "capabilities=[\"fs_read\"]\n[fs]\nread=[\"/a/../b\"]";
         assert!(matches!(
-            CapabilitySet::from_toml(dd),
+            CapabilitySet::from_toml(&abs(dd)),
             Err(CapabilityError::BadPath(_))
         ));
     }
 
     #[test]
     fn fs_read_scope() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
-        assert!(s.check_fs_read(Path::new("/home/u/docs/a/b.txt")).is_ok());
-        assert!(s.check_fs_read(Path::new("/home/u/docs")).is_ok());
-        assert!(s.check_fs_read(Path::new("/home/u/other")).is_err());
+        let s = CapabilitySet::from_toml(&full()).unwrap();
+        assert!(s.check_fs_read(&p("/home/u/docs/a/b.txt")).is_ok());
+        assert!(s.check_fs_read(&p("/home/u/docs")).is_ok());
+        assert!(s.check_fs_read(&p("/home/u/other")).is_err());
     }
 
     #[test]
     fn fs_prefix_is_component_wise() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
-        assert!(s.check_fs_read(Path::new("/home/u/docs-secret")).is_err());
+        let s = CapabilitySet::from_toml(&full()).unwrap();
+        assert!(s.check_fs_read(&p("/home/u/docs-secret")).is_err());
     }
 
     #[test]
     fn fs_traversal_denied() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
-        assert!(s
-            .check_fs_read(Path::new("/home/u/docs/../.ssh/id"))
-            .is_err());
+        let s = CapabilitySet::from_toml(&full()).unwrap();
+        assert!(s.check_fs_read(&p("/home/u/docs/../.ssh/id")).is_err());
         assert!(s.check_fs_read(Path::new("relative/path")).is_err());
     }
 
     #[test]
     fn fs_write_scope_is_separate() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
-        assert!(s.check_fs_write(Path::new("/home/u/docs/out/x")).is_ok());
-        assert!(s.check_fs_write(Path::new("/home/u/docs/x")).is_err());
+        let s = CapabilitySet::from_toml(&full()).unwrap();
+        assert!(s.check_fs_write(&p("/home/u/docs/out/x")).is_ok());
+        assert!(s.check_fs_write(&p("/home/u/docs/x")).is_err());
     }
 
     #[test]
     fn fs_denied_without_grant() {
         let s = CapabilitySet::none();
         assert_eq!(
-            s.check_fs_read(Path::new("/x")),
+            s.check_fs_read(&p("/x")),
             Err(CapabilityError::Denied(Capability::FsRead))
         );
     }
 
     #[test]
     fn host_exact_and_wildcard() {
-        let s = CapabilitySet::from_toml(FULL).unwrap();
+        let s = CapabilitySet::from_toml(&full()).unwrap();
         assert!(s.check_host("api.example.com").is_ok());
         assert!(s.check_host("API.Example.COM").is_ok());
         assert!(s.check_host("x.cdn.example.org").is_ok());
@@ -443,7 +465,7 @@ hosts = ["api.example.com", "*.cdn.example.org"]
     fn error_messages_are_clear() {
         let e = CapabilityError::Denied(Capability::FsWrite);
         assert_eq!(e.to_string(), "capability `fs_write` was not granted");
-        let s = CapabilitySet::from_toml(FULL).unwrap();
+        let s = CapabilitySet::from_toml(&full()).unwrap();
         let e = s.check_host("evil.com").unwrap_err();
         assert!(e.to_string().contains("evil.com"));
     }
