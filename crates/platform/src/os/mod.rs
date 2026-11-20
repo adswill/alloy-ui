@@ -2,6 +2,7 @@
 //! Backends shell out to each OS's own stock tools (no extra crates, no `unsafe`).
 
 use crate::{Clipboard, Dialogs, PlatformError, SystemTheme};
+#[cfg(unix)]
 use std::process::{Command, Stdio};
 
 #[cfg(target_os = "linux")]
@@ -24,6 +25,7 @@ use macos as backend;
 #[cfg(target_os = "windows")]
 use windows as backend;
 
+#[cfg(unix)]
 /// Run a program and capture stdout when it succeeds. `None` if it is missing or fails.
 pub(crate) fn capture(prog: &str, args: &[&str]) -> Option<String> {
     let out = Command::new(prog)

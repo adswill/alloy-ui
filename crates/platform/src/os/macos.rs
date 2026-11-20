@@ -39,13 +39,35 @@ pub(crate) fn applescript_quote(s: &str) -> String {
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
-    // osascript exits non-zero when the user cancels.
-    Ok(capture("osascript", &["-e", "POSIX path of (choose file)"])
-        .map(|s| PathBuf::from(s.trim()))
-        .filter(|p| !p.as_os_str().is_empty()))
+    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel};
+    let Some(mtm) = MainThreadMarker::new() else {
+        // AppKit panels are main-thread only; fall back to osascript.
+        return Ok(capture("osascript", &["-e", "POSIX path of (choose file)"])
+            .map(|s| PathBuf::from(s.trim()))
+            .filter(|p| !p.as_os_str().is_empty()));
+    };
+    let panel = NSOpenPanel::openPanel(mtm);
+    panel.setCanChooseFiles(true);
+    panel.setCanChooseDirectories(false);
+    panel.setAllowsMultipleSelection(false);
+    if panel.runModal() != NSModalResponseOK {
+        return Ok(None);
+    }
+    Ok(panel
+        .URL()
+        .and_then(|u| u.path())
+        .map(|p| PathBuf::from(p.to_string())))
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
+    use objc2_app_kit::NSAlert;
+    if let Some(mtm) = MainThreadMarker::new() {
+        let alert = NSAlert::new(mtm);
+        alert.setMessageText(&NSString::from_str(title));
+        alert.setInformativeText(&NSString::from_str(body));
+        alert.runModal();
+        return Ok(());
+    }
     let script = format!(
         "display dialog \"{}\" with title \"{}\" buttons {{\"OK\"}} default button \"OK\"",
         applescript_quote(body),
@@ -56,7 +78,14 @@ pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
 }
 
 pub fn is_dark() -> Option<bool> {
-    // The key is absent in light mode (command fails), "Dark" in dark mode.
+    if let Some(mtm) = MainThreadMarker::new() {
+        let name = NSApplication::sharedApplication(mtm)
+            .effectiveAppearance()
+            .name()
+            .to_string();
+        return Some(name.contains("Dark"));
+    }
+    // Off the main thread: the key is absent in light mode, "Dark" in dark mode.
     Some(theme::parse_macos(
         capture("defaults", &["read", "-g", "AppleInterfaceStyle"]).as_deref(),
     ))

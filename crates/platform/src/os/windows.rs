@@ -1,10 +1,8 @@
-//! Windows backend using PowerShell and `reg.exe`, both present on every
-//! supported Windows. Compiled by CI on Windows; not run by the author.
+//! Windows backend on Win32 via windows-sys (clipboard, dialogs, theme registry
+//! value, menu bar, tray). Type-checked from Linux and built by CI; never run by the author.
 
-use super::capture;
 use crate::{
     menu::{Menu, MenuItem},
-    theme,
     tray::TraySettings,
     PlatformError, PlatformEvent,
 };
@@ -19,13 +17,6 @@ use windows_sys::Win32::{
         WindowsAndMessaging::*,
     },
 };
-
-fn ps(script: &str) -> Option<String> {
-    capture(
-        "powershell",
-        &["-NoProfile", "-NonInteractive", "-Command", script],
-    )
-}
 
 /// CF_UNICODETEXT clipboard format id.
 const CF_UNICODETEXT: u32 = 13;
@@ -93,37 +84,56 @@ pub fn clipboard_write(text: &str) -> bool {
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
-    let script = "Add-Type -AssemblyName System.Windows.Forms; \
-        $d = New-Object System.Windows.Forms.OpenFileDialog; \
-        if ($d.ShowDialog() -eq 'OK') { $d.FileName }";
-    Ok(ps(script)
-        .map(|s| PathBuf::from(s.trim()))
-        .filter(|p| !p.as_os_str().is_empty()))
+    use windows_sys::Win32::UI::Controls::Dialogs::{
+        GetOpenFileNameW, OFN_FILEMUSTEXIST, OFN_PATHMUSTEXIST, OPENFILENAMEW,
+    };
+    let mut buf = [0u16; 32768];
+    // SAFETY: OPENFILENAMEW is zero-initialised then given its size and a
+    // buffer that outlives the (modal) call; the result is read up to the NUL.
+    unsafe {
+        let mut ofn: OPENFILENAMEW = std::mem::zeroed();
+        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
+        ofn.lpstrFile = buf.as_mut_ptr();
+        ofn.nMaxFile = buf.len() as u32;
+        ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
+        if GetOpenFileNameW(&mut ofn) == 0 {
+            return Ok(None); // cancelled (or closed)
+        }
+    }
+    let len = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+    Ok(Some(PathBuf::from(String::from_utf16_lossy(&buf[..len]))))
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
-    let q = |s: &str| s.replace('\'', "''");
-    let script = format!(
-        "Add-Type -AssemblyName System.Windows.Forms; \
-         [void][System.Windows.Forms.MessageBox]::Show('{}','{}')",
-        q(body),
-        q(title)
-    );
-    ps(&script);
+    // SAFETY: both strings are NUL-terminated UTF-16 that outlive the modal call.
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            wide(body).as_ptr(),
+            wide(title).as_ptr(),
+            MB_OK,
+        );
+    }
     Ok(())
 }
 
 pub fn is_dark() -> Option<bool> {
-    let out = capture(
-        "reg",
-        &[
-            "query",
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize",
-            "/v",
-            "AppsUseLightTheme",
-        ],
-    );
-    theme::parse_windows(out.as_deref())
+    use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_DWORD};
+    let mut data: u32 = 1;
+    let mut size = std::mem::size_of::<u32>() as u32;
+    // SAFETY: out-pointers reference live locals of the stated size.
+    let rc = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            wide(r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize").as_ptr(),
+            wide("AppsUseLightTheme").as_ptr(),
+            RRF_RT_REG_DWORD,
+            std::ptr::null_mut(),
+            (&mut data as *mut u32).cast(),
+            &mut size,
+        )
+    };
+    (rc == 0).then_some(data == 0)
 }
 
 /// Window message the tray icon posts to our window.
