@@ -9,12 +9,14 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/claude/project-thread-6n01vk' }}
 env:
   CARGO_TERM_COLOR: always
+# Pull requests run on Ubuntu only (runner queues were backing up for hours); the full
+# three-OS matrix runs on pushes to the integration branch and main.
 jobs:
   check:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["macos-latest","ubuntu-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +37,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
+        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest"]') || fromJSON('["macos-latest","ubuntu-latest","windows-latest"]') }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
