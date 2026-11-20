@@ -24,7 +24,7 @@ impl Mode {
 struct Timer {
     mode: Mode,
     minutes: [u32; 3],
-    left: u32,
+    elapsed: u32,
     running: bool,
     done: u32,
     auto: bool,
@@ -45,7 +45,7 @@ impl Timer {
         Timer {
             mode: Mode::Focus,
             minutes: [25, 5, 15],
-            left: 25 * 60,
+            elapsed: 0,
             running: false,
             done: 0,
             auto: false,
@@ -58,31 +58,21 @@ impl Timer {
 
     fn switch(&mut self, mode: Mode) {
         self.mode = mode;
-        self.left = self.total();
+        self.elapsed = 0;
+        self.running = false;
     }
 }
 
 fn update(s: &mut Timer, message: Message) {
     match message {
-        Message::Pick(mode) => {
-            s.running = false;
-            s.switch(mode);
-        }
+        Message::Pick(mode) => s.switch(mode),
         Message::Toggle => s.running = !s.running,
-        Message::Reset => {
-            s.running = false;
-            s.left = s.total();
-        }
-        Message::Length(mode, m) => {
-            s.minutes[mode as usize] = m;
-            if mode == s.mode && !s.running {
-                s.left = s.total();
-            }
-        }
+        Message::Reset => s.switch(s.mode),
+        Message::Length(mode, m) => s.minutes[mode as usize] = m,
         Message::Auto(on) => s.auto = on,
         Message::Tick => {
-            s.left = s.left.saturating_sub(1);
-            if s.left == 0 {
+            s.elapsed += 1;
+            if s.elapsed >= s.total() {
                 let next = if s.mode != Mode::Focus {
                     Mode::Focus
                 } else {
@@ -120,8 +110,9 @@ fn view(s: &Timer) -> Element<'_, Message> {
             .into()
     }))
     .spacing(8);
-    let clock = text(format!("{:02}:{:02}", s.left / 60, s.left % 60)).size(72);
-    let progress = progress_bar(0.0..=s.total() as f32, (s.total() - s.left) as f32);
+    let left = s.total() - s.elapsed;
+    let clock = text(format!("{:02}:{:02}", left / 60, left % 60)).size(72);
+    let progress = progress_bar(0.0..=s.total() as f32, s.elapsed as f32);
     let controls = row![
         button(if s.running { "Pause" } else { "Start" }).on_press(Message::Toggle),
         button("Reset")

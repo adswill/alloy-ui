@@ -199,12 +199,20 @@ impl<A: App> Application for Shell<A> {
 
 type Saver<S> = Box<dyn Fn(&S)>;
 
+type Cond<S> = Box<dyn Fn(&S) -> bool>;
+
+struct Tick<S> {
+    period: Duration,
+    when: Option<Cond<S>>,
+    act: Act<S>,
+}
+
 /// An app with no message type: state plus a view whose handlers mutate it
 /// directly (`button("+").act(|n| *n += 1)`). Made by [`sketch`].
 pub struct Sketch<S: 'static, V> {
     state: S,
     view: V,
-    tick: Option<(Duration, Act<S>)>,
+    ticks: Vec<Tick<S>>,
     save: Option<Saver<S>>,
 }
 
@@ -229,7 +237,27 @@ impl<S: 'static, V> Sketch<S, V> {
 
     /// Run `f` on the state every `period`, for as long as the app runs.
     pub fn tick(mut self, period: Duration, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
-        self.tick = Some((period, Act::new(f)));
+        self.ticks.push(Tick {
+            period,
+            when: None,
+            act: Act::new(f),
+        });
+        self
+    }
+
+    /// Like [`tick`](Self::tick) but only while `when(state)` holds: no timer runs, and no
+    /// CPU is used, while it does not. `.tick_while(|t| t.running, secs(1.0), Timer::tick)`.
+    pub fn tick_while(
+        mut self,
+        when: impl Fn(&S) -> bool + 'static,
+        period: Duration,
+        f: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Self {
+        self.ticks.push(Tick {
+            period,
+            when: Some(Box::new(when)),
+            act: Act::new(f),
+        });
         self
     }
 }
@@ -251,7 +279,7 @@ where
     Sketch {
         state,
         view,
-        tick: None,
+        ticks: Vec::new(),
         save: None,
     }
 }
@@ -276,10 +304,17 @@ where
     }
 
     fn subscriptions(&self) -> Vec<Sub<Act<S>>> {
-        let ticks = self.tick.iter().map(|(period, act)| {
-            let act = act.clone();
-            every(*period, move || act.clone())
-        });
+        let state = &self.state;
+        let ticks = self
+            .ticks
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| t.when.as_ref().map_or(true, |w| w(state)))
+            .map(|(i, t)| {
+                let act = t.act.clone();
+                let id = 0x7_1c4 + i as u64;
+                Sub(Subscription::every(id, t.period, move || act.clone()))
+            });
         ticks.chain(crate::resource::pump_sub()).collect()
     }
 }

@@ -208,6 +208,19 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     fn center(self) -> Boxed<M> {
         self.boxed().fill_w().center()
     }
+    /// Show only when `yes`; nothing is drawn (and no space taken) otherwise.
+    fn when(self, yes: bool) -> Node<M> {
+        if yes {
+            self.into()
+        } else {
+            Node(w::Space::fixed(0.0, 0.0).into_element())
+        }
+    }
+    /// Put `label` in front, in a column as wide as other labelled controls so they line up.
+    fn labelled(self, label: &str) -> Node<M> {
+        let label: Node<M> = crate::text(label).w(110.0).into();
+        crate::row([label, self.into()]).align_center().into()
+    }
     /// Show `text` in a tooltip on hover.
     fn tip(self, text: impl Into<String>) -> Node<M> {
         Node(w::Tooltip::new(&cx::ui(), self.into().0, text).into_element())
@@ -292,6 +305,13 @@ impl<M: 'static> Flex<M> {
     /// Fill the available space.
     pub fn fill(self) -> Self {
         self.fill_w().fill_h()
+    }
+    /// The root of a screen: padding and spacing from the theme's page scale.
+    pub fn page(mut self) -> Self {
+        let sp = cx::theme().spacing;
+        self.pad = Padding::all(sp.xxl);
+        self.gap = sp.lg;
+        self
     }
     /// Append a child.
     pub fn push(mut self, v: impl Into<Node<M>>) -> Self {
