@@ -95,6 +95,7 @@ impl<M: 'static> Widget<M> for Tooltip<M> {
                     shadow: Some(shadow),
                 },
                 DrawCommand::Text {
+                    family: alloy_ui_core::FontFamily::Sans,
                     weight: 400,
                     line_height: None,
                     origin: Point::new(b.origin.x + px, y + py),

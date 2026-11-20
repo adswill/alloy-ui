@@ -24,6 +24,7 @@ fn dejavu() -> Option<TextSystem> {
 fn text(content: &str, weight: u16, line_height: Option<f32>, max_width: Option<f32>) -> DrawList {
     let mut l = DrawList::default();
     l.push(DrawCommand::Text {
+        family: alloy_ui_core::FontFamily::Sans,
         weight,
         line_height,
         origin: Point::new(4.0, 4.0),
@@ -72,7 +73,14 @@ fn measure_matches_rendered_width() {
     let m = cpu.text_measurer();
     let content = "Hello world";
     let size = m.measure(content, 16.0, 400, None);
-    let (cw, _) = cpu.text_system().extent(content, 16.0, 400, None, None);
+    let (cw, _) = cpu.text_system().extent(
+        content,
+        16.0,
+        400,
+        alloy_ui_core::FontFamily::Sans,
+        None,
+        None,
+    );
     assert!((cw - size.width).abs() < 0.5);
     let img = cpu.render_to_image(&text(content, 400, None, None), 300, 60, 1.0);
     let (x0, _, x1, _) = dark_bounds(&img).expect("ink");

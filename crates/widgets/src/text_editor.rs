@@ -358,6 +358,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let oy = b.origin.y + pad - off;
         if self.value.is_empty() && e.preedit.is_empty() {
             out.push(DrawCommand::Text {
+                family: alloy_ui_core::FontFamily::Sans,
                 weight: 400,
                 line_height: Some(lh),
                 origin: Point::new(ox, oy),
@@ -396,6 +397,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             }
             if !line.is_empty() {
                 out.push(DrawCommand::Text {
+                    family: alloy_ui_core::FontFamily::Sans,
                     weight: 400,
                     line_height: Some(lh),
                     origin: Point::new(ox, y),
@@ -411,6 +413,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             let w = self.width_of(&e.preedit);
             let y = oy + cl as f32 * lh;
             out.push(DrawCommand::Text {
+                family: alloy_ui_core::FontFamily::Sans,
                 weight: 400,
                 line_height: Some(lh),
                 origin: Point::new(x, y),

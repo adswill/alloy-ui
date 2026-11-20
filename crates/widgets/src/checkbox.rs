@@ -159,6 +159,7 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
         }
         let s = t.typography.body;
         out.push(DrawCommand::Text {
+            family: alloy_ui_core::FontFamily::Sans,
             weight: 400,
             line_height: None,
             origin: Point::new(

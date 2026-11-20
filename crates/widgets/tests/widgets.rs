@@ -1093,7 +1093,10 @@ fn table_columns_line_up_and_rows_select() {
         .iter()
         .filter_map(|c| match c {
             DrawCommand::Text {
-                content, origin, ..
+                family: alloy_ui_core::FontFamily::Sans,
+                content,
+                origin,
+                ..
             } => Some((content.clone(), origin.x)),
             _ => None,
         })

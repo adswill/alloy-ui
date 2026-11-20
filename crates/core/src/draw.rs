@@ -23,6 +23,16 @@ pub struct Shadow {
     pub blur: f32,
 }
 
+/// Which bundled font family a text run uses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FontFamily {
+    /// The proportional UI font.
+    #[default]
+    Sans,
+    /// The monospace font, for code and editors.
+    Mono,
+}
+
 /// One primitive drawing operation, in logical pixels, painter's order.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DrawCommand {
@@ -53,6 +63,8 @@ pub enum DrawCommand {
         max_width: Option<f32>,
         /// Font weight, 100 to 900 (400 regular, 600 semibold).
         weight: u16,
+        /// Font family.
+        family: FontFamily,
         /// Line height in logical pixels; `None` uses the renderer default.
         line_height: Option<f32>,
     },

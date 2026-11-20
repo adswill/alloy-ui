@@ -191,6 +191,7 @@ pub(crate) fn flatten(
             }
             DrawCommand::Text {
                 weight,
+                family,
                 line_height,
                 origin,
                 content,
@@ -202,6 +203,7 @@ pub(crate) fn flatten(
                     content,
                     size * scale,
                     *weight,
+                    *family,
                     line_height.map(|l| l * scale),
                     max_width.map(|w| w * scale),
                     (origin.x * scale, origin.y * scale),

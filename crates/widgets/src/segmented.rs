@@ -162,6 +162,7 @@ impl<M: 'static> Widget<M> for Segmented<M> {
             }
             let w = m.width(label, s.size);
             out.push(DrawCommand::Text {
+                family: alloy_ui_core::FontFamily::Sans,
                 weight: if on { 600 } else { 400 },
                 line_height: None,
                 origin: Point::new(

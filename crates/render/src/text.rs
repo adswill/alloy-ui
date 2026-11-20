@@ -4,9 +4,9 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use alloy_ui_core::Size;
+use alloy_ui_core::{FontFamily, Size};
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight,
 };
 
 /// Line height as a multiple of font size.
@@ -90,10 +90,23 @@ impl TextMeasurer {
         line_height: Option<f32>,
         max_width: Option<f32>,
     ) -> Size {
+        self.measure_styled(text, size, weight, FontFamily::Sans, line_height, max_width)
+    }
+
+    /// Full-control measurement: weight, font family, line height and wrap width.
+    pub fn measure_styled(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        family: FontFamily,
+        line_height: Option<f32>,
+        max_width: Option<f32>,
+    ) -> Size {
         let (w, h) = self
             .sys
             .clone()
-            .extent(text, size, weight, line_height, max_width);
+            .extent(text, size, weight, family, line_height, max_width);
         Size {
             width: w,
             height: h,
@@ -171,6 +184,7 @@ impl TextSystem {
         content: &str,
         size: f32,
         weight: u16,
+        family: FontFamily,
         line_height: Option<f32>,
         max_width: Option<f32>,
     ) -> (f32, f32) {
@@ -179,7 +193,7 @@ impl TextSystem {
         if size <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
             return (0.0, 0.0);
         }
-        let buffer = shaped(inner, content, size, weight, line_height, max_width);
+        let buffer = shaped(inner, content, size, weight, family, line_height, max_width);
         let (mut w, mut h) = (0.0f32, 0.0f32);
         for run in buffer.layout_runs() {
             w = w.max(run.line_w);
@@ -193,6 +207,8 @@ impl TextSystem {
         self.lock().fonts.db().faces().count()
     }
 
+    // Mirrors the draw command's fields one to one; a wrapper struct would only rename them.
+    #[allow(clippy::too_many_arguments)]
     /// Shape and lay out `content` at `size_px` (physical pixels), with the
     /// text box's top-left at `origin` (physical pixels).
     pub fn layout(
@@ -200,6 +216,7 @@ impl TextSystem {
         content: &str,
         size_px: f32,
         weight: u16,
+        family: FontFamily,
         line_height_px: Option<f32>,
         max_width_px: Option<f32>,
         origin: (f32, f32),
@@ -214,6 +231,7 @@ impl TextSystem {
             content,
             size_px,
             weight,
+            family,
             line_height_px,
             max_width_px,
         );
@@ -296,6 +314,7 @@ fn shaped(
     content: &str,
     size: f32,
     weight: u16,
+    family: FontFamily,
     line_height: Option<f32>,
     max_width: Option<f32>,
 ) -> Buffer {
@@ -304,7 +323,12 @@ fn shaped(
         .unwrap_or(size * LINE_HEIGHT);
     let mut buffer = Buffer::new(&mut inner.fonts, Metrics::new(size, lh));
     buffer.set_size(&mut inner.fonts, max_width, None);
-    let attrs = Attrs::new().weight(Weight(weight.clamp(1, 1000)));
+    let attrs = Attrs::new()
+        .weight(Weight(weight.clamp(1, 1000)))
+        .family(match family {
+            FontFamily::Sans => Family::SansSerif,
+            FontFamily::Mono => Family::Monospace,
+        });
     buffer.set_text(&mut inner.fonts, content, &attrs, Shaping::Advanced);
     buffer.shape_until_scroll(&mut inner.fonts, false);
     buffer

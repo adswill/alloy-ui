@@ -16,6 +16,17 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 pub trait TextMetrics {
     /// Width in logical pixels of `text` (single line) at `size`.
     fn width(&self, text: &str, size: f32) -> f32;
+    /// Width at a given weight and family. Defaults to [`TextMetrics::width`];
+    /// renderer-backed metrics override it so bold and monospace measure exactly.
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        _weight: u16,
+        _family: alloy_ui_core::FontFamily,
+    ) -> f32 {
+        self.width(text, size)
+    }
 }
 
 /// Deterministic per-character width estimates. Not exact; never used for

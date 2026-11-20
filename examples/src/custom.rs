@@ -164,6 +164,7 @@ impl<M> Widget<M> for Editor<M> {
         let (x0, y0) = (l.bounds.origin.x + 8.0, l.bounds.origin.y + 8.0);
         for (i, line) in self.lines.iter().enumerate() {
             out.push(DrawCommand::Text {
+                family: alloy_ui_core::FontFamily::Sans,
                 origin: Point::new(x0, y0 + i as f32 * LINE_H),
                 content: line.clone(),
                 size: MONO,

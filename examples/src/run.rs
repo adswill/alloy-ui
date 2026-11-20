@@ -12,6 +12,17 @@ impl alloy_ui_widgets::TextMetrics for Measured {
     fn width(&self, text: &str, size: f32) -> f32 {
         self.0.measure(text, size, 400, None).width
     }
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        family: alloy_ui_core::FontFamily,
+    ) -> f32 {
+        self.0
+            .measure_styled(text, size, weight, family, None, None)
+            .width
+    }
 }
 
 /// A [`Ui`](alloy_ui_widgets::Ui) with real text metrics, like the one `alloy_ui::run`
@@ -56,7 +67,10 @@ pub fn runtime<A: Application>(app: A, size: (f32, f32)) -> Runtime<A> {
 pub fn find_text<A: Application>(rt: &Runtime<A>, text: &str) -> Option<Point> {
     rt.draw().0.iter().find_map(|c| match c {
         DrawCommand::Text {
-            origin, content, ..
+            family: alloy_ui_core::FontFamily::Sans,
+            origin,
+            content,
+            ..
         } if content == text => Some(Point::new(origin.x + 3.0, origin.y + 3.0)),
         _ => None,
     })

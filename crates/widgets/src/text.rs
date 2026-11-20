@@ -141,6 +141,7 @@ impl<M> Widget<M> for Text {
                 continue;
             }
             out.push(DrawCommand::Text {
+                family: alloy_ui_core::FontFamily::Sans,
                 weight: 400,
                 line_height: None,
                 origin: Point::new(b.origin.x, b.origin.y + i as f32 * self.line_height),

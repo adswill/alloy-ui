@@ -204,6 +204,7 @@ impl<M: 'static> Widget<M> for PickList<M> {
         });
         let empty = self.selected.is_none();
         out.push(DrawCommand::Text {
+            family: alloy_ui_core::FontFamily::Sans,
             weight: 400,
             line_height: None,
             origin: Point::new(
@@ -222,6 +223,7 @@ impl<M: 'static> Widget<M> for PickList<M> {
             max_width: None,
         });
         out.push(DrawCommand::Text {
+            family: alloy_ui_core::FontFamily::Sans,
             weight: 400,
             line_height: None,
             origin: Point::new(
@@ -270,6 +272,7 @@ impl<M: 'static> Widget<M> for PickList<M> {
                     });
                 }
                 cmds.push(DrawCommand::Text {
+                    family: alloy_ui_core::FontFamily::Sans,
                     weight: 400,
                     line_height: None,
                     origin: Point::new(

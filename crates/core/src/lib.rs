@@ -11,7 +11,7 @@ pub mod runtime;
 pub mod style;
 pub mod widget;
 
-pub use draw::{Border, DrawCommand, DrawList, Shadow};
+pub use draw::{Border, DrawCommand, DrawList, FontFamily, Shadow};
 pub use event::{Event, Key, Modifiers, MouseButton};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
 pub use runtime::{
