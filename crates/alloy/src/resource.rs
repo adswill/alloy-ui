@@ -113,6 +113,7 @@ struct Inner<T> {
     fetch: Arc<dyn Fn() -> Fut<T> + Send + Sync>,
     every: Option<(Duration, Instant)>,
     ticking: bool,
+    auto: Option<crate::Local<bool>>,
 }
 
 /// Data fetched in the background. Made by [`resource`].
@@ -147,6 +148,7 @@ where
             }),
             every: None,
             ticking: false,
+            auto: None,
         }
     });
     let r = Resource(slot);
@@ -210,6 +212,27 @@ impl<T: Send + 'static> Resource<T> {
         self
     }
 
+    /// Let the user switch periodic refetching on and off (starts off): shows an
+    /// "Auto refresh" switch in [`header`](Self::header) and refetches every `period` while it is on.
+    #[track_caller]
+    pub fn auto(self, period: Duration) -> Self {
+        let on = crate::local(false);
+        self.0.lock().unwrap().auto = Some(on);
+        self.every_if(on.get(), period)
+    }
+
+    /// A title row for a page that shows this data: the heading, then the auto-refresh switch
+    /// (if [`auto`](Self::auto) was used) and a Refresh button, right-aligned.
+    pub fn header<S: 'static>(&self, title: &str) -> Node<Act<S>> {
+        let mut items: Vec<Node<Act<S>>> = vec![heading(title).into(), crate::space()];
+        if let Some(on) = self.0.lock().unwrap().auto {
+            use crate::FlagCell;
+            items.push(on.switch("Auto refresh").into());
+        }
+        items.push(self.refresh_button());
+        crate::row(items).align_center().gap(12.0).into()
+    }
+
     /// Like [`every_if`](Self::every_if), always on.
     pub fn every(self, period: Duration) -> Self {
         self.every_if(true, period)
@@ -236,6 +259,19 @@ impl<T: Send + 'static> Resource<T> {
             return b.into();
         }
         b.act(move |_: &mut S| me.reload()).into()
+    }
+
+    /// A whole page for this data: [`header`](Self::header) over [`show`](Self::show).
+    pub fn page<S: 'static, N: Into<Node<Act<S>>>>(
+        &self,
+        title: &str,
+        view: impl FnOnce(&T) -> N,
+    ) -> Node<Act<S>> {
+        col([self.header(title), self.show(|d| view(d).into())])
+            .gap(16.0)
+            .pad(24.0)
+            .fill()
+            .into()
     }
 
     /// The view for the current state: "Loading…" before the first data, an error card with

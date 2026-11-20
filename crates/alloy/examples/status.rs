@@ -49,67 +49,21 @@ async fn fetch() -> Result<Vec<Service>, String> {
 fn main() {
     app("Status")
         .page("Services", || {
-            let (auto, filter, sel) = (local(false), local(None), local(None::<usize>));
-            let svc = resource(fetch).every_if(auto.get(), secs(10.0));
-            let top = row![
-                heading("Services"),
-                space(),
-                toggle("Auto refresh", auto.get()).local(&auto),
-                svc.refresh_button()
-            ];
-            let body = svc.show(|all| {
-                let rows: Vec<Service> = all
-                    .iter()
-                    .filter(|s| filter.get().is_none() || filter.get() == Some(s.status))
-                    .cloned()
-                    .collect();
-                let stat = |st: Status| {
-                    col![
-                        caption(format!("{st:?}")),
-                        heading(all.iter().filter(|s| s.status == st).count().to_string())
-                    ]
-                    .card()
-                    .pad(16.0)
-                    .fill_w()
-                };
-                let detail = sel.get().and_then(|i| rows.get(i)).map(|s| {
-                    col![
-                        heading(&s.name),
-                        caption(format!("{} · {:?}", s.region, s.status)),
-                        bars(s.history.clone()),
-                        caption(format!("{} ms now", s.latency))
-                    ]
-                    .gap(10.0)
-                    .card()
-                    .pad(20.0)
-                    .w(300.0)
-                });
-                let opts = [
-                    ("All", None),
-                    ("Up", Some(Status::Up)),
-                    ("Degraded", Some(Status::Degraded)),
-                    ("Down", Some(Status::Down)),
-                ];
+            let filter = local(None);
+            resource(fetch).auto(secs(10.0)).page("Services", |all| {
                 col![
-                    row![stat(Status::Up), stat(Status::Degraded), stat(Status::Down)].gap(12.0),
-                    choose(opts, &filter.get()).local(&filter),
-                    row![
-                        table_of(&rows)
-                            .selected(sel.get())
-                            .on_select(move |_, i| sel.set(Some(i))),
-                        detail.map_or_else(|| gap(0.0, 0.0), Node::from)
+                    tally(all, |s| s.status),
+                    filter_by(&filter),
+                    table_of(&filter.apply(all, |s| s.status)).detail(|s| col![
+                        heading(&s.name),
+                        caption(format!("{} · {:?} · {} ms", s.region, s.status, s.latency)),
+                        bars(s.history.clone())
                     ]
-                    .gap(16.0)
-                    .fill(),
+                    .gap(10.0))
                 ]
                 .gap(14.0)
                 .fill()
-                .into()
-            });
-            col![top.align_center().gap(12.0), body]
-                .gap(16.0)
-                .pad(24.0)
-                .fill()
+            })
         })
         .run()
 }

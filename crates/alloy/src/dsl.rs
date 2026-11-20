@@ -225,6 +225,30 @@ impl<S: 'static> Btn<Act<S>> {
         self.on(Act::new(f))
     }
 }
+impl<S: 'static> Btn<Act<S>> {
+    /// Ask first: the button turns into "prompt [label] [Cancel]" and only the second click
+    /// runs the action. Put it last, after `.act(..)`.
+    #[track_caller]
+    pub fn confirm(mut self, prompt: &str) -> Node<Act<S>> {
+        let asking = crate::local(false);
+        let Some(go) = self.on.take() else {
+            return self.into();
+        };
+        if !asking.get() {
+            self.on = Some(Act::new(move |_| asking.set(true)));
+            return self.into();
+        }
+        let sure = button(self.label).primary().act(move |s: &mut S| {
+            asking.set(false);
+            (go.0)(s)
+        });
+        let back = button("Cancel").ghost().act(move |_| asking.set(false));
+        crate::row([Node::from(caption(prompt)), sure.into(), back.into()])
+            .align_center()
+            .gap(8.0)
+            .into()
+    }
+}
 impl<M: Clone + 'static> Btn<M> {
     fn build(self) -> Node<M> {
         let mut b = w::Button::new(&cx::ui(), self.label).variant(self.variant);
@@ -290,12 +314,9 @@ macro_rules! value_widget {
                 self.on(set_via(lens))
             }
             /// Write the value into a [`Local`](crate::Local) view-state cell.
-            pub fn local(self, cell: &$crate::Local<$ty>) -> Self {
-                let cell = cell.clone();
-                self.on(move |v| {
-                    let cell = cell.clone();
-                    Act::new(move |_| cell.set(v.clone()))
-                })
+            pub fn local(self, cell: &impl $crate::Cell<$ty>) -> Self {
+                let cell = *cell;
+                self.on(move |v| Act::new(move |_| cell.write(v.clone())))
             }
         }
     };
@@ -615,9 +636,9 @@ impl<T, M> Choose<T, M> {
 }
 impl<T: Clone + Send + Sync + 'static, S: 'static> Choose<T, Act<S>> {
     /// Write the picked value into a [`Local`](crate::Local) view-state cell.
-    pub fn local(self, cell: &crate::Local<T>) -> Self {
+    pub fn local(self, cell: &impl crate::Cell<T>) -> Self {
         let cell = *cell;
-        self.act(move |_, v| cell.set(v))
+        self.act(move |_, v| cell.write(v))
     }
     /// Closure style: `.act(|state, picked| ..)`.
     pub fn act(self, f: impl Fn(&mut S, T) + Send + Sync + 'static) -> Self {

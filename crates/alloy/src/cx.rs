@@ -13,6 +13,8 @@ use std::{cell::RefCell, collections::HashMap, hash::Hasher, rc::Rc};
 struct Cx {
     ui: Ui,
     seen: HashMap<u64, u32>,
+    /// Mixed into every generated id, so the same call site gets a different identity per key.
+    salt: u64,
 }
 
 thread_local! {
@@ -25,6 +27,7 @@ pub(crate) fn enter<R>(ui: &Ui, f: impl FnOnce() -> R) -> R {
         c.borrow_mut().replace(Cx {
             ui: ui.clone(),
             seen: HashMap::new(),
+            salt: 0,
         })
     });
     DURABLE.with(|d| d.borrow_mut().counts.clear());
@@ -61,6 +64,23 @@ pub fn set_dark(dark: bool) {
     ui().set_theme(if dark { Theme::dark() } else { Theme::light() });
 }
 
+/// Run `f` with every generated id (and so every [`local`](crate::local)) keyed by `key` as
+/// well as its call site: the same code for row 3 and row 4 gets separate cursors and state.
+pub(crate) fn keyed<R>(key: u64, f: impl FnOnce() -> R) -> R {
+    let set = |to: u64| {
+        CX.with(|c| {
+            c.borrow_mut()
+                .as_mut()
+                .map_or(0, |c| std::mem::replace(&mut c.salt, to))
+        })
+    };
+    let prev = set(0);
+    set(prev.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ key.wrapping_add(0x1234_5678_9ABC_DEF1));
+    let r = f();
+    set(prev);
+    r
+}
+
 /// A stable id for the widget built at the caller's source location.
 #[track_caller]
 pub(crate) fn auto_id(salt: u64) -> u64 {
@@ -70,6 +90,7 @@ pub(crate) fn auto_id(salt: u64) -> u64 {
     h.write_u32(loc.line());
     h.write_u32(loc.column());
     h.write_u64(salt);
+    h.write_u64(CX.with(|c| c.borrow().as_ref().map_or(0, |c| c.salt)));
     let site = h.finish();
     let n = CX.with(|c| {
         let mut c = c.borrow_mut();
