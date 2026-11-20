@@ -25,6 +25,7 @@ pub struct TextInput<M> {
     on_submit: Option<Box<dyn Fn() -> M>>,
     width: Length,
     secure: bool,
+    invalid: bool,
 }
 
 /// Clipboard view for password fields: paste works, copy and cut do nothing.
@@ -48,6 +49,7 @@ impl<M: 'static> TextInput<M> {
             on_submit: None,
             width: Length::Fill(1),
             secure: false,
+            invalid: false,
         }
     }
     /// Hint shown while empty.
@@ -74,6 +76,11 @@ impl<M: 'static> TextInput<M> {
     /// accessibility, and copy and cut are disabled.
     pub fn secure(mut self, secure: bool) -> Self {
         self.secure = secure;
+        self
+    }
+    /// Mark the value as invalid: the border and focus ring turn to the danger colour.
+    pub fn invalid(mut self, invalid: bool) -> Self {
+        self.invalid = invalid;
         self
     }
     /// What is drawn and measured: the value, or one bullet per character.
@@ -258,7 +265,8 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         self.ui.set_edit(self.id, e.clone());
 
         if focused {
-            out.push(focus_ring(b, t.radii.medium, p.focus_ring));
+            let ring = if self.invalid { p.danger } else { p.focus_ring };
+            out.push(focus_ring(b, t.radii.medium, ring));
         }
         let hover = self.ui.hovered(&b);
         out.push(DrawCommand::Quad {
@@ -270,12 +278,16 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             },
             radius: t.radii.medium,
             border: Some(Border {
-                color: crate::util::mix(
-                    p.border,
-                    p.border_strong,
-                    self.ui
-                        .ease(Ui::anim_key(&b, 4), (focused || hover) as u8 as f32),
-                ),
+                color: if self.invalid {
+                    p.danger
+                } else {
+                    crate::util::mix(
+                        p.border,
+                        p.border_strong,
+                        self.ui
+                            .ease(Ui::anim_key(&b, 4), (focused || hover) as u8 as f32),
+                    )
+                },
                 width: 1.0,
             }),
             shadow: None,

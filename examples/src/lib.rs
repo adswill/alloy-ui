@@ -7,6 +7,7 @@
 
 pub mod counter;
 pub mod dashboard;
+pub mod gallery;
 pub mod settings;
 pub mod text_editor;
 pub mod todo;
