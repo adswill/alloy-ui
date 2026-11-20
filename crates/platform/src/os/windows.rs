@@ -95,39 +95,98 @@ pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
     Ok(file_dialog(false, true, name)?.into_iter().next())
 }
 
-/// Shared GetOpenFileNameW / GetSaveFileNameW call. Empty result = cancelled.
+/// Shared IFileOpenDialog / IFileSaveDialog call (the Vista+ common item
+/// dialog: places bar, recent folders, long paths). Empty result = cancelled.
 fn file_dialog(multi: bool, save: bool, name: &str) -> Result<Vec<PathBuf>, PlatformError> {
-    use windows_sys::Win32::UI::Controls::Dialogs::{
-        GetOpenFileNameW, GetSaveFileNameW, OFN_ALLOWMULTISELECT, OFN_EXPLORER, OFN_FILEMUSTEXIST,
-        OFN_NOCHANGEDIR, OFN_OVERWRITEPROMPT, OFN_PATHMUSTEXIST, OPENFILENAMEW,
-    };
-    let mut buf = vec![0u16; 32768];
-    let init: Vec<u16> = name.encode_utf16().take(buf.len() - 1).collect();
-    buf[..init.len()].copy_from_slice(&init);
-    // SAFETY: OPENFILENAMEW is zero-initialised then given its size and a
-    // buffer that outlives the (modal) call; the result is read up to the
-    // terminating double NUL.
-    let ok = unsafe {
-        let mut ofn: OPENFILENAMEW = std::mem::zeroed();
-        ofn.lStructSize = std::mem::size_of::<OPENFILENAMEW>() as u32;
-        ofn.lpstrFile = buf.as_mut_ptr();
-        ofn.nMaxFile = buf.len() as u32;
-        ofn.Flags = OFN_EXPLORER | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
-        if save {
-            ofn.Flags |= OFN_OVERWRITEPROMPT;
-            GetSaveFileNameW(&mut ofn) != 0
-        } else {
-            ofn.Flags |= OFN_FILEMUSTEXIST;
-            if multi {
-                ofn.Flags |= OFN_ALLOWMULTISELECT;
-            }
-            GetOpenFileNameW(&mut ofn) != 0
+    com_dialog(multi, save, name).map_err(|e| PlatformError(format!("file dialog: {e}")))
+}
+
+/// Balances a successful `CoInitializeEx` with `CoUninitialize` on drop.
+struct ComGuard(bool);
+
+impl Drop for ComGuard {
+    fn drop(&mut self) {
+        if self.0 {
+            // SAFETY: only constructed with `true` after CoInitializeEx
+            // succeeded (S_OK or S_FALSE) on this thread, so this is its pair.
+            unsafe { windows::Win32::System::Com::CoUninitialize() };
         }
-    };
-    if !ok {
-        return Ok(Vec::new()); // cancelled (or closed)
     }
-    Ok(crate::dialog::parse_multiselect(&buf))
+}
+
+fn com_dialog(multi: bool, save: bool, name: &str) -> windows::core::Result<Vec<PathBuf>> {
+    use std::os::windows::ffi::OsStringExt;
+    use windows::{
+        core::{Interface, HRESULT, HSTRING},
+        Win32::{
+            Foundation::ERROR_CANCELLED,
+            System::Com::{
+                CoCreateInstance, CoInitializeEx, CoTaskMemFree, CLSCTX_INPROC_SERVER,
+                COINIT_APARTMENTTHREADED,
+            },
+            UI::Shell::{
+                FileOpenDialog, FileSaveDialog, IFileDialog, IFileOpenDialog, IShellItem,
+                FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FOS_PATHMUSTEXIST,
+                SIGDN_FILESYSPATH,
+            },
+        },
+    };
+    /// Read a shell item's file-system path.
+    fn path_of(item: &IShellItem) -> windows::core::Result<PathBuf> {
+        // SAFETY: only called while COM is initialised (see below). The PWSTR
+        // returned by the shell is valid and NUL-terminated until freed with
+        // CoTaskMemFree, which happens once, after the copy.
+        unsafe {
+            let p = item.GetDisplayName(SIGDN_FILESYSPATH)?;
+            let path = PathBuf::from(std::ffi::OsString::from_wide(p.as_wide()));
+            CoTaskMemFree(Some(p.0 as *const c_void));
+            Ok(path)
+        }
+    }
+
+    // SAFETY: COM is initialised on this thread before any interface is used
+    // (an already-initialised apartment, as winit sets up, is fine: that
+    // returns S_FALSE or RPC_E_CHANGED_MODE and the dialog still works). All
+    // interface pointers are owned `windows` smart pointers released on drop,
+    // and the shell-allocated path strings are freed in `path_of`.
+    unsafe {
+        let _com = ComGuard(CoInitializeEx(None, COINIT_APARTMENTTHREADED).is_ok());
+        let dialog: IFileDialog = if save {
+            CoCreateInstance::<_, windows::Win32::UI::Shell::IFileSaveDialog>(
+                &FileSaveDialog,
+                None,
+                CLSCTX_INPROC_SERVER,
+            )?
+            .cast()?
+        } else {
+            CoCreateInstance::<_, IFileOpenDialog>(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?
+                .cast()?
+        };
+        let mut opts = dialog.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
+        if save {
+            opts |= FOS_OVERWRITEPROMPT;
+            if !name.is_empty() {
+                dialog.SetFileName(&HSTRING::from(name))?;
+            }
+        } else if multi {
+            opts |= FOS_ALLOWMULTISELECT;
+        }
+        dialog.SetOptions(opts)?;
+        match dialog.Show(None) {
+            Ok(()) => {}
+            // The user dismissed the dialog: not an error.
+            Err(e) if e.code() == HRESULT::from_win32(ERROR_CANCELLED.0) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        }
+        if multi && !save {
+            let items = dialog.cast::<IFileOpenDialog>()?.GetResults()?;
+            (0..items.GetCount()?)
+                .map(|i| path_of(&items.GetItemAt(i)?))
+                .collect()
+        } else {
+            Ok(vec![path_of(&dialog.GetResult()?)?])
+        }
+    }
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
