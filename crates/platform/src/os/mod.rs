@@ -5,7 +5,11 @@ use crate::{Clipboard, Dialogs, PlatformError, SystemTheme};
 use std::process::{Command, Stdio};
 
 #[cfg(target_os = "linux")]
+mod dbus;
+#[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_tray;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos;

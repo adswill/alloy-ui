@@ -69,14 +69,15 @@ fn which(prog: &str) -> bool {
         .unwrap_or(false)
 }
 
-// winit has no menu bar on Linux and a tray needs D-Bus StatusNotifierItem,
-// which is not implemented yet.
+// winit has no menu bar on Linux. The tray is a StatusNotifierItem (see linux_tray.rs).
 pub fn set_menu(_: &winit::window::Window, _: &[Menu]) -> Result<(), PlatformError> {
     Err(PlatformError(
         "native menu bar is not available on Linux".into(),
     ))
 }
-pub fn set_tray(_: &winit::window::Window, _: &TraySettings) -> Result<(), PlatformError> {
-    Err(PlatformError("tray not implemented on Linux".into()))
+pub fn set_tray(_: &winit::window::Window, t: &TraySettings) -> Result<(), PlatformError> {
+    super::linux_tray::start(t, true)
 }
-pub fn clear_tray() {}
+pub fn clear_tray() {
+    super::linux_tray::stop();
+}
