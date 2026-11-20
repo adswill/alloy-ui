@@ -17,6 +17,8 @@ mod macos;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
+#[cfg(target_os = "linux")]
+mod x11_clip;
 
 #[cfg(target_os = "linux")]
 use linux as backend;

@@ -9,9 +9,20 @@ fn wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
+fn x11() -> bool {
+    std::env::var_os("DISPLAY").is_some()
+}
+
+/// Order: Wayland helper (`wl-clipboard`) when on Wayland, our own X11
+/// selection client (also covers XWayland), then `xclip`/`xsel`.
 pub fn clipboard_read() -> Option<String> {
     if wayland() {
         if let Some(s) = capture("wl-paste", &["--no-newline"]) {
+            return Some(s);
+        }
+    }
+    if x11() {
+        if let Some(s) = super::x11_clip::read() {
             return Some(s);
         }
     }
@@ -21,6 +32,7 @@ pub fn clipboard_read() -> Option<String> {
 
 pub fn clipboard_write(text: &str) -> bool {
     (wayland() && feed("wl-copy", &[], text))
+        || (x11() && super::x11_clip::write(text))
         || feed("xclip", &["-selection", "clipboard"], text)
         || feed("xsel", &["--clipboard", "--input"], text)
 }
