@@ -186,6 +186,7 @@ pub struct Btn<M> {
     variant: Variant,
     wide: bool,
     off: bool,
+    sel: bool,
     id: u64,
 }
 
@@ -198,6 +199,7 @@ pub fn button<M>(label: impl Into<String>) -> Btn<M> {
         variant: Variant::Secondary,
         wide: false,
         off: false,
+        sel: false,
         id: auto_id(1),
     }
 }
@@ -230,6 +232,12 @@ impl<M> Btn<M> {
         } else {
             Variant::Ghost
         };
+        self
+    }
+    /// A sidebar row: left-aligned, no outline, highlighted when `current`.
+    pub fn nav(mut self, current: bool) -> Self {
+        self.variant = Variant::Nav;
+        self.sel = current;
         self
     }
     /// Explicit focus id.
@@ -275,7 +283,9 @@ impl<S: 'static> Btn<Act<S>> {
 }
 impl<M: Clone + 'static> Btn<M> {
     fn build(self) -> Node<M> {
-        let mut b = w::Button::new(&cx::ui(), self.label).variant(self.variant);
+        let mut b = w::Button::new(&cx::ui(), self.label)
+            .variant(self.variant)
+            .selected(self.sel);
         if let Some(m) = self.on.filter(|_| !self.off) {
             b = b.on_press(m);
         }
@@ -953,7 +963,7 @@ impl<T: PartialEq, M: Clone + 'static> From<Nav<T, M>> for Node<M> {
             .opts
             .into_iter()
             .map(|(label, v)| {
-                let mut b = button(label).active(v == n.cur).fill_w();
+                let mut b = button(label).nav(v == n.cur).fill_w();
                 if let Some(f) = &on {
                     b = b.on(f(v));
                 }

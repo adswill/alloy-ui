@@ -139,7 +139,8 @@ impl<M: Clone + 'static> Table<M> {
             .into_iter()
             .map(|r| Self::line(&ui, &columns, r))
             .collect();
-        let list = List::new(&self.ui, self.id, rows, self.selected, self.on_select).into_element();
+        let list =
+            List::ruled(&self.ui, self.id, rows, self.selected, self.on_select).into_element();
         // Same horizontal inset as a list row so header and cells line up.
         let header = Container::new(header)
             .padding(Padding::symmetric(t.spacing.md, t.spacing.xs))
@@ -175,7 +176,7 @@ impl<M: Clone + 'static> Widget<M> for SortHeader<M> {
             .ui
             .metrics()
             .width_styled(&self.title, s.size, s.weight.0, FontFamily::Sans);
-        Size::new(w + 14.0, s.line_height)
+        Size::new(if self.dir.is_some() { w + 14.0 } else { w }, s.line_height)
     }
     fn on_event(&mut self, e: &Event, l: &Layout, cursor: Point, out: &mut Vec<M>) -> bool {
         match (e, &self.msg) {

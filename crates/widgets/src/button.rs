@@ -21,6 +21,9 @@ pub enum Variant {
     Secondary,
     /// Low emphasis: no fill until hovered.
     Ghost,
+    /// A row in a sidebar or settings list: left-aligned, no outline. Mark the
+    /// current page with [`Button::selected`].
+    Nav,
 }
 
 /// A button that emits a message when clicked or activated with Enter/Space.
@@ -32,6 +35,7 @@ pub struct Button<M> {
     variant: Variant,
     id: Option<u64>,
     width: Length,
+    selected: bool,
 }
 
 impl<M: Clone + 'static> Button<M> {
@@ -44,6 +48,7 @@ impl<M: Clone + 'static> Button<M> {
             variant: Variant::default(),
             id: None,
             width: Length::Shrink,
+            selected: false,
         }
     }
     /// Message to emit on activation; enables the button.
@@ -54,6 +59,11 @@ impl<M: Clone + 'static> Button<M> {
     /// Visual weight.
     pub fn variant(mut self, v: Variant) -> Self {
         self.variant = v;
+        self
+    }
+    /// Mark this button as the current choice (only [`Variant::Nav`] shows it).
+    pub fn selected(mut self, yes: bool) -> Self {
+        self.selected = yes;
         self
     }
     /// Make the button keyboard-focusable under `id` (unique per window).
@@ -165,6 +175,17 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
                 }),
                 if e { p.text } else { p.text_disabled },
             ),
+            (Variant::Nav, e) => (
+                if self.selected {
+                    util::over(p.selection, p.hover.with_alpha(p.hover.a * h * 0.5))
+                } else if e {
+                    overlay(p.surface.with_alpha(0.0))
+                } else {
+                    p.surface.with_alpha(0.0)
+                },
+                None,
+                if e { p.text } else { p.text_disabled },
+            ),
             (Variant::Ghost, e) => (
                 if e {
                     overlay(p.surface.with_alpha(0.0))
@@ -189,15 +210,28 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             shadow: None,
         });
         let s = t.typography.label;
-        let w = self.ui.metrics().width(&self.label, s.size);
+        let nav = self.variant == Variant::Nav;
+        let weight = if nav && self.selected {
+            600
+        } else {
+            s.weight.0
+        };
+        let w = self.ui.metrics().width_styled(
+            &self.label,
+            s.size,
+            weight,
+            alloy_ui_core::FontFamily::Sans,
+        );
+        let x = if nav {
+            b.origin.x + t.spacing.md
+        } else {
+            b.origin.x + (b.size.width - w) / 2.0
+        };
         out.push(DrawCommand::Text {
             family: alloy_ui_core::FontFamily::Sans,
-            weight: s.weight.0,
+            weight,
             line_height: None,
-            origin: Point::new(
-                b.origin.x + (b.size.width - w) / 2.0,
-                b.origin.y + (b.size.height - s.line_height) / 2.0,
-            ),
+            origin: Point::new(x, b.origin.y + (b.size.height - s.line_height) / 2.0),
             content: self.label.clone(),
             size: s.size,
             color: text,

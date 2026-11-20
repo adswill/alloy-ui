@@ -11,7 +11,7 @@ use alloy_ui::{DrawList, Element, Point, Size};
 use std::rc::Rc;
 
 /// Window size in logical pixels.
-pub const SIZE: (f32, f32) = (1360.0, 1340.0);
+pub const SIZE: (f32, f32) = (1360.0, 1640.0);
 
 type E = Element<()>;
 
@@ -310,6 +310,49 @@ fn data(ui: &Ui) -> E {
         .into_element()
 }
 
+fn navigation(ui: &Ui) -> E {
+    let t = ui.theme();
+    let row = |l: &str, id: u64, sel: bool| {
+        Button::new(ui, l)
+            .variant(Variant::Nav)
+            .selected(sel)
+            .on_press(())
+            .width(Length::Fill(1))
+            .id(id)
+            .into_element()
+    };
+    let nav = Column::new(vec![
+        row("Appearance", 500, true),
+        Forced::new(ui, row("Keyboard", 501, false))
+            .hover()
+            .into_element(),
+        Forced::new(ui, row("Notifications", 502, false))
+            .focus(502)
+            .into_element(),
+        row("Accounts", 503, false),
+    ])
+    .spacing(2.0)
+    .width(Length::Fill(1))
+    .into_element();
+    let _ = t;
+    nav
+}
+
+fn dates(ui: &Ui) -> E {
+    let t = ui.theme();
+    Column::new(vec![
+        label(ui, "Due date"),
+        DatePicker::new(ui, 510, Some(Date::new(2026, 11, 20)))
+            .today(Date::new(2026, 11, 18))
+            .on_select(|_| ())
+            .width(Length::Fixed(240.0))
+            .into_element(),
+    ])
+    .spacing(t.spacing.xs + 2.0)
+    .width(Length::Fill(1))
+    .into_element()
+}
+
 fn cells(ui: &Ui, c: [&str; 3]) -> Vec<E> {
     c.iter().map(|s| Text::new(ui, *s).into_element()).collect()
 }
@@ -349,13 +392,14 @@ fn page(ui: &Ui) -> E {
         panel(ui, "Ghost", vec![buttons(ui, Variant::Ghost, "Skip", 30)]),
         panel(ui, "Inputs", vec![inputs(ui)]),
         panel(ui, "Choices", vec![toggles(ui)]),
+        panel(ui, "Navigation", vec![navigation(ui)]),
     ])
     .spacing(t.spacing.md + 4.0)
     .width(Length::Fill(11))
     .into_element();
     let right = Column::new(vec![
         panel(ui, "Type scale", vec![type_scale(ui)]),
-        panel(ui, "Selection and range", vec![selection(ui)]),
+        panel(ui, "Selection and range", vec![selection(ui), dates(ui)]),
         panel(ui, "Elevation", vec![surfaces(ui)]),
         panel(ui, "Data", vec![data(ui)]),
     ])
@@ -386,6 +430,7 @@ pub fn render_png(dark: bool) -> Vec<u8> {
     let bg = theme.palette.background;
     let ui = Ui::new(theme);
     ui.set_metrics(Rc::new(Metrics(TextMeasurer::new())));
+    ui.set_popup(Some(510));
     let root = Root::new(&ui, page(&ui)).into_element();
     let size = Size::new(SIZE.0, SIZE.1);
     let layout = alloy_ui::widgets::layout(&root, size);

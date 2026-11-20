@@ -403,7 +403,7 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
             if r.contains(self.ui.cursor()) {
                 c.push(DrawCommand::Quad {
                     bounds: r,
-                    fill: p.surface,
+                    fill: p.hover,
                     radius: t.radii.small,
                     border: None,
                     shadow: None,
@@ -417,6 +417,16 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
                 s.size + 4.0,
             ));
         }
+        c.push(DrawCommand::Quad {
+            bounds: Rectangle::new(
+                Point::new(pop.origin.x + 8.0, pop.origin.y + 6.0 + HEAD),
+                Size::new(pop.size.width - 16.0, 1.0),
+            ),
+            fill: p.border.with_alpha(0.7),
+            radius: 0.0,
+            border: None,
+            shadow: None,
+        });
         for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
             .iter()
             .enumerate()
@@ -446,30 +456,35 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
                     Size::new(CELL - 4.0, CELL - 4.0),
                 );
                 let sel = self.selected == Some(d);
-                if sel || hot == Some(d) || self.today == Some(d) {
+                if sel || hot == Some(d) {
                     c.push(DrawCommand::Quad {
                         bounds: r,
                         fill: if sel {
                             p.accent
                         } else if hot == Some(d) {
-                            p.surface
+                            p.hover
                         } else {
                             Color::TRANSPARENT
                         },
-                        radius: t.radii.small,
-                        border: (self.today == Some(d) && !sel).then_some(Border {
-                            color: p.accent,
-                            width: 1.0,
-                        }),
+                        radius: t.radii.medium,
+                        border: None,
                         shadow: None,
                     });
                 }
                 let label = d.day.to_string();
+                let today = self.today == Some(d) && !sel;
+                let weight = if sel || today { 600 } else { 400 };
                 c.push(text(
-                    centred(&r, &label, s.size, 400),
+                    centred(&r, &label, s.size, weight),
                     label,
-                    if sel { p.on_accent } else { p.text },
-                    400,
+                    if sel {
+                        p.on_accent
+                    } else if today {
+                        p.accent
+                    } else {
+                        p.text
+                    },
+                    weight,
                     s.size,
                 ));
             }
