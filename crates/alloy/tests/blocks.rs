@@ -1,11 +1,9 @@
 //! Building blocks (table, local state, records, persistence) through the real runtime.
 use alloy_ui::testing::Harness;
 use alloy_ui::{prelude::*, vals};
-use serde::{Deserialize, Serialize};
 
-#[derive(Record, Clone, Default, Serialize, Deserialize)]
+#[derive(Record, Clone, Default)]
 struct Item {
-    #[form(required)]
     name: String,
     #[form(range = (0.0, 100.0))]
     qty: u32,
@@ -23,7 +21,9 @@ fn order(h: &Harness<impl App>, a: &str, b: &str) -> bool {
 
 #[test]
 fn records_add_delete_and_sort() {
-    let app = sketch(items(), |d| records("Items", d, |d: &mut Records<Item>| d));
+    let app = sketch(items(), |d| {
+        records_in("Items", d, |d: &mut Records<Item>| d)
+    });
     let mut h = Harness::new(app, 900.0, 500.0);
     assert!(order(&h, "Pear", "Apple"));
     h.click("Name");
@@ -77,4 +77,21 @@ fn persist_round_trips() {
     let h = Harness::new(make(), 200.0, 100.0);
     assert!(h.has_text("n=2"), "state restored from disk");
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn pages_keep_state_per_page_and_switch() {
+    let app = app("t")
+        .page("A", || crud(items))
+        .page("B", || text("second page"));
+    let mut h = Harness::new(app, 900.0, 500.0);
+    assert!(h.position("Pear").is_some());
+    h.click("B");
+    assert!(h.position("second page").is_some() && h.position("Pear").is_none());
+    h.click("A");
+    h.click("Pear");
+    assert!(
+        h.position("Qty").is_some(),
+        "form opens after selecting, state survived the page switch"
+    );
 }

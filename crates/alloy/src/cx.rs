@@ -27,6 +27,7 @@ pub(crate) fn enter<R>(ui: &Ui, f: impl FnOnce() -> R) -> R {
             seen: HashMap::new(),
         })
     });
+    DURABLE.with(|d| d.borrow_mut().counts.clear());
     let r = f();
     CX.with(|c| *c.borrow_mut() = prev);
     r
@@ -104,4 +105,74 @@ pub(crate) fn slot<T: Send + 'static>(
         s.insert(id, Box::new(v.clone()));
         v
     })
+}
+
+// ------------------------------------------------------ durable (persisted) slots
+
+#[derive(Default)]
+struct Durable {
+    loaded: HashMap<String, serde_json::Value>,
+    live: std::collections::BTreeMap<String, Box<dyn Fn() -> serde_json::Value>>,
+    scope: String,
+    counts: HashMap<String, u32>,
+}
+
+thread_local! {
+    static DURABLE: RefCell<Durable> = RefCell::new(Durable::default());
+}
+
+/// Give the next `store`s values that were saved by an earlier run.
+pub(crate) fn durable_load(saved: HashMap<String, serde_json::Value>) {
+    DURABLE.with(|d| d.borrow_mut().loaded = saved);
+}
+
+/// Every live `store`, as one JSON object.
+pub(crate) fn durable_dump() -> serde_json::Value {
+    DURABLE.with(|d| {
+        let d = d.borrow();
+        serde_json::Value::Object(d.live.iter().map(|(k, f)| (k.clone(), f())).collect())
+    })
+}
+
+/// Name the page being built: its `store`s are keyed by this plus their order.
+pub(crate) fn scope<R>(name: &str, f: impl FnOnce() -> R) -> R {
+    let prev = DURABLE.with(|d| std::mem::replace(&mut d.borrow_mut().scope, name.into()));
+    DURABLE.with(|d| d.borrow_mut().counts.remove(name));
+    let r = f();
+    DURABLE.with(|d| d.borrow_mut().scope = prev);
+    r
+}
+
+/// The persistent, saved-with-the-app value for the next `store` call in this scope.
+pub(crate) fn durable<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
+    init: impl FnOnce() -> T,
+) -> std::sync::Arc<std::sync::Mutex<T>> {
+    let key = DURABLE.with(|d| {
+        let mut d = d.borrow_mut();
+        let scope = d.scope.clone();
+        let n = d.counts.entry(scope.clone()).or_insert(0);
+        *n += 1;
+        format!("{scope}#{n}")
+    });
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    h.write(key.as_bytes());
+    let id = h.finish() & !(1 << 63);
+    let slot = slot(id, || {
+        DURABLE
+            .with(|d| d.borrow().loaded.get(&key).cloned())
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_else(init)
+    });
+    DURABLE.with(|d| {
+        d.borrow_mut().live.entry(key).or_insert_with(|| {
+            let s = slot.clone();
+            Box::new(move || serde_json::to_value(&*s.lock().unwrap()).unwrap_or_default())
+        });
+    });
+    slot
+}
+
+/// The name of the page being built (empty outside [`Pages`](crate::Pages)).
+pub(crate) fn scope_name() -> String {
+    DURABLE.with(|d| d.borrow().scope.clone())
 }

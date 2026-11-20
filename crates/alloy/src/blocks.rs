@@ -1,8 +1,10 @@
 //! High-level building blocks: view-local state, data tables, form fields.
 
 use crate::{
+    app::App,
     cx::{self, auto_id},
     dsl::{button, caption, text, Act},
+    view::View,
     view::{col, Flex, Node},
 };
 use alloy_ui_core::style::Length;
@@ -52,6 +54,15 @@ impl<T: Clone + std::ops::Not<Output = T>> Local<T> {
 #[track_caller]
 pub fn local<T: Send + 'static>(init: T) -> Local<T> {
     Local(cx::slot(auto_id(20), || init))
+}
+
+/// Like [`local`] but saved: with [`Pages::persist`] the value survives restarts, and
+/// it is keyed by the page it is built in plus call order, so it needs no name.
+/// `init` runs only when there is nothing saved.
+pub fn store<T: serde::Serialize + serde::de::DeserializeOwned + Send + 'static>(
+    init: impl FnOnce() -> T,
+) -> Local<T> {
+    Local(cx::durable(init))
 }
 
 // --------------------------------------------------------------- tables
@@ -186,14 +197,18 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                // Sized to the widest cell: `Fill` columns collapse when the table is narrow.
+                // The first column takes what the others (sized to their widest cell) leave.
                 let chars = cells
                     .iter()
                     .map(|r| r[i].chars().count())
                     .chain([c.title.chars().count() + 3])
                     .max()
                     .unwrap_or(0);
-                let width = Length::Fixed((chars as f32 * 6.6 + 16.0).clamp(70.0, 200.0));
+                let width = if i == 0 {
+                    Length::Fill(1)
+                } else {
+                    Length::Fixed((chars as f32 * 6.6 + 16.0).clamp(60.0, 200.0))
+                };
                 let col = w::TableColumn::new(c.title.clone(), width);
                 if c.num {
                     col.right()
@@ -304,4 +319,98 @@ pub fn theme_switch<S: 'static>() -> Node<Act<S>> {
     crate::choose([("Light", false), ("Dark", true)], &dark)
         .on(|d| Act::new(move |_: &mut S| cx::set_dark(d)))
         .into()
+}
+
+// ------------------------------------------------------------ pages app
+
+type PageFn = Box<dyn Fn() -> Node<Act<()>>>;
+
+/// A multi-page app with a sidebar and no state struct: every page owns its state
+/// in [`store`]s. Made by [`app`].
+pub struct Pages {
+    title: String,
+    pages: Vec<(String, PageFn)>,
+    size: (f32, f32),
+    save: Option<std::path::PathBuf>,
+}
+
+/// Start a multi-page app: `app("Admin").page("People", || ..).page("Settings", || ..).run()`.
+pub fn app(title: &str) -> Pages {
+    Pages {
+        title: title.into(),
+        pages: Vec::new(),
+        size: (1280.0, 720.0),
+        save: None,
+    }
+}
+
+impl Pages {
+    /// Add a sidebar entry. `view` builds the page while it is showing.
+    pub fn page<N: Into<Node<Act<()>>>>(
+        mut self,
+        name: &str,
+        view: impl Fn() -> N + 'static,
+    ) -> Self {
+        self.pages
+            .push((name.into(), Box::new(move || view().into())));
+        self
+    }
+    /// Window size in logical pixels.
+    pub fn size(mut self, w: f32, h: f32) -> Self {
+        self.size = (w, h);
+        self
+    }
+    /// Keep every [`store`] (and the open page) between runs, under the app's title.
+    pub fn persist(mut self) -> Self {
+        let path = crate::persist::path(&self.title);
+        if let Some(saved) = std::fs::read(&path)
+            .ok()
+            .and_then(|b| serde_json::from_slice(&b).ok())
+        {
+            cx::durable_load(saved);
+        }
+        self.save = Some(path);
+        self
+    }
+    /// Open the window and run until it closes.
+    pub fn run(self) {
+        let (t, (w, h)) = (self.title.clone(), self.size);
+        App::run_sized(self, &t, w, h)
+    }
+}
+
+impl App for Pages {
+    type Msg = Act<()>;
+
+    fn update(&mut self, m: Act<()>) {
+        (m.0)(&mut ());
+        if let Some(path) = &self.save {
+            crate::persist::write(path, &cx::durable_dump());
+        }
+    }
+
+    fn view(&self) -> impl View<Act<()>> {
+        let open = store(|| 0usize);
+        let at = open.get().min(self.pages.len().saturating_sub(1));
+        let names: Vec<&str> = self.pages.iter().map(|(n, _)| n.as_str()).collect();
+        let side: Node<Act<()>> = crate::dsl::Nav::of(
+            names
+                .iter()
+                .enumerate()
+                .map(|(i, n)| (n.to_string(), i))
+                .collect(),
+            at,
+        )
+        .on(move |i| {
+            Act::new({
+                let open = open.clone();
+                move |_: &mut ()| open.set(i)
+            })
+        })
+        .into();
+        let body = cx::scope(names[at], || (self.pages[at].1)());
+        crate::view::row([side.surface().w(170.0).fill_h().into(), body])
+            .gap(0.0)
+            .fill()
+    }
 }

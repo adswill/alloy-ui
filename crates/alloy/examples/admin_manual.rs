@@ -3,7 +3,7 @@
 use alloy_ui::prelude::*;
 use serde::{Deserialize, Serialize};
 
-alloy_ui::choices! { #[derive(Serialize, Deserialize)] enum Page { People, Settings } }
+alloy_ui::choices! { enum Page { People, Settings } }
 
 const ROLES: [&str; 4] = ["Engineer", "Designer", "Manager", "Support"];
 

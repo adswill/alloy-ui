@@ -1,10 +1,15 @@
 //! `#[derive(Record)]` for Alloy: describe a struct once and get a sortable table
-//! column and a validated edit field per struct field.
+//! column, a validated edit field per struct field, and JSON persistence.
 //!
-//! Field types pick the control: `String` is a text field, `bool` a checkbox,
-//! numbers a slider. Options go in `#[form(..)]`:
-//! `label = "Full name"`, `email`, `required`, `range = (40.0, 200.0)`, `step = 5.0`,
-//! `choices = ROLES` (a `[&str; N]` const; the field is a `String`), `skip`.
+//! The field's *type* picks the control (`String` text, `bool` checkbox, numbers a
+//! slider, a `choices!` enum a dropdown). Conventions: the first field is the row's
+//! title and is required; a `String` field named `email` is validated as an email.
+//! Options go in `#[form(..)]`: `label = "Full name"`, `email`, `required`,
+//! `range = (40.0, 200.0)`, `step = 5.0`, `choices = ROLES` (a `[&str; N]`; the field is
+//! a `String`), `skip`.
+//!
+//! The derive also implements `Serialize` and `Deserialize` (missing keys keep their
+//! `Default`), so do not derive them as well.
 
 use proc_macro::TokenStream;
 use quote::quote;
@@ -29,12 +34,10 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     };
     let name = &input.ident;
     let (mut infos, mut gets, mut sets) = (vec![], vec![], vec![]);
+    let (mut ser, mut de) = (vec![], vec![]);
     for f in &fields.named {
         let id = f.ident.as_ref().unwrap();
-        let ty = match &f.ty {
-            syn::Type::Path(p) => p.path.segments.last().unwrap().ident.to_string(),
-            _ => String::new(),
-        };
+        let ty = &f.ty;
         let (mut label, mut email, mut required, mut skip) = (None, false, false, false);
         let (mut range, mut step, mut choices): (Option<(Expr, Expr)>, Option<Expr>, Option<Expr>) =
             (None, None, None);
@@ -67,62 +70,73 @@ fn expand(input: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
                 Ok(())
             })?;
         }
+        let key = id.to_string();
+        ser.push(quote!(s.serialize_field(#key, &self.#id)?;));
+        de.push(quote!(
+            if let Some(v) = map.remove(#key) {
+                out.#id = ::alloy_ui::serde_json::from_value(v).map_err(D::Error::custom)?;
+            }
+        ));
         if skip {
             continue;
         }
         let i = infos.len();
         let label = label.unwrap_or_else(|| {
-            let s = id.to_string().replace('_', " ");
+            let s = key.replace('_', " ");
             let mut c = s.chars();
             c.next()
                 .map(|h| h.to_uppercase().chain(c).collect())
                 .unwrap_or_default()
         });
-        let kind = match ty.as_str() {
-            "String" => match &choices {
-                Some(c) => quote!(::alloy_ui::Kind::Choice(&#c)),
-                None if email => quote!(::alloy_ui::Kind::Email),
-                None => quote!(::alloy_ui::Kind::Text),
-            },
-            "bool" => quote!(::alloy_ui::Kind::Bool),
-            _ => {
-                let (lo, hi) = range
-                    .clone()
-                    .map_or((quote!(0.0), quote!(100.0)), |(a, b)| {
-                        (quote!(#a), quote!(#b))
-                    });
-                let st = step.as_ref().map_or(quote!(1.0), |s| quote!(#s));
-                quote!(::alloy_ui::Kind::Number { min: #lo, max: #hi, step: #st })
-            }
+        let kind = if let Some(c) = &choices {
+            quote!(::alloy_ui::Kind::Choice(&#c))
+        } else if range.is_some() || step.is_some() {
+            let (lo, hi) = range.map_or((quote!(0.0), quote!(100.0)), |(a, b)| {
+                (quote!(#a), quote!(#b))
+            });
+            let st = step.as_ref().map_or(quote!(1.0), |s| quote!(#s));
+            quote!(::alloy_ui::Kind::Number { min: #lo, max: #hi, step: #st })
+        } else if email || key == "email" {
+            quote!(::alloy_ui::Kind::Email)
+        } else {
+            quote!(<#ty as ::alloy_ui::Field>::kind())
         };
+        let required = required || i == 0;
         infos.push(
             quote!(::alloy_ui::FieldInfo { label: #label, kind: #kind, required: #required }),
         );
-        let (get, set) = match ty.as_str() {
-            "String" => (
-                quote!(::alloy_ui::Value::Text(self.#id.clone())),
-                quote!(if let ::alloy_ui::Value::Text(t) = v { self.#id = t }),
-            ),
-            "bool" => (
-                quote!(::alloy_ui::Value::Bool(self.#id)),
-                quote!(if let ::alloy_ui::Value::Bool(b) = v { self.#id = b }),
-            ),
-            _ => (
-                quote!(::alloy_ui::Value::Num(self.#id as f32)),
-                quote!(if let ::alloy_ui::Value::Num(n) = v { self.#id = n as _ }),
-            ),
-        };
-        gets.push(quote!(#i => #get));
-        sets.push(quote!(#i => #set));
+        gets.push(quote!(#i => ::alloy_ui::Field::get(&self.#id)));
+        sets.push(quote!(#i => ::alloy_ui::Field::set(&mut self.#id, v)));
     }
+    let count = fields.named.len();
+    let title = name.to_string();
     Ok(quote! {
         impl ::alloy_ui::Record for #name {
-            const FIELDS: &'static [::alloy_ui::FieldInfo] = &[#(#infos),*];
+            fn fields() -> ::std::vec::Vec<::alloy_ui::FieldInfo> {
+                vec![#(#infos),*]
+            }
             fn get(&self, field: usize) -> ::alloy_ui::Value {
                 match field { #(#gets,)* _ => unreachable!() }
             }
             fn set(&mut self, field: usize, v: ::alloy_ui::Value) {
                 match field { #(#sets,)* _ => unreachable!() }
+            }
+        }
+        impl ::alloy_ui::serde::Serialize for #name {
+            fn serialize<S: ::alloy_ui::serde::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+                use ::alloy_ui::serde::ser::SerializeStruct;
+                let mut s = s.serialize_struct(#title, #count)?;
+                #(#ser)*
+                s.end()
+            }
+        }
+        impl<'de> ::alloy_ui::serde::Deserialize<'de> for #name {
+            fn deserialize<D: ::alloy_ui::serde::Deserializer<'de>>(d: D) -> ::std::result::Result<Self, D::Error> {
+                use ::alloy_ui::serde::de::Error;
+                let mut map = <::std::collections::HashMap<String, ::alloy_ui::serde_json::Value> as ::alloy_ui::serde::Deserialize>::deserialize(d)?;
+                let mut out = <Self as ::std::default::Default>::default();
+                #(#de)*
+                Ok(out)
             }
         }
     })

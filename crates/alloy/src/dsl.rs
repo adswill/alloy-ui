@@ -686,9 +686,14 @@ pub fn scroll<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
     )
 }
 
-/// Flexible empty space: pushes siblings apart inside a row or column.
+/// Flexible empty space inside a row: pushes siblings apart (use [`vspace`] in a column).
 pub fn space<M: 'static>() -> Node<M> {
-    Node(w::Space::fill().into_element())
+    Node(w::Space::fill_w().into_element())
+}
+
+/// Flexible empty space inside a column.
+pub fn vspace<M: 'static>() -> Node<M> {
+    Node(w::Space::fill_h().into_element())
 }
 
 /// Fixed empty space.
@@ -713,6 +718,10 @@ pub fn custom<M>(e: Element<M>) -> Node<M> {
 pub trait Choice: Copy + PartialEq + 'static {
     /// Every variant with its label, in display order.
     fn all() -> &'static [(&'static str, Self)];
+    /// Just the labels.
+    fn labels() -> Vec<&'static str> {
+        Self::all().iter().map(|(l, _)| *l).collect()
+    }
 }
 
 /// Declare an enum usable with [`options`] and [`nav`]; labels are the variant names.
@@ -726,6 +735,23 @@ macro_rules! choices {
         $(#[$m])*
         #[derive(Clone, Copy, PartialEq, Eq, Debug)]
         $vis enum $name { $($var),+ }
+        impl ::std::default::Default for $name {
+            fn default() -> Self {
+                <Self as $crate::Choice>::all()[0].1
+            }
+        }
+        impl $crate::serde::Serialize for $name {
+            fn serialize<S: $crate::serde::Serializer>(&self, s: S) -> ::std::result::Result<S::Ok, S::Error> {
+                s.serialize_str(<Self as $crate::Choice>::all().iter().find(|(_, v)| v == self).unwrap().0)
+            }
+        }
+        impl<'de> $crate::serde::Deserialize<'de> for $name {
+            fn deserialize<D: $crate::serde::Deserializer<'de>>(d: D) -> ::std::result::Result<Self, D::Error> {
+                let t = <String as $crate::serde::Deserialize>::deserialize(d)?;
+                <Self as $crate::Choice>::all().iter().find(|(l, _)| *l == t).map(|(_, v)| *v)
+                    .ok_or_else(|| <D::Error as $crate::serde::de::Error>::custom("unknown variant"))
+            }
+        }
         impl $crate::Choice for $name {
             fn all() -> &'static [(&'static str, Self)] {
                 &[$((stringify!($var), $name::$var)),+]
@@ -756,6 +782,13 @@ pub fn nav<T: Choice, M>(current: &T) -> Nav<T, M> {
     }
 }
 impl<T, M> Nav<T, M> {
+    pub(crate) fn of(opts: Vec<(String, T)>, cur: T) -> Self {
+        Nav {
+            opts,
+            cur,
+            on: None,
+        }
+    }
     /// Called with the picked value.
     pub fn on(mut self, f: impl Fn(T) -> M + 'static) -> Self {
         self.on = Some(Box::new(f));
@@ -771,7 +804,7 @@ impl<T: Choice + Send + Sync, S: 'static> Nav<T, Act<S>> {
         self.on(set_via(lens))
     }
 }
-impl<T: Choice, M: Clone + 'static> From<Nav<T, M>> for Node<M> {
+impl<T: PartialEq, M: Clone + 'static> From<Nav<T, M>> for Node<M> {
     fn from(n: Nav<T, M>) -> Self {
         let on = n.on;
         let items: Vec<Node<M>> = n

@@ -18,6 +18,20 @@ impl Space {
             height: Length::Fill(1),
         }
     }
+    /// Takes leftover width only, so it can sit in a row without stretching the row's height.
+    pub fn fill_w() -> Self {
+        Self {
+            width: Length::Fill(1),
+            height: Length::Fixed(0.0),
+        }
+    }
+    /// Takes leftover height only, for columns.
+    pub fn fill_h() -> Self {
+        Self {
+            width: Length::Fixed(0.0),
+            height: Length::Fill(1),
+        }
+    }
     /// A fixed gap.
     pub fn fixed(width: f32, height: f32) -> Self {
         Self {

@@ -1,10 +1,8 @@
 //! The smallest CRUD app: one struct, one call.
-use alloy_ui::{prelude::*, vals};
-use serde::{Deserialize, Serialize};
+use alloy_ui::prelude::*;
 
-#[derive(Record, Clone, Default, Serialize, Deserialize)]
+#[derive(Record, Clone, Default)]
 struct Book {
-    #[form(required)]
     title: String,
     author: String,
     #[form(range = (1.0, 5.0))]
@@ -13,9 +11,12 @@ struct Book {
 }
 
 fn main() {
-    let books = Records::<Book>::of([
-        vals!["Dune", "Frank Herbert", 5, true],
-        vals!["Piranesi", "Susanna Clarke", 4, false],
-    ]);
-    crud("Books", books).run_sized("Books", 900.0, 560.0)
+    crud_app("Books", || {
+        Records::<Book>::of([
+            vals!["Dune", "Frank Herbert", 5, true],
+            vals!["Piranesi", "Susanna Clarke", 4, false],
+        ])
+    })
+    .size(900.0, 560.0)
+    .run()
 }
