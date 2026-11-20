@@ -30,6 +30,6 @@ fn mock_fails_on_schedule_and_series_is_stable() {
     }
     let m = Row::mock([alloy_ui::vals!["a"], alloy_ui::vals!["b"]]).fail_every(2, "boom");
     assert_eq!(alloy_ui::block_on(m.load()).unwrap().len(), 2);
-    assert_eq!(alloy_ui::block_on(m.load()).unwrap_err(), "boom");
+    assert_eq!(alloy_ui::block_on(m.load()).err().as_deref(), Some("boom"));
     assert_eq!(alloy_ui::series("x", 4), alloy_ui::series("x", 4));
 }
