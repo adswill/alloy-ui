@@ -5,7 +5,7 @@ use alloy_ui_core::{Key, Modifiers};
 use unicode_segmentation::UnicodeSegmentation;
 
 /// Caret and selection state of one text field. Indices count `char`s but
-/// always sit on grapheme-cluster boundaries (see [`prev_grapheme`]).
+/// always sit on grapheme-cluster boundaries (see `prev_grapheme`).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Edit {
     /// Caret position.

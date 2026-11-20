@@ -26,6 +26,33 @@
 //! [`Application`] remain for custom shells.
 #![warn(missing_docs)]
 
+/// The guide in `docs/guide` is compiled as doc-tests, so its snippets cannot rot.
+#[cfg(doctest)]
+mod guide {
+    #[doc = include_str!("../../../docs/guide/01-getting-started.md")]
+    struct G0;
+    #[doc = include_str!("../../../docs/guide/02-state-and-bindings.md")]
+    struct G1;
+    #[doc = include_str!("../../../docs/guide/03-layout.md")]
+    struct G2;
+    #[doc = include_str!("../../../docs/guide/04-widgets.md")]
+    struct G3;
+    #[doc = include_str!("../../../docs/guide/05-records-and-forms.md")]
+    struct G4;
+    #[doc = include_str!("../../../docs/guide/06-async-resources.md")]
+    struct G5;
+    #[doc = include_str!("../../../docs/guide/07-multi-window.md")]
+    struct G6;
+    #[doc = include_str!("../../../docs/guide/08-shortcuts-palette-toasts-undo.md")]
+    struct G7;
+    #[doc = include_str!("../../../docs/guide/09-theming.md")]
+    struct G8;
+    #[doc = include_str!("../../../docs/guide/10-bundling.md")]
+    struct G9;
+    #[doc = include_str!("../../../docs/guide/11-capabilities-and-ipc.md")]
+    struct G10;
+}
+
 mod app;
 mod bind;
 mod blocks;
@@ -50,8 +77,8 @@ pub mod view;
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
-    app, field, local, shell, store, store_as, table, theme_switch, wizard, Local, Pages, Table,
-    Wizard,
+    app, field, field_after, local, shell, store, store_as, table, theme_switch, wizard, Local,
+    Pages, Table, Wizard,
 };
 pub use chart::bars;
 pub use collections::{
@@ -79,12 +106,12 @@ pub use {serde, serde_json};
 pub mod prelude {
     pub use crate::{
         app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
-        custom, editor, every, field, filter_by, gap, heading, input, list, local, nav, number,
-        options, palette, pick, progress, radio, radios, records, records_in, resource, rule,
-        scroll, secs, section, series, set_dark, shell, sketch, sleep, slider, space, stat, stats,
-        stepper, store, store_as, table, table_of, tabs, tally, text, theme_switch, toggle, vspace,
-        wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Local, Node, Place,
-        Record, Records, Resource, Stamp, TextCell, View, Wizard,
+        custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
+        nav, number, options, palette, pick, progress, radio, radios, records, records_in,
+        resource, rule, scroll, secs, section, series, set_dark, shell, sketch, sleep, slider,
+        space, stat, stats, stepper, store, store_as, table, table_of, tabs, tally, text,
+        theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell,
+        Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View, Wizard,
     };
     pub use crate::{at, choices, col, redo, row, toast, undo, vals, Hotkey, Shortcuts};
     pub use alloy_ui_core::Color;

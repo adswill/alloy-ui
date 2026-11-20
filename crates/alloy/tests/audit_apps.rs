@@ -74,7 +74,10 @@ mod wizard {
             520.0,
             520.0,
         );
-        assert!(ui.has_text("Required") && ui.has_text("At least 8 characters"));
+        assert!(
+            !ui.has_text("Required") && !ui.has_text("At least 8 characters"),
+            "untouched fields show no errors"
+        );
         ui.click("Next");
         assert!(
             ui.has_text("Account") && !ui.has_text("Free ($0/mo)"),
@@ -82,8 +85,10 @@ mod wizard {
         );
         ui.click("Ada Lovelace").type_text("Grace");
         ui.click("ada@example.com").type_text("grace@x");
-        assert!(ui.has_text("Enter a valid email"));
-        ui.type_text(".dev");
+        assert!(!ui.has_text("Enter a valid email"), "not while typing");
+        ui.press(Key::Tab);
+        assert!(ui.has_text("Enter a valid email"), "shown once left");
+        ui.click("grace@x").chord("mod+a").type_text("grace@x.dev");
         ui.press(Key::Tab);
         ui.type_text("hunter22");
         assert!(!ui.has_text("hunter22"), "passwords are masked");

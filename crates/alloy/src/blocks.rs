@@ -8,9 +8,15 @@ use crate::{
     view::View,
     view::{col, Flex, Node},
 };
-use alloy_ui_core::style::Length;
+use alloy_ui_core::{
+    style::{Length, Style},
+    DrawList, Element, Event, Layout, Point, Rectangle, Size, Widget,
+};
 use alloy_ui_widgets as w;
-use std::sync::Arc;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
 
 // ------------------------------------------------------------ local state
 
@@ -413,12 +419,121 @@ fn col_row<M: 'static>(items: Vec<Node<M>>) -> Flex<M> {
 // ---------------------------------------------------------------- forms
 
 /// A labelled form field with an optional validation message under it:
-/// `field("Email", input(&s.email).bind(..), (!s.email.contains('@')).then_some("Needs an @"))`.
+/// `field("Email", input(..).bind(..), (!s.email.contains('@')).then_some("Needs an @"))`.
+///
+/// The message stays hidden until the person has left the control (focused it, then moved
+/// on), so untouched fields never open with a wall of "Required". Its line is reserved
+/// while an error exists, so the form does not jump when the message appears. To also show
+/// every error after a failed submit, use [`field_after`].
+#[track_caller]
 pub fn field<M: 'static>(label: &str, body: impl Into<Node<M>>, error: Option<&str>) -> Flex<M> {
-    let f = col([text(label).label().dim().into(), body.into()]).gap(4.0);
+    field_after(label, body, error, false)
+}
+
+/// Like [`field`], but `submitted` forces the message to show even if the control was never
+/// touched: keep a `let tried = local(false)` and set it in the submit handler.
+#[track_caller]
+pub fn field_after<M: 'static>(
+    label: &str,
+    body: impl Into<Node<M>>,
+    error: Option<&str>,
+    submitted: bool,
+) -> Flex<M> {
+    let touched = cx::slot(auto_id(21), TouchState::default);
+    let shown = Arc::new(AtomicBool::new(submitted));
+    let body: Node<M> = Node::from(Element::new(Watch {
+        ui: cx::ui(),
+        touched,
+        shown: shown.clone(),
+        child: vec![body.into().into_element()],
+    }));
+    let f = col([Node::from(text(label).label().dim()), body]).gap(4.0);
     match error {
-        Some(e) => f.push(caption(e).danger()),
+        Some(e) => f.push(Node::from(Element::new(Reveal {
+            shown,
+            child: vec![Node::from(caption(e).danger()).into_element()],
+        }))),
         None => f,
+    }
+}
+
+/// Per-field memory: has the control been focused, and has it since lost focus.
+#[derive(Default)]
+struct TouchState {
+    focused: bool,
+    touched: bool,
+}
+
+/// Wraps a field's control and notices, while drawing, when focus enters and then leaves it.
+struct Watch<M> {
+    ui: w::Ui,
+    touched: Arc<Mutex<TouchState>>,
+    shown: Arc<AtomicBool>,
+    child: Vec<Element<M>>,
+}
+
+impl<M: 'static> Widget<M> for Watch<M> {
+    fn style(&self) -> Style {
+        self.child[0].0.style()
+    }
+    fn measure(&self, available: Size) -> Size {
+        self.child[0].0.measure(available)
+    }
+    fn children(&self) -> &[Element<M>] {
+        &self.child
+    }
+    fn arrange(&self, bounds: Rectangle) -> Layout {
+        w::arrange_widget(self, bounds)
+    }
+    fn on_event(&mut self, e: &Event, l: &Layout, c: Point, out: &mut Vec<M>) -> bool {
+        self.child[0].0.on_event(e, &l.children[0], c, out)
+    }
+    fn animating(&self) -> bool {
+        self.child[0].0.animating()
+    }
+    fn draw(&self, layout: &Layout, out: &mut DrawList) {
+        self.child[0].0.draw(&layout.children[0], out);
+        // The control just drew itself, so its accessibility nodes (with focus) are fresh.
+        let b = layout.bounds;
+        let inside = self
+            .ui
+            .accessibility()
+            .iter()
+            .any(|n| n.focused && b.contains(Point::new(n.bounds.origin.x, n.bounds.origin.y)));
+        let mut t = self.touched.lock().unwrap();
+        if t.focused && !inside {
+            t.touched = true;
+        }
+        t.focused = inside;
+        if t.touched {
+            self.shown.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Holds the error line's space, and draws it only once the field is touched or submitted.
+struct Reveal<M> {
+    shown: Arc<AtomicBool>,
+    child: Vec<Element<M>>,
+}
+
+impl<M: 'static> Widget<M> for Reveal<M> {
+    fn style(&self) -> Style {
+        self.child[0].0.style()
+    }
+    fn measure(&self, available: Size) -> Size {
+        self.child[0].0.measure(available)
+    }
+    fn children(&self) -> &[Element<M>] {
+        &self.child
+    }
+    fn arrange(&self, bounds: Rectangle) -> Layout {
+        w::arrange_widget(self, bounds)
+    }
+    fn draw(&self, layout: &Layout, out: &mut DrawList) {
+        if self.shown.load(Ordering::Relaxed) {
+            self.child[0].0.draw(&layout.children[0], out);
+        }
     }
 }
 
