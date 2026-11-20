@@ -1,9 +1,12 @@
 //! The window furniture the facade adds around every page: keyboard shortcuts and the toast layer.
 
-use crate::keys::{self, Hotkey};
+use crate::{
+    keys::{self, Hotkey},
+    palette,
+};
 use alloy_ui_core::{
-    style::Style, Color, DrawCommand, DrawList, Element, Event, FontFamily, Layout, MouseButton,
-    Point, Rectangle, Size, Widget,
+    style::Style, Color, DrawCommand, DrawList, Element, Event, FontFamily, Key, Layout,
+    MouseButton, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_platform::shortcut::Shortcut;
 use alloy_ui_widgets::Ui;
@@ -14,6 +17,9 @@ const BOTTOM: f32 = 24.0;
 const PAD: f32 = 16.0;
 const FADE_IN: f32 = 220.0;
 const FADE_OUT: f32 = 260.0;
+const ROWS: usize = 8;
+const ROW_H: f32 = 36.0;
+const INPUT_H: f32 = 52.0;
 
 /// Wraps the page: offers key presses to the page first (so a focused text field keeps its own
 /// `mod+z`), then to the app's shortcuts, and draws toasts above everything.
@@ -21,14 +27,37 @@ pub(crate) struct Chrome<M> {
     ui: Ui,
     child: Vec<Element<M>>,
     keys: Vec<(Shortcut, M)>,
+    /// Everything the command palette lists: title, the keys that trigger it, what it sends.
+    entries: Vec<(String, Option<String>, M)>,
     undo: Option<M>,
 }
 
 impl<M: Clone + 'static> Chrome<M> {
+    /// Palette rows that match the query, best first: indices into `entries`.
+    fn matches(&self) -> Vec<usize> {
+        let titles: Vec<String> = self.entries.iter().map(|e| e.0.clone()).collect();
+        let mut hits = palette::with(|p| palette::rank(&p.query, &titles));
+        hits.truncate(ROWS);
+        hits
+    }
+
     pub(crate) fn new(ui: &Ui, page: Element<M>, keys: Vec<Hotkey<M>>, undo: Option<M>) -> Self {
         Self {
             ui: ui.clone(),
             child: vec![page],
+            entries: keys
+                .iter()
+                .map(|h| {
+                    let pretty = (!h.keys.is_empty()).then(|| palette::pretty(&h.keys));
+                    let title = h
+                        .label
+                        .clone()
+                        .or_else(|| pretty.clone())
+                        .unwrap_or_default();
+                    (title, pretty, h.msg.clone())
+                })
+                .filter(|e| !e.0.is_empty())
+                .collect(),
             keys: keys
                 .into_iter()
                 .filter_map(|h| Shortcut::parse(&h.keys).map(|s| (s, h.msg)))
@@ -43,6 +72,34 @@ struct Placed {
     rect: Rectangle,
     undo: Option<Rectangle>,
     alpha: f32,
+}
+
+/// The palette panel for `n` result rows, centred near the top of `bounds`.
+fn panel(bounds: Rectangle, n: usize) -> Rectangle {
+    let w = 560.0_f32.min(bounds.size.width - 32.0);
+    let body = if n == 0 {
+        ROW_H + 12.0
+    } else {
+        n as f32 * ROW_H + 12.0
+    };
+    let top = (bounds.size.height * 0.14).max(32.0);
+    Rectangle::new(
+        Point::new(
+            bounds.origin.x + (bounds.size.width - w) / 2.0,
+            bounds.origin.y + top,
+        ),
+        Size::new(w, INPUT_H + 1.0 + body),
+    )
+}
+
+fn row_rect(p: Rectangle, i: usize) -> Rectangle {
+    Rectangle::new(
+        Point::new(
+            p.origin.x + 6.0,
+            p.origin.y + INPUT_H + 1.0 + 6.0 + i as f32 * ROW_H,
+        ),
+        Size::new(p.size.width - 12.0, ROW_H),
+    )
 }
 
 fn ease_out(t: f32) -> f32 {
@@ -121,6 +178,78 @@ impl<M: Clone + 'static> Widget<M> for Chrome<M> {
         cursor: Point,
         out: &mut Vec<M>,
     ) -> bool {
+        if let Event::KeyPressed(key, mods) = event {
+            if Shortcut::parse("mod+k").is_some_and(|k| k.matches(key, mods))
+                && !self.entries.is_empty()
+            {
+                palette::toggle();
+                return true;
+            }
+        }
+        if palette::is_open() {
+            let hits = self.matches();
+            let p = panel(layout.bounds, hits.len());
+            let last = hits.len().saturating_sub(1);
+            match event {
+                Event::KeyPressed(Key::Escape, _) => palette::close(),
+                Event::KeyPressed(Key::Enter, _) => {
+                    let sel = palette::with(|s| s.sel).min(last);
+                    if let Some(&i) = hits.get(sel) {
+                        out.push(self.entries[i].2.clone());
+                    }
+                    palette::close();
+                }
+                Event::KeyPressed(Key::Named(n), _) if n == "ArrowDown" => {
+                    palette::with(|s| s.sel = (s.sel + 1).min(last))
+                }
+                Event::KeyPressed(Key::Named(n), _) if n == "ArrowUp" => {
+                    palette::with(|s| s.sel = s.sel.saturating_sub(1))
+                }
+                Event::KeyPressed(Key::Backspace, _) => palette::with(|s| {
+                    s.query.pop();
+                    s.sel = 0;
+                }),
+                Event::TextInput(t) => palette::with(|s| {
+                    s.query.extend(t.chars().filter(|c| !c.is_control()));
+                    s.sel = 0;
+                }),
+                Event::CursorMoved(c) => {
+                    if let Some(i) = (0..hits.len()).find(|&i| row_rect(p, i).contains(*c)) {
+                        palette::with(|s| s.sel = i);
+                    }
+                    return true;
+                }
+                Event::MousePressed(MouseButton::Left) => {
+                    match (0..hits.len()).find(|&i| row_rect(p, i).contains(cursor)) {
+                        Some(i) => {
+                            out.push(self.entries[hits[i]].2.clone());
+                            palette::close();
+                        }
+                        None if !p.contains(cursor) => palette::close(),
+                        None => {}
+                    }
+                }
+                Event::KeyPressed(..) | Event::KeyReleased(..) | Event::MouseReleased(_) => {}
+                Event::Scrolled { .. } | Event::ImePreedit(_) | Event::CursorLeft => {}
+                _ => return self.on_idle(event, layout, cursor, out),
+            }
+            return true;
+        }
+        self.on_idle(event, layout, cursor, out)
+    }
+    fn animating(&self) -> bool {
+        keys::toasts(|ts, _| !ts.is_empty()) || self.child[0].0.animating()
+    }
+    fn draw(&self, layout: &Layout, out: &mut DrawList) {
+        self.draw_page(layout, out);
+        self.draw_toasts(layout, out);
+        self.draw_palette(layout, out);
+    }
+}
+
+impl<M: Clone + 'static> Chrome<M> {
+    /// Everything that is not palette input: toast ticks and clicks, the page, then shortcuts.
+    fn on_idle(&mut self, event: &Event, layout: &Layout, cursor: Point, out: &mut Vec<M>) -> bool {
         match event {
             Event::Tick(ms) => {
                 keys::set_now(*ms);
@@ -161,13 +290,12 @@ impl<M: Clone + 'static> Widget<M> for Chrome<M> {
         }
         false
     }
-    fn animating(&self) -> bool {
-        keys::toasts(|ts, _| !ts.is_empty()) || self.child[0].0.animating()
-    }
-    fn draw(&self, layout: &Layout, out: &mut DrawList) {
+    fn draw_page(&self, layout: &Layout, out: &mut DrawList) {
         for (c, l) in self.child.iter().zip(&layout.children) {
             c.0.draw(l, out);
         }
+    }
+    fn draw_toasts(&self, layout: &Layout, out: &mut DrawList) {
         let t = self.ui.theme();
         let size = t.typography.body.size;
         let hover = self.ui.cursor();
@@ -227,6 +355,134 @@ impl<M: Clone + 'static> Widget<M> for Chrome<M> {
                     family: FontFamily::Sans,
                     line_height: None,
                 });
+            }
+        }
+    }
+
+    fn draw_palette(&self, layout: &Layout, out: &mut DrawList) {
+        if !palette::is_open() {
+            return;
+        }
+        let t = self.ui.theme();
+        let b = layout.bounds;
+        let size = t.typography.body.size;
+        let hits = self.matches();
+        let p = panel(b, hits.len());
+        let (query, sel) =
+            palette::with(|s| (s.query.clone(), s.sel.min(hits.len().saturating_sub(1))));
+        let text = |origin: Point, content: String, size: f32, color: Color, weight: u16| {
+            DrawCommand::Text {
+                origin,
+                content,
+                size,
+                color,
+                max_width: None,
+                weight,
+                family: FontFamily::Sans,
+                line_height: None,
+            }
+        };
+        // A light scrim: enough to separate the panel from the page, not a modal blackout.
+        out.push(DrawCommand::Quad {
+            bounds: b,
+            fill: Color::hex(0x000000).with_alpha(0.14),
+            radius: 0.0,
+            border: None,
+            shadow: None,
+        });
+        out.push(DrawCommand::Quad {
+            bounds: p,
+            fill: t.palette.surface_raised,
+            radius: t.radii.large,
+            border: Some(alloy_ui_core::Border {
+                color: t.palette.border,
+                width: 1.0,
+            }),
+            shadow: Some(t.elevation.high),
+        });
+        let ty = p.origin.y + (INPUT_H - t.typography.body.line_height) / 2.0;
+        let tx = p.origin.x + 18.0;
+        if query.is_empty() {
+            out.push(text(
+                Point::new(tx + 4.0, ty),
+                "Search commands".into(),
+                size,
+                t.palette.text_secondary,
+                400,
+            ));
+        } else {
+            out.push(text(
+                Point::new(tx, ty),
+                query.clone(),
+                size,
+                t.palette.text,
+                400,
+            ));
+        }
+        let cx = tx + self.ui.metrics().width(&query, size);
+        out.push(DrawCommand::Quad {
+            bounds: Rectangle::new(
+                Point::new(cx + 1.0, ty + 1.0),
+                Size::new(1.5, t.typography.body.line_height - 2.0),
+            ),
+            fill: t.palette.accent,
+            radius: 0.0,
+            border: None,
+            shadow: None,
+        });
+        out.push(DrawCommand::Quad {
+            bounds: Rectangle::new(
+                Point::new(p.origin.x, p.origin.y + INPUT_H),
+                Size::new(p.size.width, 1.0),
+            ),
+            fill: t.palette.border,
+            radius: 0.0,
+            border: None,
+            shadow: None,
+        });
+        if hits.is_empty() {
+            let r = row_rect(p, 0);
+            out.push(text(
+                Point::new(
+                    r.origin.x + 12.0,
+                    r.origin.y + (ROW_H - t.typography.body.line_height) / 2.0,
+                ),
+                "No matching commands".into(),
+                size,
+                t.palette.text_secondary,
+                400,
+            ));
+        }
+        for (i, &e) in hits.iter().enumerate() {
+            let r = row_rect(p, i);
+            if i == sel {
+                out.push(DrawCommand::Quad {
+                    bounds: r,
+                    fill: t.palette.selection,
+                    radius: t.radii.medium,
+                    border: None,
+                    shadow: None,
+                });
+            }
+            let ry = r.origin.y + (ROW_H - t.typography.body.line_height) / 2.0;
+            let (title, keys, _) = &self.entries[e];
+            out.push(text(
+                Point::new(r.origin.x + 12.0, ry),
+                title.clone(),
+                size,
+                t.palette.text,
+                if i == sel { 500 } else { 400 },
+            ));
+            if let Some(k) = keys.as_ref().filter(|k| *k != title) {
+                let small = size - 1.0;
+                let w = self.ui.metrics().width(k, small);
+                out.push(text(
+                    Point::new(r.origin.x + r.size.width - 12.0 - w, ry + 0.5),
+                    k.clone(),
+                    small,
+                    t.palette.text_secondary,
+                    400,
+                ));
             }
         }
     }

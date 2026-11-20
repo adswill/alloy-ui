@@ -103,7 +103,7 @@ impl<M: Clone + 'static> Table<M> {
             })
             .collect();
         Row::new(cols)
-            .spacing(ui.theme().spacing.md)
+            .spacing(ui.theme().spacing.lg)
             .align(Align::Center)
             .width(Length::Fill(1))
             .into_element()

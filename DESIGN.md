@@ -42,3 +42,14 @@ Renders: `docs/gallery/pass1_light.png` (before) and `pass2_light.png`/`pass2_da
 - **Tables**: `List::ruled`. Rows get a hairline (inset like the cells, hidden under the selected row), taller padding and an overlay hover, instead of a surface-coloured hover that vanished on the page background. Header reserves arrow space only on the sorted column, so right-aligned numbers line up under their headers.
 - **Date picker**: hover and selected chips use the shared overlay and radius; today is accent semibold text (no ring); a hairline separates month header from weekday labels.
 - Not done: toast styling (another thread owns toasts in `crates/alloy`), board and browse layouts untouched beyond the nav change.
+
+## Composite blocks and the command palette (visual pass 3, 2026-11-20)
+Found by rendering the admin, status, notes and wizard apps and critiquing them cold (before/after in `gallery/pass3_*.png`).
+
+- **Status is a dot plus a word**, never colour alone. `Up`/`Active`/`Done` are green, `Degraded`/`Pending`/`Idle` amber, `Down`/`Failed`/`Offline` red, anything else stays plain text. Enum columns in `table_of` get it automatically, `Table::status()` opts a column in, and `tally` cards carry the same dot. There is no warning role in the palette yet, so amber lives in `crates/alloy/src/tone.rs`.
+- **Stat cards**: label first (with its dot), number second at heading size; no hero metric.
+- **Wizard header** is a stepper: numbered circles joined by hairlines, accent for done and current, outlined and dim for later steps.
+- **Tables** get `spacing.lg` between columns, so right-aligned numbers no longer touch the next column.
+- **Browse detail**: checkboxes (Pinned) move into the footer beside the count and Delete instead of floating under the editor; both panes use 16 px padding so their tops line up.
+- **Placeholder text** is 70% of secondary text so a hint is never mistaken for a value.
+- **Command palette** (`mod+k`): a 560 px panel 14% from the top over a light 14% scrim, raised surface, 1 px border, `elevation.high`. One search row, up to eight results with the selected row on the selection tint, shortcut keys right-aligned and dim (`Ctrl+S`, or `⌘S` on macOS). No icons, no animation, no category headers. It lists every shortcut, every `.command(label, f)`, and for `app()` apps "Go to <page>" and the theme switch. Arrow keys, Enter, Escape and mouse all work; it swallows other input while open.

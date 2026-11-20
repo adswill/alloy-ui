@@ -77,7 +77,7 @@ mod wizard {
         assert!(ui.has_text("Required") && ui.has_text("At least 8 characters"));
         ui.click("Next");
         assert!(
-            ui.has_text("1. Account") && !ui.has_text("Free ($0/mo)"),
+            ui.has_text("Account") && !ui.has_text("Free ($0/mo)"),
             "Next is disabled until the form is valid"
         );
         ui.click("Ada Lovelace").type_text("Grace");

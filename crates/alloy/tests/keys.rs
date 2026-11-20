@@ -1,5 +1,5 @@
 //! Shortcuts, toasts and undo.
-use alloy_ui::{prelude::*, testing::Harness};
+use alloy_ui::{prelude::*, testing::Harness, Key};
 
 fn demo() -> impl App<Msg = Act<i32>> {
     sketch(0, |n: &i32| -> Node<Act<i32>> {
@@ -90,4 +90,34 @@ fn pages_new_delete_undo() {
     );
     h.click("Undo");
     assert!(h.has_text("First") && h.has_text("Second"));
+}
+
+fn with_command() -> impl App<Msg = Act<i32>> {
+    sketch(0, |n: &i32| -> Node<Act<i32>> { n.to_string().into() })
+        .shortcut_as("mod+s", "Save", |n| *n += 1)
+        .command("Reset counter", |n| *n = 0)
+        .command("Double it", |n| *n *= 2)
+}
+
+#[test]
+fn palette_lists_filters_and_runs() {
+    let mut h = Harness::new(with_command(), 700.0, 400.0);
+    h.chord("mod+s").chord("mod+s").chord("mod+s");
+    assert!(h.has_text("3"));
+    h.chord("mod+k");
+    for t in ["Save", "Reset counter", "Double it"] {
+        assert!(h.has_text(t), "palette should list {t}");
+    }
+    // Fuzzy: "dbl" finds "Double it" only, and Enter runs it.
+    h.type_text("dbl");
+    assert!(h.has_text("Double it") && !h.has_text("Reset counter"));
+    h.press(Key::Enter);
+    assert!(!h.has_text("Double it"), "palette closes after running");
+    assert!(h.has_text("6"));
+    // Escape closes without running; mod+k reopens with a clean query.
+    h.chord("mod+k").press(Key::Escape);
+    assert!(!h.has_text("Reset counter"));
+    // Shortcuts do not leak through while it is open.
+    h.chord("mod+k").chord("mod+s");
+    assert!(h.has_text("6"));
 }
