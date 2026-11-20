@@ -56,7 +56,6 @@ fn mouse_clicks_on_wide_clusters_never_panic() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): caret indexes chars, so Backspace removes one code point of a cluster"]
 fn backspace_removes_one_whole_grapheme() {
     both(|k| {
         let mut c = Cases::new();
@@ -70,7 +69,6 @@ fn backspace_removes_one_whole_grapheme() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): forward Delete removes one code point of a cluster"]
 fn delete_removes_one_whole_grapheme() {
     both(|k| {
         let mut c = Cases::new();
@@ -85,7 +83,6 @@ fn delete_removes_one_whole_grapheme() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): ArrowLeft/Right step by code point, landing inside clusters"]
 fn arrow_keys_move_one_grapheme() {
     both(|k| {
         let mut c = Cases::new();
@@ -110,7 +107,6 @@ fn arrow_keys_move_one_grapheme() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): Shift+Arrow selects half a cluster"]
 fn shift_arrow_selects_whole_graphemes() {
     both(|k| {
         let p = Plat::native();
@@ -125,7 +121,6 @@ fn shift_arrow_selects_whole_graphemes() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): mouse hit-testing can put the caret inside a cluster"]
 fn clicking_never_places_the_caret_inside_a_cluster() {
     both(|k| {
         let mut c = Cases::new();
@@ -189,7 +184,6 @@ fn rtl_text_does_not_break_word_navigation_bounds() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): no bidi support, ArrowLeft always means logically backward"]
 fn arrow_left_in_an_rtl_run_moves_visually_left() {
     // In a Hebrew run the visually-left neighbour is the *next* character.
     both(|k| {

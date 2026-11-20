@@ -214,7 +214,6 @@ fn option_composed_characters_are_plain_text() {
 }
 
 #[test]
-#[ignore = "BUG(widgets/platform): Backspace while composing deletes committed text instead of editing the preedit"]
 fn backspace_during_preedit_does_not_delete_committed_text() {
     // Some platforms (X11/XIM, Windows TSF "Process" keys) still deliver the key.
     both(|k| {
@@ -227,7 +226,6 @@ fn backspace_during_preedit_does_not_delete_committed_text() {
 }
 
 #[test]
-#[ignore = "BUG(widgets/platform): arrow keys while composing move the caret under the preedit"]
 fn arrows_during_preedit_do_not_move_the_caret() {
     both(|k| {
         let mut f = focused(k);
@@ -240,7 +238,6 @@ fn arrows_during_preedit_do_not_move_the_caret() {
 }
 
 #[test]
-#[ignore = "BUG(widgets/platform): Enter while composing submits the form (it should confirm the candidate)"]
 fn enter_during_preedit_does_not_submit() {
     let mut f = focused(Kind::Input);
     f.preedit("ni");
@@ -249,7 +246,6 @@ fn enter_during_preedit_does_not_submit() {
 }
 
 #[test]
-#[ignore = "BUG(widgets/platform): shortcuts while composing act on the field (Cmd/Ctrl+A with a pending preedit)"]
 fn select_all_during_preedit_is_deferred_to_the_ime() {
     both(|k| {
         let p = Plat::native();

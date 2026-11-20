@@ -10,3 +10,13 @@
 8. **Platform PR #1 merged locally by the lead**, verified fmt/clippy/tests on Linux only; Windows and macOS await CI.
 9. **Contract change (lead):** `DrawCommand::Text` gained `weight` and `line_height`; new `DrawCommand::Line` for strokes (renderer draws it as a chain of round dots for now; a proper SDF segment is a later optimisation). `Event::Tick(ms)` plus `Widget::animating()` give widgets a timer only while something animates; `Outcome.tick` tells the shell to schedule ~16 ms ticks, so an idle app has no timer.
 10. **Weight/line_height are accepted but not yet honoured by the renderer** (ignored with `_`); tracked for the render follow-up along with real text metrics.
+
+## Text editing follows grapheme clusters, UAX #29 words and per-OS shortcuts
+
+- Caret and selection stay `char` indices (so the controlled-value API is unchanged) but every move, delete and hit test lands on a grapheme-cluster boundary. Depends on `unicode-segmentation` (data tables only, no GUI code), the one new dependency in `alloy-ui-widgets`.
+- Words use UAX #29: `don't` and `foo_bar` are one word, and each CJK ideograph is its own stop (no dictionary segmentation yet).
+- Hit testing binary-searches boundaries with prefix widths (O(log n) measurements) rather than measuring every prefix.
+- Shortcut key: Cmd on macOS, Ctrl elsewhere (Super and Ctrl+Alt/AltGr never act). Word moves: Option on macOS, Ctrl elsewhere. On macOS Ctrl+A / Ctrl+E mean line start / end. Chosen at compile time with `cfg!(target_os)`.
+- While an IME preedit is active the field consumes every key except Tab, so Backspace, arrows, Enter and shortcuts cannot touch committed text.
+- Bidi is basic: a line whose first letter is right-to-left makes plain Left/Right arrows move logically forward/backward respectively. Word and line moves stay logical, and the caret's drawn position is still LTR-only. Full visual bidi needs `unicode-bidi` plus renderer support.
+- The editor selects a word on double click and a line on triple click (500 ms, 4 px). The single-line input does not yet. A lone CR on paste is a newline.

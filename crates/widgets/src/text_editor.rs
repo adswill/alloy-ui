@@ -2,7 +2,8 @@
 
 use crate::{
     text_edit::{
-        apply_key, history_key, index_of, line_col, sanitize, split_lines, Edit, KeyOutcome,
+        apply_key, history_key, index_of, line_col, nearest_boundary, sanitize, split_lines,
+        word_bounds, Edit, KeyOutcome,
     },
     ui::Ui,
     util::{self, focus_ring},
@@ -86,19 +87,10 @@ impl<M: 'static> TextEditor<M> {
         let line = (y / self.line_h()).floor().max(0.0) as usize;
         let line = line.min(lines.len() - 1);
         let rel = p.x - b.origin.x - self.pad() + e_scroll_x;
-        let mut best = (0usize, f32::MAX);
-        let mut acc = String::new();
-        let chars: Vec<char> = lines[line].chars().collect();
-        for i in 0..=chars.len() {
-            if i > 0 {
-                acc.push(chars[i - 1]);
-            }
-            let d = (self.width_of(&acc) - rel).abs();
-            if d < best.1 {
-                best = (i, d);
-            }
-        }
-        index_of(lines, line, best.0)
+        let size = self.size();
+        let m = self.ui.metrics();
+        let col = nearest_boundary(&lines[line], rel, |s| m.width(s, size));
+        index_of(lines, line, col)
     }
     /// Emit `new` as an edit, remembering the old state for undo.
     fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
@@ -155,7 +147,27 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                 self.ui.set_focus(Some(self.id));
                 self.ui.set_pressed(Some(key));
                 let i = self.index_at(&b, &lines, e.scroll_x, cursor);
-                e.move_to(i, false);
+                let now = self.ui.now();
+                let near = (cursor.x - e.click_at.0).abs() <= 4.0
+                    && (cursor.y - e.click_at.1).abs() <= 4.0;
+                e.clicks = if e.clicks > 0 && near && now.saturating_sub(e.click_ms) < 500 {
+                    e.clicks % 3 + 1
+                } else {
+                    1
+                };
+                (e.click_ms, e.click_at) = (now, (cursor.x, cursor.y));
+                match e.clicks {
+                    2 => {
+                        let (s, z) = word_bounds(&self.value, i);
+                        (e.anchor, e.caret) = (s, z);
+                    }
+                    3 => {
+                        let (line, _) = line_col(&lines, i);
+                        e.anchor = index_of(&lines, line, 0);
+                        e.caret = index_of(&lines, line, usize::MAX);
+                    }
+                    _ => e.move_to(i, false),
+                }
                 e.goal_col = None;
                 e.preedit.clear();
                 true
@@ -186,6 +198,8 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                 }
                 true
             }
+            // While the IME composes it owns the keyboard (see TextInput).
+            Event::KeyPressed(k, _) if focused && !e.preedit.is_empty() => !matches!(k, Key::Tab),
             Event::KeyPressed(k, m) if focused => {
                 let (line, col) = line_col(&lines, e.caret);
                 let vertical = |e: &mut Edit, to_line: usize| {

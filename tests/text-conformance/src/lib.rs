@@ -234,12 +234,20 @@ impl Field {
     pub fn send(&mut self, e: Event) {
         self.rt.handle_event(&e);
     }
+    /// A click as a separate gesture: time passes first, so it never joins a
+    /// double or triple click with the previous one.
     pub fn click(&mut self, x: f32, y: f32) {
+        self.tick(1000);
+        self.rapid_click(x, y);
+    }
+    /// A click right after the previous event, which makes double and triple clicks.
+    pub fn rapid_click(&mut self, x: f32, y: f32) {
         self.send(Event::CursorMoved(Point::new(x, y)));
         self.send(Event::MousePressed(MouseButton::Left));
         self.send(Event::MouseReleased(MouseButton::Left));
     }
     pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) {
+        self.tick(1000);
         self.send(Event::CursorMoved(Point::new(from.0, from.1)));
         self.send(Event::MousePressed(MouseButton::Left));
         self.send(Event::CursorMoved(Point::new(to.0, to.1)));

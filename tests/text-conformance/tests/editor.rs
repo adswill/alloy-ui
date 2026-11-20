@@ -111,7 +111,6 @@ fn pasted_crlf_becomes_a_single_newline() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): a lone CR (classic Mac line ending) is dropped, gluing two lines together"]
 fn pasted_lone_cr_becomes_a_newline() {
     let p = Plat::native();
     let mut f = ed("");
@@ -168,14 +167,13 @@ fn undo_of_enter_restores_the_line() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): no selection by double/triple click (word / line)"]
 fn double_click_selects_a_word_and_triple_click_a_line() {
     let p = Plat::native();
     let mut f = ed("alpha beta\ngamma");
     let x = f.x_after("alpha b");
     f.click(x, 10.0);
-    f.click(x, 10.0);
+    f.rapid_click(x, 10.0);
     assert_eq!(f.selection(p).as_deref(), Some("beta"));
-    f.click(x, 10.0);
+    f.rapid_click(x, 10.0);
     assert_eq!(f.selection(p).as_deref(), Some("alpha beta"));
 }

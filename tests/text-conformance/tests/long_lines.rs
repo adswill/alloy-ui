@@ -75,7 +75,6 @@ fn pasting_one_megabyte_does_not_hang() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): mouse hit-testing is O(n^2) in line length (rebuilds and re-measures every prefix)"]
 fn clicking_in_a_long_line_is_not_quadratic() {
     both(|k| {
         let mut f = Field::new(k).with_text(&"abcdefghij".repeat(1_500)); // 15k chars

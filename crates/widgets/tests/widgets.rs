@@ -1055,8 +1055,10 @@ fn editor_undo_restores_deleted_line() {
     h.key(Key::Named("Home".into()));
     assert_eq!(h.key(Key::Backspace), vec![Msg::Text("abcd".into())]);
     let mut h = Harness::new(&ui, editor(&ui, "abcd"), 300.0, 200.0);
+    // Cmd on macOS, Ctrl elsewhere.
     let m = Modifiers {
-        logo: true,
+        logo: cfg!(target_os = "macos"),
+        ctrl: !cfg!(target_os = "macos"),
         ..Default::default()
     };
     assert_eq!(

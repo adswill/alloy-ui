@@ -91,7 +91,6 @@ fn word_moves_over_digits_underscores_and_accents() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): apostrophes split words; UAX #29 keeps \"don't\" as one word"]
 fn word_navigation_follows_uax29_for_apostrophes_and_underscores() {
     both(|k| {
         let p = Plat::native();
@@ -103,7 +102,6 @@ fn word_navigation_follows_uax29_for_apostrophes_and_underscores() {
 }
 
 #[test]
-#[ignore = "BUG(widgets): CJK runs are one \"word\"; platforms break at dictionary words"]
 fn word_navigation_in_cjk_stops_at_more_than_the_whole_run() {
     both(|k| {
         let p = Plat::native();
@@ -152,15 +150,13 @@ fn home_and_end_keys_work_on_every_platform() {
 }
 
 #[test]
-fn both_platform_conventions_for_shortcuts_are_accepted() {
-    // The widgets do not know the OS, so Cmd and Ctrl both act as the primary key.
+fn native_primary_key_runs_shortcuts() {
+    // Cmd on macOS, Ctrl elsewhere; the other platform's key is not a shortcut.
     both(|k| {
-        for primary in [CMD, CTRL] {
-            let mut f = Field::new(k).with_text("abc");
-            f.chord("a", primary);
-            f.chord("c", primary);
-            assert_eq!(f.clipboard().as_deref(), Some("abc"));
-        }
+        let mut f = Field::new(k).with_text("abc");
+        f.chord("a", Plat::native().primary);
+        f.chord("c", Plat::native().primary);
+        assert_eq!(f.clipboard().as_deref(), Some("abc"));
     });
 }
 
@@ -175,7 +171,6 @@ fn cmd_arrow_goes_to_the_line_edge_not_the_word_edge_on_mac() {
 
 #[cfg(target_os = "macos")]
 #[test]
-#[ignore = "BUG(widgets): Ctrl+A selects all on macOS; Cocoa text fields use it for 'start of line'"]
 fn mac_ctrl_a_is_not_select_all() {
     both(|k| {
         let mut f = Field::new(k).with_text("abc");
@@ -186,7 +181,6 @@ fn mac_ctrl_a_is_not_select_all() {
 
 #[cfg(not(target_os = "macos"))]
 #[test]
-#[ignore = "BUG(widgets): the Windows/Super key acts as the shortcut key (Super+A selects all); Super is the OS's"]
 fn super_key_shortcuts_are_not_text_shortcuts_off_macos() {
     both(|k| {
         let mut f = Field::new(k).with_text("abc");
@@ -197,7 +191,6 @@ fn super_key_shortcuts_are_not_text_shortcuts_off_macos() {
 
 #[cfg(not(target_os = "macos"))]
 #[test]
-#[ignore = "BUG(widgets): Alt+Arrow moves by word off macOS; on Windows/Linux Alt+Left is 'back'"]
 fn alt_arrow_is_not_word_movement_off_macos() {
     both(|k| {
         let mut f = Field::new(k).with_text("one two");

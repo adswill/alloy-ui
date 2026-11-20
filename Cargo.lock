@@ -165,6 +165,7 @@ dependencies = [
  "alloy-ui-layout",
  "alloy-ui-render",
  "alloy-ui-theme",
+ "unicode-segmentation",
 ]
 
 [[package]]
