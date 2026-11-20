@@ -148,7 +148,7 @@ impl<M: 'static> Widget<M> for Segmented<M> {
         }
         out.push(DrawCommand::Quad {
             bounds: b,
-            fill: p.surface,
+            fill: crate::util::over(p.surface, p.hover),
             radius: t.radii.medium,
             border: Some(Border {
                 color: p.border,
@@ -167,9 +167,17 @@ impl<M: 'static> Widget<M> for Segmented<M> {
                     fill: p.surface_raised,
                     radius: (t.radii.medium - 1.0).max(0.0),
                     border: Some(Border {
-                        color: p.border_strong,
+                        color: p.border_control,
                         width: 1.0,
                     }),
+                    shadow: Some(t.elevation.low),
+                });
+            } else if hover {
+                out.push(DrawCommand::Quad {
+                    bounds: *seg,
+                    fill: p.hover,
+                    radius: (t.radii.medium - 1.0).max(0.0),
+                    border: None,
                     shadow: None,
                 });
             }

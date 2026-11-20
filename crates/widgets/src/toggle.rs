@@ -128,8 +128,15 @@ impl<M: 'static> Widget<M> for Toggle<M> {
                 p.on_accent,
             ),
             (true, false) => (p.border, p.border, p.surface),
-            (false, true) => (p.surface_raised, p.border_strong, p.text_secondary),
-            (false, false) => (p.surface, p.border, p.text_disabled),
+            (false, true) => (
+                crate::util::over(
+                    p.border_control,
+                    p.hover.with_alpha(if hover { 0.1 } else { 0.0 }),
+                ),
+                p.border_control,
+                p.surface_raised,
+            ),
+            (false, false) => (p.border, p.border, p.surface_raised),
         };
         // The slide is the one meaningful state change here, so it gets the
         // slower token; everything else about the switch stays still.
