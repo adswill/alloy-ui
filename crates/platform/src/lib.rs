@@ -10,6 +10,7 @@
 #![deny(unsafe_code)]
 
 pub mod convert;
+pub mod dialog;
 pub mod fonts;
 pub mod menu;
 mod os;
@@ -56,6 +57,16 @@ pub trait Clipboard {
 pub trait Dialogs {
     /// Show an open-file picker; `None` if cancelled.
     fn open_file(&self) -> Result<Option<PathBuf>, PlatformError>;
+    /// Show an open-file picker that allows several selections. Empty if
+    /// cancelled. The default forwards to [`Dialogs::open_file`].
+    fn open_files(&self) -> Result<Vec<PathBuf>, PlatformError> {
+        Ok(self.open_file()?.into_iter().collect())
+    }
+    /// Show a save-file picker pre-filled with `suggested_name`; `None` if
+    /// cancelled. The OS dialog asks about overwriting existing files.
+    fn save_file(&self, _suggested_name: &str) -> Result<Option<PathBuf>, PlatformError> {
+        Err(PlatformError("save_file is not supported here".into()))
+    }
     /// Show a message box.
     fn message(&self, title: &str, body: &str) -> Result<(), PlatformError>;
 }

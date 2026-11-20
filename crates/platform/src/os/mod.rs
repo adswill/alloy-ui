@@ -100,6 +100,12 @@ impl Dialogs for SystemDialogs {
     fn open_file(&self) -> Result<Option<std::path::PathBuf>, PlatformError> {
         backend::open_file()
     }
+    fn open_files(&self) -> Result<Vec<std::path::PathBuf>, PlatformError> {
+        backend::open_files()
+    }
+    fn save_file(&self, suggested_name: &str) -> Result<Option<std::path::PathBuf>, PlatformError> {
+        backend::save_file(suggested_name)
+    }
     fn message(&self, title: &str, body: &str) -> Result<(), PlatformError> {
         backend::message(title, body)
     }
