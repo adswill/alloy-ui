@@ -40,10 +40,64 @@ pub struct PlacedGlyph {
     pub y: i32,
 }
 
+/// Shaping parameters that, with the content, determine a laid-out result.
+#[derive(Clone, Copy, PartialEq)]
+struct Params {
+    size: u32,
+    weight: u16,
+    mono: bool,
+    line_height: u32,
+    max_width: u32,
+}
+
+impl Params {
+    fn new(
+        size: f32,
+        weight: u16,
+        family: FontFamily,
+        line_height: Option<f32>,
+        max_width: Option<f32>,
+    ) -> Self {
+        Self {
+            size: size.to_bits(),
+            weight,
+            mono: matches!(family, FontFamily::Mono),
+            // NaN bit patterns never occur for real inputs; `None` maps to one.
+            line_height: line_height.map_or(u32::MAX, f32::to_bits),
+            max_width: max_width.map_or(u32::MAX, f32::to_bits),
+        }
+    }
+}
+
+/// Memoised shaping results. Shaping dominates frame cost for text-heavy
+/// views, and most frames repeat the previous frame's strings, so results
+/// are kept keyed by a hash and verified against the stored content.
+#[derive(Default)]
+struct ShapeCache {
+    extents: HashMap<u64, Entry<(f32, f32)>>,
+    glyphs: HashMap<u64, Entry<Arc<[PlacedGlyph]>>>,
+}
+
+/// Content and parameters kept beside a cached value to rule out hash collisions.
+type Entry<V> = (Box<str>, Params, V);
+
+/// Entries kept per map before it is cleared (a crude bound on memory; a
+/// window rarely shows more distinct strings than this).
+const SHAPE_CACHE_CAP: usize = 4096;
+
+fn shape_key(content: &str, p: &Params) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    content.hash(&mut h);
+    (p.size, p.weight, p.mono, p.line_height, p.max_width).hash(&mut h);
+    h.finish()
+}
+
 struct Inner {
     fonts: FontSystem,
     swash: SwashCache,
     bitmaps: HashMap<CacheKey, Option<Arc<GlyphBitmap>>>,
+    shapes: ShapeCache,
 }
 
 /// Owns the font database, shaper and glyph bitmap cache. Cloning is cheap
@@ -164,6 +218,7 @@ impl TextSystem {
                 fonts,
                 swash: SwashCache::new(),
                 bitmaps: HashMap::new(),
+                shapes: ShapeCache::default(),
             })),
         }
     }
@@ -193,12 +248,26 @@ impl TextSystem {
         if size <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
             return (0.0, 0.0);
         }
+        let params = Params::new(size, weight, family, line_height, max_width);
+        let key = shape_key(content, &params);
+        if let Some((c, p, v)) = inner.shapes.extents.get(&key) {
+            if p == &params && &**c == content {
+                return *v;
+            }
+        }
         let buffer = shaped(inner, content, size, weight, family, line_height, max_width);
         let (mut w, mut h) = (0.0f32, 0.0f32);
         for run in buffer.layout_runs() {
             w = w.max(run.line_w);
             h = h.max(run.line_top + run.line_height);
         }
+        if inner.shapes.extents.len() >= SHAPE_CACHE_CAP {
+            inner.shapes.extents.clear();
+        }
+        inner
+            .shapes
+            .extents
+            .insert(key, (content.into(), params, (w, h)));
         (w, h)
     }
 
@@ -226,30 +295,58 @@ impl TextSystem {
         if size_px <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
             return Vec::new();
         }
-        let buffer = shaped(
-            inner,
-            content,
-            size_px,
-            weight,
-            family,
-            line_height_px,
-            max_width_px,
-        );
+        let params = Params::new(size_px, weight, family, line_height_px, max_width_px);
+        let key = shape_key(content, &params);
+        let cached = match inner.shapes.glyphs.get(&key) {
+            Some((c, p, v)) if p == &params && &**c == content => Some(v.clone()),
+            _ => None,
+        };
+        // Glyphs are cached relative to the text box origin, which is rounded
+        // to whole pixels, so one entry serves every position.
+        let rel = match cached {
+            Some(v) => v,
+            None => {
+                let buffer = shaped(
+                    inner,
+                    content,
+                    size_px,
+                    weight,
+                    family,
+                    line_height_px,
+                    max_width_px,
+                );
+                let mut v = Vec::new();
+                for run in buffer.layout_runs() {
+                    let line_y = run.line_y.round() as i32;
+                    for g in run.glyphs {
+                        let p = g.physical((0.0, 0.0), 1.0);
+                        v.push(PlacedGlyph {
+                            key: p.cache_key,
+                            x: p.x,
+                            y: line_y + p.y,
+                        });
+                    }
+                }
+                let v: Arc<[PlacedGlyph]> = v.into();
+                if inner.shapes.glyphs.len() >= SHAPE_CACHE_CAP {
+                    inner.shapes.glyphs.clear();
+                }
+                inner
+                    .shapes
+                    .glyphs
+                    .insert(key, (content.into(), params, v.clone()));
+                v
+            }
+        };
         let ox = origin.0.round() as i32;
         let oy = origin.1.round() as i32;
-        let mut out = Vec::new();
-        for run in buffer.layout_runs() {
-            let line_y = run.line_y.round() as i32;
-            for g in run.glyphs {
-                let p = g.physical((0.0, 0.0), 1.0);
-                out.push(PlacedGlyph {
-                    key: p.cache_key,
-                    x: ox + p.x,
-                    y: oy + line_y + p.y,
-                });
-            }
-        }
-        out
+        rel.iter()
+            .map(|g| PlacedGlyph {
+                key: g.key,
+                x: ox + g.x,
+                y: oy + g.y,
+            })
+            .collect()
     }
 
     /// The rasterised bitmap for a glyph, if it has one (spaces do not).
@@ -259,6 +356,7 @@ impl TextSystem {
             fonts,
             swash,
             bitmaps,
+            shapes: _,
         } = &mut *g;
         if let Some(b) = bitmaps.get(&key) {
             return b.clone();

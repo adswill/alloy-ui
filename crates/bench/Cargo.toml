@@ -19,3 +19,11 @@ alloy-ui-examples = { path = "../../examples" }
 [[bin]]
 name = "alloy-bench"
 path = "src/main.rs"
+
+[[bin]]
+name = "phases"
+path = "src/bin/phases.rs"
+
+[[bin]]
+name = "text"
+path = "src/bin/text.rs"

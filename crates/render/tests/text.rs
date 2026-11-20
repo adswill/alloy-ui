@@ -141,3 +141,53 @@ fn diagonal_line_draws_along_path_only() {
         assert_eq!(px(x, y), [255, 255, 255], "off line at {x},{y}");
     }
 }
+
+#[test]
+fn cached_layout_matches_fresh_and_follows_origin() {
+    let Some(sys) = dejavu() else { return };
+    let mut a = sys.clone();
+    let first = a.layout(
+        "Hello wrapped text",
+        20.0,
+        400,
+        alloy_ui_core::FontFamily::Sans,
+        None,
+        Some(90.0),
+        (3.4, 7.0),
+    );
+    let again = a.layout(
+        "Hello wrapped text",
+        20.0,
+        400,
+        alloy_ui_core::FontFamily::Sans,
+        None,
+        Some(90.0),
+        (3.4, 7.0),
+    );
+    let moved = a.layout(
+        "Hello wrapped text",
+        20.0,
+        400,
+        alloy_ui_core::FontFamily::Sans,
+        None,
+        Some(90.0),
+        (13.4, 27.0),
+    );
+    assert!(!first.is_empty());
+    assert_eq!(first.len(), again.len());
+    for ((f, g), m) in first.iter().zip(&again).zip(&moved) {
+        assert_eq!((f.x, f.y), (g.x, g.y));
+        assert_eq!((f.x + 10, f.y + 20), (m.x, m.y));
+    }
+    // A different wrap width must not hit the cached entry.
+    let narrow = a.layout(
+        "Hello wrapped text",
+        20.0,
+        400,
+        alloy_ui_core::FontFamily::Sans,
+        None,
+        Some(40.0),
+        (3.4, 7.0),
+    );
+    assert!(narrow.iter().map(|g| g.y).max() > first.iter().map(|g| g.y).max());
+}
