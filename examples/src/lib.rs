@@ -1,11 +1,12 @@
-//! Example applications for Alloy: counter, todo, text editor, settings, dashboard.
+//! Example applications for Alloy, written against the concise `alloy_ui::prelude` API.
 //!
-//! Each example is an [`alloy_ui_core::Application`]. There is no windowed
-//! shell yet, so the binaries run each app headlessly: they drive a scripted
-//! sequence of input events through the real [`alloy_ui_core::runtime::Runtime`],
-//! rasterise the result with the CPU renderer and write a PNG.
+//! Each module has `app()` (the state and view), a window `SIZE` and a `run()` used by its
+//! binary. Every binary also takes `--headless [file.png] [--click Text]...` to render one
+//! frame without a window, which is how the golden tests and the benchmark harness drive them.
 #![warn(missing_docs)]
 
-pub mod apps;
-pub mod custom;
-pub mod run;
+pub mod counter;
+pub mod dashboard;
+pub mod settings;
+pub mod text_editor;
+pub mod todo;

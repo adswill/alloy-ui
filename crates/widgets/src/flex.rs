@@ -67,6 +67,17 @@ macro_rules! flex {
                 self.style
             }
             fn measure(&self, _available: Size) -> Size {
+                // `node_of` treats a childless widget as a leaf and calls `measure`, which
+                // would call `node_of` again: an empty row or column recursed until the
+                // stack overflowed. An empty container has no content.
+                if self.children.is_empty() {
+                    return alloy_ui_layout::Node {
+                        style: self.style,
+                        intrinsic: Size::default(),
+                        children: Vec::new(),
+                    }
+                    .preferred_size();
+                }
                 util::preferred(self)
             }
             fn children(&self) -> &[Element<M>] {

@@ -1,72 +1,111 @@
-//! Each example is driven through the real runtime with real input events.
-use alloy_ui_core::Key;
-use alloy_ui_examples::apps::{counter, dashboard, settings, text_editor, todo};
-use alloy_ui_examples::run::{apply, click_text, render_demo, runtime, Step};
+//! Each example is driven through the real runtime with real input, checked by
+//! its on-screen text, and compared with a committed golden image.
+//!
+//! Text is shaped and rasterised with the bundled IBM Plex fonts, so layout is the same
+//! on every OS; only glyph anti-aliasing may differ slightly, hence the tolerance (loose
+//! enough for that, tight enough to catch any moved or recoloured widget). Regenerate with
+//! `UPDATE_GOLDEN=1 cargo test -p alloy-ui-examples`.
 
-fn ui() -> alloy_ui_widgets::Ui {
-    alloy_ui_examples::run::headless_ui(alloy_ui_theme::Theme::light())
+use alloy_ui::{prelude::App, testing::Harness};
+use alloy_ui_examples::{counter, dashboard, settings, text_editor, todo};
+use alloy_ui_render::testing::{assert_golden, Tolerance};
+use alloy_ui_render::Image;
+use std::path::Path;
+
+const TOL: Tolerance = Tolerance {
+    channel: 40,
+    bad_fraction: 0.015,
+};
+
+fn open(app: impl App, size: (f32, f32)) -> Harness<impl App> {
+    Harness::new(app, size.0, size.1)
+}
+
+fn golden<A: App>(name: &str, h: &Harness<A>) {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden");
+    let img = Image::decode_png(&h.png()).expect("decode frame");
+    assert_golden(&dir, name, &img, TOL);
 }
 
 #[test]
-fn counter_click_path() {
-    let mut rt = runtime(counter::Counter::new(&ui()), (360.0, 180.0));
-    assert!(click_text(&mut rt, "Add"));
-    assert!(click_text(&mut rt, "Add"));
-    assert!(click_text(&mut rt, "Subtract"));
-    assert_eq!(rt.app().value, 1);
-    assert!(click_text(&mut rt, "Reset"));
-    assert_eq!(rt.app().value, 0);
+fn counter_counts() {
+    let mut h = open(counter::app(), counter::SIZE);
+    assert!(h.has_text("0 so far"));
+    h.click("Add").click("Add").click("Subtract");
+    assert!(h.has_text("1 so far"));
+    golden("counter_one", &h);
+    h.click("Reset");
+    assert!(h.has_text("0 so far"));
 }
 
 #[test]
 fn todo_add_toggle_filter() {
-    let (rt, _) = render_demo(todo::demo());
-    let a = rt.app();
-    assert_eq!(a.tasks.len(), 4);
-    assert_eq!(a.tasks[3].title, "Water the plants");
-    assert!(a.tasks[2].done, "Book dentist ticked");
-    assert_eq!(a.filter, todo::Filter::Open);
-    assert!(a.draft.is_empty());
+    let mut h = open(todo::app(), todo::SIZE);
+    assert!(h.has_text("3 open"));
+    h.click("Book dentist");
+    assert!(h.has_text("2 open"));
+    h.click("Open");
+    assert!(
+        !h.has_text("Book dentist"),
+        "done tasks leave the Open filter"
+    );
+    assert!(h.has_text("Write release notes for 0.4"));
+    golden("todo_open", &h);
+    h.click("Done").click("Clear done").click("All");
+    assert!(!h.has_text("Book dentist"));
+    assert!(!h.has_text("Order replacement fan"));
 }
 
 #[test]
-fn editor_types_breaks_lines_and_moves() {
-    let (rt, _) = render_demo(text_editor::demo());
-    let a = rt.app();
-    assert_eq!(a.lines[2], "Typed text lands at the caret.");
-    assert_eq!(a.lines[3], "Second lin");
-    assert_eq!(a.caret.0, 2);
+fn todo_input_adds_a_task() {
+    let mut h = open(todo::app(), todo::SIZE);
+    h.click("What needs doing?").type_text("Water the plants");
+    h.click("Add task");
+    assert!(h.has_text("Water the plants"));
+    assert!(h.has_text("4 open"));
 }
 
 #[test]
-fn editor_backspace_joins_lines() {
-    let mut rt = runtime(text_editor::TextEditor::new(&ui()), (400.0, 200.0));
-    apply(&mut rt, &Step::Press(Key::Backspace));
-    assert_eq!(rt.app().caret, (1, 20));
-    assert_eq!(rt.app().lines.len(), 2);
+fn editor_shows_and_clears() {
+    let mut h = open(text_editor::app(), text_editor::SIZE);
+    assert!(h.has_text("7 lines"));
+    golden("text_editor", &h);
+    h.click("Clear");
+    assert!(h.has_text("0 lines"));
+    assert!(h.has_text("Start typing"));
 }
 
 #[test]
-fn settings_switches_section_and_toggles() {
-    let (rt, _) = render_demo(settings::demo());
-    let a = rt.app();
-    assert_eq!(a.section, settings::Section::General);
-    assert!(a.launch_at_login);
-    assert_eq!(a.mode, alloy_ui_theme::ThemeMode::Dark);
+fn settings_navigates_and_toggles() {
+    let mut h = open(settings::app(), settings::SIZE);
+    assert!(h.has_text("Text size"));
+    golden("settings_appearance", &h);
+    h.click("Dark");
+    golden("settings_dark", &h);
+    h.click("General");
+    assert!(h.has_text("Launch at login"));
+    h.click("Launch at login");
+    golden("settings_general", &h);
+    h.click("Privacy");
+    assert!(h.has_text("Send crash reports"));
 }
 
 #[test]
-fn dashboard_range_switch_and_render() {
-    let (rt, img) = render_demo(dashboard::demo());
-    assert_eq!(rt.app().range, dashboard::Range::Days);
-    assert_eq!((img.width, img.height), (1040, 920));
+fn dashboard_switches_range() {
+    let mut h = open(dashboard::app(), dashboard::SIZE);
+    assert!(h.has_text("Peak 81k per interval"));
+    assert!(h.has_text("export-ledger"));
+    golden("dashboard_hours", &h);
+    h.click("12 days");
+    assert!(h.has_text("Peak 83k per interval"));
+    assert!(h.has_text("Nov 9"));
+    golden("dashboard_days", &h);
 }
 
 #[test]
-fn idle_events_do_not_redraw() {
-    let mut rt = runtime(counter::Counter::new(&ui()), (360.0, 180.0));
-    let o = rt.handle_event(&alloy_ui_core::Event::CursorMoved(
-        alloy_ui_core::Point::new(1.0, 1.0),
-    ));
-    assert!(!o.redraw);
+fn idle_key_does_not_change_the_frame() {
+    let mut h = open(counter::app(), counter::SIZE);
+    let before = h.png();
+    h.press(alloy_ui::Key::Escape);
+    assert_eq!(before, h.png(), "a no-op key must not change pixels");
 }
