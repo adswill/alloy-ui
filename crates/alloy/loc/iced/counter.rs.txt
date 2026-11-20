@@ -1,0 +1,46 @@
+use iced::widget::{button, column, row, text};
+use iced::{Center, Element};
+
+#[derive(Default)]
+struct Counter {
+    value: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum Message {
+    Inc,
+    Dec,
+    Reset,
+}
+
+fn update(c: &mut Counter, message: Message) {
+    match message {
+        Message::Inc => c.value += 1,
+        Message::Dec => c.value -= 1,
+        Message::Reset => c.value = 0,
+    }
+}
+
+fn view(c: &Counter) -> Element<'_, Message> {
+    column![
+        text("Counter").size(24),
+        text(format!("{} so far", c.value)),
+        row![
+            button("Subtract").on_press(Message::Dec),
+            button("Add").on_press(Message::Inc).style(button::primary),
+            button("Reset").on_press(Message::Reset).style(button::text),
+        ]
+        .spacing(8)
+        .align_y(Center),
+    ]
+    .spacing(14)
+    .padding(24)
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(Counter::default, update, view)
+        .title("Counter")
+        .window_size((360.0, 180.0))
+        .run()
+}

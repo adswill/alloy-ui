@@ -1,0 +1,134 @@
+use iced::widget::{button, checkbox, column, container, row, slider, text};
+use iced::{Element, Fill, Theme};
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Section {
+    Appearance,
+    General,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Mode {
+    Light,
+    Dark,
+}
+
+struct Settings {
+    section: Section,
+    mode: Mode,
+    text_px: f32,
+    launch_at_login: bool,
+    auto_update: bool,
+}
+
+#[derive(Debug, Clone)]
+enum Message {
+    Section(Section),
+    Mode(Mode),
+    Size(f32),
+    Login(bool),
+    Update(bool),
+}
+
+fn update(s: &mut Settings, message: Message) {
+    match message {
+        Message::Section(v) => s.section = v,
+        Message::Mode(v) => s.mode = v,
+        Message::Size(v) => s.text_px = v,
+        Message::Login(v) => s.launch_at_login = v,
+        Message::Update(v) => s.auto_update = v,
+    }
+}
+
+fn group<'a>(title: &'a str, body: Element<'a, Message>) -> Element<'a, Message> {
+    column![text(title).size(12), body].spacing(8).into()
+}
+
+fn view(s: &Settings) -> Element<'_, Message> {
+    let pick = |label, on, active| {
+        button(label).on_press(on).style(if active {
+            button::secondary
+        } else {
+            button::text
+        })
+    };
+    let nav = |label, v| pick(label, Message::Section(v), s.section == v).width(Fill);
+    let mode = |label, v| pick(label, Message::Mode(v), s.mode == v);
+    let page: Element<_> = match s.section {
+        Section::Appearance => column![
+            text("Appearance").size(24),
+            group(
+                "Theme",
+                row![mode("Light", Mode::Light), mode("Dark", Mode::Dark)]
+                    .spacing(4)
+                    .into()
+            ),
+            group(
+                "Text size",
+                column![
+                    slider(12.0..=20.0, s.text_px, Message::Size).step(1.0),
+                    text("The quick brown fox jumps over the lazy dog."),
+                    text(format!("{:.0} px", s.text_px)).size(12),
+                ]
+                .spacing(10)
+                .into()
+            ),
+        ]
+        .spacing(22)
+        .into(),
+        Section::General => column![
+            text("General").size(24),
+            group(
+                "Startup",
+                column![
+                    checkbox(s.launch_at_login)
+                        .label("Launch at login")
+                        .on_toggle(Message::Login),
+                    checkbox(s.auto_update)
+                        .label("Check for updates automatically")
+                        .on_toggle(Message::Update),
+                ]
+                .spacing(10)
+                .into()
+            ),
+        ]
+        .spacing(22)
+        .into(),
+    };
+    row![
+        container(
+            column![
+                nav("Appearance", Section::Appearance),
+                nav("General", Section::General)
+            ]
+            .spacing(2)
+            .padding(12)
+        )
+        .width(170)
+        .height(Fill)
+        .style(container::rounded_box),
+        container(page).padding(28).width(Fill).height(Fill),
+    ]
+    .into()
+}
+
+fn main() -> iced::Result {
+    iced::application(
+        || Settings {
+            section: Section::Appearance,
+            mode: Mode::Light,
+            text_px: 14.0,
+            launch_at_login: false,
+            auto_update: true,
+        },
+        update,
+        view,
+    )
+    .theme(|s: &Settings| match s.mode {
+        Mode::Light => Theme::Light,
+        Mode::Dark => Theme::Dark,
+    })
+    .title("Settings")
+    .window_size((560.0, 300.0))
+    .run()
+}
