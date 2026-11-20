@@ -27,6 +27,16 @@ jobs:
           chmod +x appimagetool
           echo "ALLOY_APPIMAGETOOL=$PWD/appimagetool" >> "$GITHUB_ENV"
           echo "ALLOY_REQUIRE_APPIMAGE=1" >> "$GITHUB_ENV"
+      - name: Install rpm, cpio and NSIS (verification tools)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y rpm cpio nsis
+      - name: Install WiX
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "ALLOY_REQUIRE_MSI=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Install NSIS
         if: runner.os == 'Windows'
         shell: pwsh
@@ -37,3 +47,21 @@ jobs:
           "ALLOY_REQUIRE_NSIS=1" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Unit and end-to-end tests
         run: cargo test -p alloy-ui-cli -- --nocapture
+
+  template:
+    # `alloy new` output must keep compiling against the workspace crates.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev
+      - name: Generate and check a new app
+        run: |
+          cargo build -p alloy-ui-cli
+          cd "$RUNNER_TEMP"
+          "$GITHUB_WORKSPACE/target/debug/alloy" new tmpl-app --alloy-path "$GITHUB_WORKSPACE"
+          cd tmpl-app
+          CARGO_TARGET_DIR="$RUNNER_TEMP/tmpl-target" cargo check
+          CARGO_TARGET_DIR="$RUNNER_TEMP/tmpl-target" "$GITHUB_WORKSPACE/target/debug/alloy" check

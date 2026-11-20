@@ -49,6 +49,8 @@ struct RawMeta {
     min_macos: Option<String>,
     #[serde(default)]
     deb_depends: Option<Vec<String>>,
+    #[serde(default)]
+    rpm_requires: Option<Vec<String>>,
 }
 
 /// Validated app metadata plus package facts from Cargo.
@@ -90,6 +92,8 @@ pub struct Project {
     pub min_macos: String,
     /// Debian `Depends` entries.
     pub deb_depends: Vec<String>,
+    /// RPM `Requires` entries (Fedora-style package names by default).
+    pub rpm_requires: Vec<String>,
 }
 
 /// Which package/binary to act on.
@@ -281,6 +285,9 @@ impl Project {
                     .map(String::from)
                     .to_vec()
             }),
+            rpm_requires: raw
+                .rpm_requires
+                .unwrap_or_else(|| ["libxkbcommon", "vulkan-loader"].map(String::from).to_vec()),
             manifest_path,
         })
     }

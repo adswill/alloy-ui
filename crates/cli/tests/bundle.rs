@@ -6,49 +6,9 @@ use alloy_ui_cli::run;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc = !0u32;
-    for &b in data {
-        crc ^= b as u32;
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (!(crc & 1)).wrapping_add(1));
-        }
-    }
-    !crc
-}
-
-/// A valid solid-colour RGBA PNG of `size` x `size`.
+/// A valid RGBA PNG of `size` x `size`.
 fn png(size: u32) -> Vec<u8> {
-    use flate2::{write::ZlibEncoder, Compression};
-    use std::io::Write;
-    let mut raw = Vec::new();
-    for _ in 0..size {
-        // Filter byte 0 (none), then one RGBA pixel per column.
-        raw.extend(std::iter::once(0u8));
-        for _ in 0..size {
-            raw.extend_from_slice(&[0x2d, 0x6c, 0xdf, 0xff]);
-        }
-    }
-    let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
-    z.write_all(&raw).unwrap();
-    let idat = z.finish().unwrap();
-    let mut ihdr = Vec::new();
-    ihdr.extend_from_slice(&size.to_be_bytes());
-    ihdr.extend_from_slice(&size.to_be_bytes());
-    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
-    let mut out = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
-    for (ty, data) in [
-        (&b"IHDR"[..], &ihdr[..]),
-        (b"IDAT", &idat[..]),
-        (b"IEND", &[][..]),
-    ] {
-        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
-        let mut body = ty.to_vec();
-        body.extend_from_slice(data);
-        out.extend_from_slice(&body);
-        out.extend_from_slice(&crc32(&body).to_be_bytes());
-    }
-    out
+    alloy_ui_cli::icon::rounded_square_png(size, [0x2d, 0x6c, 0xdf, 0xff])
 }
 
 struct Sandbox(PathBuf);
@@ -176,6 +136,71 @@ fn builds_and_bundles_deb_on_linux() {
         assert!(caps.contains("clipboard"));
     }
 
+    // RPM: validated by the real rpm tool when it is installed.
+    run(&args(&manifest, &out, &["--skip-build", "--format", "rpm"])).unwrap();
+    let rpm_file = out.join("hello-alloy-0.3.1-1.x86_64.rpm");
+    assert!(rpm_file.is_file(), "{rpm_file:?}");
+    if Command::new("rpm").arg("--version").output().is_ok()
+        && Command::new("cpio").arg("--version").output().is_ok()
+    {
+        let q = |flag: &str| {
+            let o = Command::new("rpm")
+                .args(["-qp", flag])
+                .arg(&rpm_file)
+                .output()
+                .unwrap();
+            assert!(
+                o.status.success(),
+                "rpm -qp {flag}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            String::from_utf8_lossy(&o.stdout).into_owned()
+        };
+        let info = q("--info");
+        assert!(info.contains("Name        : hello-alloy"), "{info}");
+        assert!(info.contains("Version     : 0.3.1"), "{info}");
+        assert!(info.contains("Architecture: x86_64"), "{info}");
+        let list = q("--list");
+        for want in [
+            "/usr/bin/hello-alloy",
+            "/usr/share/hello-alloy/alloy.capabilities.toml",
+            "/usr/share/applications/dev.example.hello.desktop",
+            "/usr/share/icons/hicolor/256x256/apps/hello-alloy.png",
+        ] {
+            assert!(list.lines().any(|l| l == want), "missing {want} in\n{list}");
+        }
+        assert!(q("--requires").contains("libxkbcommon"));
+        // Header digest + sizes must verify.
+        let sig = Command::new("rpm")
+            .args(["-K", "--nosignature"])
+            .arg(&rpm_file)
+            .output()
+            .unwrap();
+        let sig_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&sig.stdout),
+            String::from_utf8_lossy(&sig.stderr)
+        );
+        assert!(
+            sig.status.success() && !sig_text.contains("BAD"),
+            "{sig_text}"
+        );
+        // Payload extracts and the binary runs.
+        let x = sb.0.join("rpm-extract");
+        std::fs::create_dir_all(&x).unwrap();
+        let sh = format!(
+            "rpm2cpio '{}' | (cd '{}' && cpio -idm --quiet)",
+            rpm_file.display(),
+            x.display()
+        );
+        let st = Command::new("sh").args(["-c", &sh]).status().unwrap();
+        assert!(st.success());
+        let o = Command::new(x.join("usr/bin/hello-alloy"))
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "hi");
+    }
+
     // AppDir layout is checked even without appimagetool installed; CI sets
     // ALLOY_REQUIRE_APPIMAGE so the full AppImage must build there.
     let r = run(&args(
@@ -199,6 +224,58 @@ fn builds_and_bundles_deb_on_linux() {
     } else if let Err(e) = r {
         assert!(e.to_string().contains("appimagetool"), "{e}");
     }
+}
+
+/// Cross-compiling the installer needs no Windows: NSIS runs anywhere.
+#[cfg(target_os = "linux")]
+#[test]
+fn nsis_installer_compiles_on_linux_when_makensis_exists() {
+    if Command::new("makensis").arg("-VERSION").output().is_err() {
+        return;
+    }
+    let (sb, manifest) = make_app("capabilities = [\"clipboard\"]\n");
+    let fake_exe = sb.0.join("fake.exe");
+    std::fs::write(&fake_exe, b"MZ not a real exe").unwrap();
+    let out = sb.0.join("dist");
+    run(&args(
+        &manifest,
+        &out,
+        &[
+            "--target",
+            "x86_64-pc-windows-msvc",
+            "--binary",
+            &fake_exe.display().to_string(),
+            "--format",
+            "nsis",
+        ],
+    ))
+    .unwrap();
+    let setup = std::fs::read(out.join("hello-alloy-0.3.1-x86_64-setup.exe")).unwrap();
+    assert_eq!(&setup[..2], b"MZ");
+    assert!(setup.len() > 30_000, "installer stub plus payload");
+}
+
+#[test]
+fn new_creates_a_project_that_passes_check() {
+    let dir = std::env::temp_dir().join(format!("alloy-new-e2e-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let scaffold = alloy_ui_cli::scaffold::create(
+        &dir,
+        &alloy_ui_cli::scaffold::NewApp {
+            name: "fresh-app".into(),
+            identifier: None,
+            source: alloy_ui_cli::scaffold::Source::Path(dir.clone()),
+        },
+    )
+    .unwrap();
+    run(&[
+        "check".into(),
+        "--manifest-path".into(),
+        scaffold.join("Cargo.toml").display().to_string(),
+    ])
+    .unwrap();
+    std::fs::remove_dir_all(dir).ok();
 }
 
 #[cfg(target_os = "macos")]
@@ -242,6 +319,14 @@ fn builds_and_bundles_exe_on_windows() {
         .join("hello-alloy.exe");
     let o = Command::new(&exe).output().unwrap();
     assert_eq!(String::from_utf8_lossy(&o.stdout).trim(), "hi");
+    // The icon embedding must leave a loadable executable: it ran above.
+    // MSI needs WiX; CI installs it, so require it there.
+    if std::env::var_os("ALLOY_REQUIRE_MSI").is_some() {
+        run(&args(&manifest, &out, &["--skip-build", "--format", "msi"])).unwrap();
+        let msi = std::fs::read(out.join("hello-alloy-0.3.1-x86_64.msi")).unwrap();
+        // MSI files are OLE compound documents.
+        assert_eq!(&msi[..8], &[0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+    }
     // Installer needs makensis; CI installs it, so require it there.
     if std::env::var_os("ALLOY_REQUIRE_NSIS").is_some() {
         run(&args(

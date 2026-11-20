@@ -5,6 +5,9 @@ mod archive;
 mod deb;
 mod linux;
 mod macos;
+mod msi;
+mod rpm;
+mod sha256;
 mod windows;
 
 use crate::error::{io, Error, Result};
@@ -27,10 +30,14 @@ pub enum Format {
     Deb,
     /// Linux AppImage.
     AppImage,
+    /// RPM package.
+    Rpm,
     /// Windows portable folder with the `.exe`.
     Exe,
     /// Windows NSIS installer.
     Nsis,
+    /// Windows MSI installer (WiX).
+    Msi,
 }
 
 impl Format {
@@ -41,11 +48,13 @@ impl Format {
             "dmg" => Format::Dmg,
             "deb" => Format::Deb,
             "appimage" => Format::AppImage,
+            "rpm" => Format::Rpm,
             "exe" => Format::Exe,
             "nsis" => Format::Nsis,
+            "msi" => Format::Msi,
             other => {
                 return Err(Error::Usage(format!(
-                    "unknown format `{other}`; use app, dmg, deb, appimage, exe or nsis"
+                    "unknown format `{other}`; use app, dmg, deb, rpm, appimage, exe, nsis or msi"
                 )))
             }
         })
@@ -58,8 +67,10 @@ impl Format {
             Format::Dmg => "dmg",
             Format::Deb => "deb",
             Format::AppImage => "appimage",
+            Format::Rpm => "rpm",
             Format::Exe => "exe",
             Format::Nsis => "nsis",
+            Format::Msi => "msi",
         }
     }
 
@@ -153,8 +164,10 @@ pub fn bundle(ctx: &Ctx<'_>, format: Format) -> Result<PathBuf> {
         Format::Dmg => macos::dmg(ctx),
         Format::Deb => deb::deb(ctx),
         Format::AppImage => appimage::appimage(ctx),
+        Format::Rpm => rpm::rpm(ctx),
         Format::Exe => windows::portable(ctx),
         Format::Nsis => windows::nsis(ctx),
+        Format::Msi => msi::msi(ctx),
     }
 }
 
@@ -235,12 +248,14 @@ mod tests {
             Format::Dmg,
             Format::Deb,
             Format::AppImage,
+            Format::Rpm,
             Format::Exe,
             Format::Nsis,
+            Format::Msi,
         ] {
             assert_eq!(Format::parse(f.name()).unwrap(), f);
         }
-        assert!(Format::parse("msi").is_err());
+        assert!(Format::parse("zip").is_err());
     }
 
     #[test]

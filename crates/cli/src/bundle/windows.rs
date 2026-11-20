@@ -2,10 +2,12 @@
 
 use super::{remove_if_exists, run, which, write_file, Ctx, CAPABILITIES_FILE};
 use crate::error::{Error, Result};
+use crate::icon::parse_ico;
+use crate::pe::embed_icon;
 use std::path::PathBuf;
 use std::process::Command;
 
-fn require_windows(ctx: &Ctx<'_>, format: &'static str) -> Result<()> {
+pub(super) fn require_windows(ctx: &Ctx<'_>, format: &'static str) -> Result<()> {
     if ctx.triple.contains("windows") {
         Ok(())
     } else {
@@ -16,13 +18,30 @@ fn require_windows(ctx: &Ctx<'_>, format: &'static str) -> Result<()> {
     }
 }
 
+/// The executable's bytes with the app icon embedded when one is configured.
+/// Falls back to the untouched binary (with a warning) if the PE layout is
+/// not one `pe::embed_icon` supports.
+pub fn exe_with_icon(ctx: &Ctx<'_>) -> Result<Vec<u8>> {
+    let exe = ctx.binary_bytes()?;
+    let Some(images) = ctx.icons.ico_bytes().and_then(|b| parse_ico(&b)) else {
+        return Ok(exe);
+    };
+    match embed_icon(&exe, &images) {
+        Ok(patched) => Ok(patched),
+        Err(e) => {
+            eprintln!("warning: could not embed icon in the executable ({e}); using the unmodified binary");
+            Ok(exe)
+        }
+    }
+}
+
 /// Copy the exe and capability config into `<stem>-portable/`.
 pub fn portable(ctx: &Ctx<'_>) -> Result<PathBuf> {
     require_windows(ctx, "exe")?;
     let dir = ctx.out_dir.join(format!("{}-portable", ctx.stem()));
     remove_if_exists(&dir)?;
     let exe = dir.join(format!("{}.exe", ctx.project.bin_name));
-    write_file(&exe, &ctx.binary_bytes()?)?;
+    write_file(&exe, &exe_with_icon(ctx)?)?;
     if let Some(c) = &ctx.capabilities {
         write_file(&dir.join(CAPABILITIES_FILE), c.as_bytes())?;
     }
@@ -86,12 +105,16 @@ pub fn nsis_script(
             "VIProductVersion \"{q}\"\nVIAddVersionKey \"ProductName\" \"{name}\"\nVIAddVersionKey \"FileDescription\" \"{name} installer\"\nVIAddVersionKey \"FileVersion\" \"{}\"\n",
             nsis_str(&p.version)
         ));
-        if let Some(c) = &p.copyright {
-            s.push_str(&format!(
-                "VIAddVersionKey \"LegalCopyright\" \"{}\"\n",
-                nsis_str(c)
-            ));
-        }
+        // NSIS warns when a version block has no LegalCopyright.
+        let legal = p
+            .copyright
+            .clone()
+            .or_else(|| p.publisher.clone())
+            .unwrap_or_else(|| p.product_name.clone());
+        s.push_str(&format!(
+            "VIAddVersionKey \"LegalCopyright\" \"{}\"\n",
+            nsis_str(&legal)
+        ));
     }
     s.push_str(
         "Page directory\nPage instfiles\nUninstPage uninstConfirm\nUninstPage instfiles\n\n",
@@ -164,7 +187,7 @@ pub fn nsis(ctx: &Ctx<'_>) -> Result<PathBuf> {
     let stage = ctx.out_dir.join(format!("{}-nsis", ctx.stem()));
     remove_if_exists(&stage)?;
     let exe = stage.join(format!("{}.exe", ctx.project.bin_name));
-    write_file(&exe, &ctx.binary_bytes()?)?;
+    write_file(&exe, &exe_with_icon(ctx)?)?;
     let caps = match &ctx.capabilities {
         Some(c) => {
             let f = stage.join(CAPABILITIES_FILE);
@@ -260,6 +283,24 @@ mod tests {
         let exe = portable(&f.ctx()).unwrap();
         assert!(exe.ends_with("demo.exe"));
         assert!(exe.with_file_name(CAPABILITIES_FILE).exists());
+    }
+
+    #[test]
+    fn portable_exe_gets_the_icon() {
+        let mut f = fixture_for("x86_64-pc-windows-msvc");
+        f.with_icons = true;
+        std::fs::write(f.dir.join("demo.bin"), crate::pe::tests::tiny_pe()).unwrap();
+        let exe = portable(&f.ctx()).unwrap();
+        let res = crate::pe::tests::read_resources(&std::fs::read(exe).unwrap());
+        assert_eq!(res.len(), 3); // 32 and 256 px icons (ico max) and the group
+    }
+
+    #[test]
+    fn unpatchable_exe_falls_back_to_original() {
+        let mut f = fixture_for("x86_64-pc-windows-msvc");
+        f.with_icons = true; // demo.bin is not a PE file
+        let exe = portable(&f.ctx()).unwrap();
+        assert_eq!(std::fs::read(exe).unwrap(), b"\x7fELF fake binary");
     }
 
     #[test]

@@ -162,6 +162,100 @@ impl IconSet {
     }
 }
 
+/// One image inside an `.ico`: the directory fields plus the raw image data
+/// (PNG, or a BMP DIB), ready to become a Windows `RT_ICON` resource.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IcoImage {
+    /// Width byte as stored (0 means 256).
+    pub width: u8,
+    /// Height byte as stored (0 means 256).
+    pub height: u8,
+    /// Palette colour count byte.
+    pub colors: u8,
+    /// Colour planes.
+    pub planes: u16,
+    /// Bits per pixel.
+    pub bpp: u16,
+    /// Image bytes.
+    pub data: Vec<u8>,
+}
+
+/// Parse an `.ico` into its images, or `None` if malformed.
+pub fn parse_ico(b: &[u8]) -> Option<Vec<IcoImage>> {
+    if b.len() < 6 || b[..4] != [0, 0, 1, 0] {
+        return None;
+    }
+    let n = u16::from_le_bytes([b[4], b[5]]) as usize;
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let e = b.get(6 + i * 16..6 + i * 16 + 16)?;
+        let size = u32::from_le_bytes(e[8..12].try_into().ok()?) as usize;
+        let off = u32::from_le_bytes(e[12..16].try_into().ok()?) as usize;
+        out.push(IcoImage {
+            width: e[0],
+            height: e[1],
+            colors: e[2],
+            planes: u16::from_le_bytes([e[4], e[5]]),
+            bpp: u16::from_le_bytes([e[6], e[7]]),
+            data: b.get(off..off.checked_add(size)?)?.to_vec(),
+        });
+    }
+    Some(out)
+}
+
+/// A square RGBA PNG: rounded square in `fill` on a transparent background.
+/// Used for the placeholder icon `alloy new` writes.
+pub fn rounded_square_png(size: u32, fill: [u8; 4]) -> Vec<u8> {
+    use flate2::{write::ZlibEncoder, Compression};
+    use std::io::Write;
+    let (s, r) = (size as f32, size as f32 * 0.22);
+    let inset = size as f32 * 0.06;
+    let mut raw = Vec::with_capacity((size * (size * 4 + 1)) as usize);
+    for y in 0..size {
+        raw.push(0); // filter: none
+        for x in 0..size {
+            // Signed distance to a rounded rectangle, for an antialiased edge.
+            let (px, py) = (x as f32 + 0.5 - s / 2.0, y as f32 + 0.5 - s / 2.0);
+            let half = s / 2.0 - inset - r;
+            let (dx, dy) = (px.abs() - half, py.abs() - half);
+            let d = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt() + dx.max(dy).min(0.0) - r;
+            let a = (0.5 - d).clamp(0.0, 1.0);
+            raw.extend_from_slice(&[fill[0], fill[1], fill[2], (fill[3] as f32 * a) as u8]);
+        }
+    }
+    let mut z = ZlibEncoder::new(Vec::new(), Compression::default());
+    z.write_all(&raw).expect("writing to a Vec cannot fail");
+    let idat = z.finish().expect("finishing a Vec cannot fail");
+    let mut ihdr = Vec::new();
+    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&size.to_be_bytes());
+    ihdr.extend_from_slice(&[8, 6, 0, 0, 0]);
+    let mut out = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    for (ty, data) in [
+        (&b"IHDR"[..], &ihdr[..]),
+        (b"IDAT", &idat[..]),
+        (b"IEND", &[][..]),
+    ] {
+        out.extend_from_slice(&(data.len() as u32).to_be_bytes());
+        let mut body = ty.to_vec();
+        body.extend_from_slice(data);
+        out.extend_from_slice(&body);
+        out.extend_from_slice(&crc32(&body).to_be_bytes());
+    }
+    out
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    let mut crc = !0u32;
+    for &b in data {
+        crc ^= b as u32;
+        for _ in 0..8 {
+            crc = (crc >> 1) ^ (0xEDB8_8320 & (!(crc & 1)).wrapping_add(1));
+        }
+    }
+    !crc
+}
+
 fn ext(p: &Path) -> String {
     p.extension()
         .map(|e| e.to_string_lossy().to_ascii_lowercase())
@@ -234,6 +328,27 @@ mod tests {
         let off = u32::from_le_bytes(b[6 + 12..6 + 16].try_into().unwrap()) as usize;
         assert_eq!(off, 6 + 32);
         assert_eq!(png_size(&b[off..]), Some((32, 32)));
+    }
+
+    #[test]
+    fn ico_roundtrip() {
+        let s = set(&[16, 256]);
+        let imgs = parse_ico(&s.ico_bytes().unwrap()).unwrap();
+        assert_eq!(imgs.len(), 2);
+        assert_eq!((imgs[0].width, imgs[1].width), (16, 0));
+        assert_eq!(png_size(&imgs[1].data), Some((256, 256)));
+        assert!(parse_ico(b"nope").is_none());
+        let mut trunc = s.ico_bytes().unwrap();
+        trunc.truncate(trunc.len() - 5);
+        assert!(parse_ico(&trunc).is_none());
+    }
+
+    #[test]
+    fn generated_png_is_valid() {
+        let p = rounded_square_png(64, [10, 20, 30, 255]);
+        assert_eq!(png_size(&p), Some((64, 64)));
+        // The CRC of the IHDR chunk is verifiable by hand.
+        assert_eq!(&p[29..33], &crc32(&p[12..29]).to_be_bytes());
     }
 
     #[test]
