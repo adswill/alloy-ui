@@ -47,6 +47,11 @@ pub trait Widget<M> {
     ) -> bool {
         false
     }
+    /// True while this widget needs [`Event::Tick`] (caret blink, animation).
+    /// The runtime asks the whole tree; with no animation the app idles at zero CPU.
+    fn animating(&self) -> bool {
+        false
+    }
     /// Emit draw commands.
     fn draw(&self, layout: &Layout, out: &mut DrawList);
 }

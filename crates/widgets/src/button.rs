@@ -184,6 +184,8 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let s = t.typography.label;
         let w = self.ui.metrics().width(&self.label, s.size);
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 b.origin.x + (b.size.width - w) / 2.0,
                 b.origin.y + (b.size.height - s.line_height) / 2.0,

@@ -12,6 +12,11 @@ pub use alloy_ui_theme as theme;
 use alloy_ui_ipc::TaskRunner;
 use alloy_ui_platform::{PlatformError, PlatformEvent, ShellContext, ShellHandler, WindowSettings};
 use alloy_ui_render::{Renderer, WindowRenderer};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+use std::time::{Duration, Instant};
 
 /// Run `app` in a native window until it exits.
 ///
@@ -26,13 +31,20 @@ where
     A: Application + 'static,
 {
     let size = settings.size;
-    alloy_ui_platform::run(settings, move |proxy| Host {
-        pending: Some((app, size, layouter)),
-        runtime: None,
-        renderer: None,
-        tasks: TaskRunner::new(move || {
-            proxy.wake();
-        }),
+    alloy_ui_platform::run(settings, move |proxy| {
+        let task_proxy = proxy.clone();
+        Host {
+            pending: Some((app, size, layouter)),
+            runtime: None,
+            renderer: None,
+            tasks: TaskRunner::new(move || {
+                task_proxy.wake();
+            }),
+            proxy,
+            start: Instant::now(),
+            tick_due: Arc::new(AtomicBool::new(false)),
+            tick_pending: false,
+        }
     })
 }
 
@@ -43,6 +55,10 @@ struct Host<A: Application> {
     runtime: Option<Runtime<A>>,
     renderer: Option<WindowRenderer>,
     tasks: TaskRunner<A::Message>,
+    proxy: alloy_ui_platform::shell::ShellProxy,
+    start: Instant,
+    tick_due: Arc<AtomicBool>,
+    tick_pending: bool,
 }
 
 impl<A: Application + 'static> Host<A> {
@@ -53,6 +69,17 @@ impl<A: Application + 'static> Host<A> {
         }
         if outcome.redraw {
             ctx.request_redraw();
+        }
+        if outcome.tick && !self.tick_pending {
+            // Animation is active: one short-lived timer thread per frame, so an
+            // idle app has no timer at all.
+            self.tick_pending = true;
+            let (due, proxy) = (self.tick_due.clone(), self.proxy.clone());
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_millis(16));
+                due.store(true, Ordering::Release);
+                proxy.wake();
+            });
         }
         if let Some(rt) = self.runtime.as_mut() {
             for fut in rt.take_futures() {
@@ -97,15 +124,26 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             }
             PlatformEvent::Input(e) => rt.handle_event(&e),
             PlatformEvent::Wake => {
-                let msgs = self.tasks.drain();
-                if msgs.is_empty() {
-                    return;
+                let mut outcome = Outcome::default();
+                if self.tick_due.swap(false, Ordering::AcqRel) {
+                    self.tick_pending = false;
+                    let ms = self.start.elapsed().as_millis() as u64;
+                    outcome = rt.handle_event(&Event::Tick(ms));
                 }
-                rt.dispatch_all(msgs)
+                let msgs = self.tasks.drain();
+                if !msgs.is_empty() {
+                    let o = rt.dispatch_all(msgs);
+                    outcome = Outcome {
+                        redraw: outcome.redraw || o.redraw,
+                        exit: outcome.exit || o.exit,
+                        tick: outcome.tick || o.tick,
+                    };
+                }
+                outcome
             }
             PlatformEvent::ScaleFactorChanged(_) => Outcome {
                 redraw: true,
-                exit: false,
+                ..Outcome::default()
             },
             _ => return,
         };

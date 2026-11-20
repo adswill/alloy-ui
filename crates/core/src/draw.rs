@@ -51,6 +51,21 @@ pub enum DrawCommand {
         color: Color,
         /// Maximum width before wrapping, if any.
         max_width: Option<f32>,
+        /// Font weight, 100 to 900 (400 regular, 600 semibold).
+        weight: u16,
+        /// Line height in logical pixels; `None` uses the renderer default.
+        line_height: Option<f32>,
+    },
+    /// A straight line segment with round caps, e.g. a checkbox tick stroke.
+    Line {
+        /// Start point.
+        from: Point,
+        /// End point.
+        to: Point,
+        /// Stroke width in logical pixels.
+        width: f32,
+        /// Colour.
+        color: Color,
     },
     /// An image by handle id registered with the renderer.
     Image {

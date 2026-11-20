@@ -138,6 +138,8 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
         if self.checked {
             // A check glyph; the renderer's font fallback supplies it.
             out.push(DrawCommand::Text {
+                weight: 400,
+                line_height: None,
                 origin: Point::new(bx.origin.x + 2.5, bx.origin.y + 0.5),
                 content: "\u{2713}".into(),
                 size: 13.0,
@@ -151,6 +153,8 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
         }
         let s = t.typography.body;
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 b.origin.x + BOX + t.spacing.sm,
                 b.origin.y + (b.size.height - s.line_height) / 2.0,
