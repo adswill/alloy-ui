@@ -102,3 +102,24 @@ pub(crate) fn sized(width: Length, height: Length) -> Style {
         ..Style::default()
     }
 }
+
+/// True when any child reports `animating`.
+pub(crate) fn any_animating<M>(children: &[Element<M>]) -> bool {
+    children.iter().any(|c| c.0.animating())
+}
+
+/// Linear blend of two colours (straight alpha, sRGB-space; fine for small UI transitions).
+pub(crate) fn mix(
+    a: alloy_ui_core::Color,
+    b: alloy_ui_core::Color,
+    t: f32,
+) -> alloy_ui_core::Color {
+    let t = t.clamp(0.0, 1.0);
+    let l = |x: f32, y: f32| x + (y - x) * t;
+    alloy_ui_core::Color {
+        r: l(a.r, b.r),
+        g: l(a.g, b.g),
+        b: l(a.b, b.b),
+        a: l(a.a, b.a),
+    }
+}

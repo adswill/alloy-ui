@@ -61,14 +61,24 @@ impl<M: 'static> Scrollable<M> {
     fn max_offset(layout: &Layout) -> f32 {
         (Self::content_height(layout) - layout.bounds.size.height).max(0.0)
     }
+    /// Where scrolling is heading (the clamped target).
     fn offset(&self, layout: &Layout) -> f32 {
         self.ui
             .scroll_offset(self.id)
             .clamp(0.0, Self::max_offset(layout))
     }
     /// The child layout, shifted by the scroll offset and positioned at the viewport top.
+    fn shown(&self, layout: &Layout) -> f32 {
+        let m = self.ui.theme().motion;
+        self.ui.ease_with(
+            0x5C01_0000_0000 ^ self.id,
+            self.offset(layout),
+            m.normal_ms as u64,
+            m.easing,
+        )
+    }
     fn shifted(&self, layout: &Layout) -> Layout {
-        let off = self.offset(layout);
+        let off = self.shown(layout);
         Layout {
             bounds: layout.bounds,
             children: layout
@@ -132,6 +142,9 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         // Pointer presses outside the viewport must not reach clipped children.
         util::dispatch(&mut self.child, event, &shifted, cursor, out)
     }
+    fn animating(&self) -> bool {
+        util::any_animating(&self.child)
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         out.push(DrawCommand::PushClip(b));
@@ -147,7 +160,7 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
             let travel = b.size.height - thumb_h;
             let max = Self::max_offset(layout);
             let y = if max > 0.0 {
-                b.origin.y + travel * self.offset(layout) / max
+                b.origin.y + travel * self.shown(layout).clamp(0.0, max) / max
             } else {
                 b.origin.y
             };

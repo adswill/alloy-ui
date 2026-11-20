@@ -20,6 +20,11 @@ pub struct GpuHeadlessRenderer {
 }
 
 impl GpuHeadlessRenderer {
+    /// A measurement handle sharing this renderer's fonts.
+    pub fn text_measurer(&self) -> crate::TextMeasurer {
+        self.painter.text.measurer()
+    }
+
     /// Create a renderer, or an error if no adapter is available.
     pub fn try_new(width: u32, height: u32) -> Result<Self, RenderError> {
         Self::try_with_text_system(width, height, TextSystem::new())

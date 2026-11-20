@@ -84,6 +84,9 @@ macro_rules! flex {
             ) -> bool {
                 util::dispatch(&mut self.children, event, layout, cursor, out)
             }
+            fn animating(&self) -> bool {
+                util::any_animating(&self.children)
+            }
             fn draw(&self, layout: &Layout, out: &mut DrawList) {
                 util::draw_children(&self.children, layout, out);
             }

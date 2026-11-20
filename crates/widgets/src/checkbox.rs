@@ -136,21 +136,31 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
             shadow: None,
         });
         if self.checked {
-            // A check glyph; the renderer's font fallback supplies it.
-            out.push(DrawCommand::Text {
-                origin: Point::new(bx.origin.x + 2.5, bx.origin.y + 0.5),
-                content: "\u{2713}".into(),
-                size: 13.0,
-                color: if enabled {
-                    p.on_accent
-                } else {
-                    p.text_disabled
-                },
-                max_width: None,
-            });
+            let c = if enabled {
+                p.on_accent
+            } else {
+                p.text_disabled
+            };
+            let (x, y) = (bx.origin.x, bx.origin.y);
+            let stroke = |from: Point, to: Point| DrawCommand::Line {
+                from,
+                to,
+                width: 1.8,
+                color: c,
+            };
+            out.push(stroke(
+                Point::new(x + 3.8, y + 8.4),
+                Point::new(x + 6.5, y + 11.0),
+            ));
+            out.push(stroke(
+                Point::new(x + 6.5, y + 11.0),
+                Point::new(x + 12.2, y + 4.8),
+            ));
         }
         let s = t.typography.body;
         out.push(DrawCommand::Text {
+            weight: 400,
+            line_height: None,
             origin: Point::new(
                 b.origin.x + BOX + t.spacing.sm,
                 b.origin.y + (b.size.height - s.line_height) / 2.0,

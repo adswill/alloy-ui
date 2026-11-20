@@ -73,4 +73,7 @@ pub enum Event {
     Resized(crate::geometry::Size),
     /// Redraw requested.
     RedrawRequested,
+    /// Animation/timer tick with monotonic milliseconds since app start.
+    /// Delivered only while some widget reports [`Widget::animating`](crate::Widget::animating).
+    Tick(u64),
 }
