@@ -110,6 +110,10 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::KeyPressed(key, Modifiers::default()));
         self
     }
+    /// The current frame's draw commands, for renderers and benchmarks.
+    pub fn draw_list(&self) -> alloy_ui_core::DrawList {
+        self.rt.draw()
+    }
     /// Render the current frame at 2x and encode it as PNG.
     pub fn png(&self) -> Vec<u8> {
         let (w, h) = (self.size.0 as u32 * 2, self.size.1 as u32 * 2);
