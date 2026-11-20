@@ -149,7 +149,9 @@ impl<M: 'static> Widget<M> for NumberInput<M> {
                 }
                 true
             }
-            Event::Scrolled { dy, .. } if b.contains(cursor) && self.ui.is_focused(Some(self.id)) => {
+            Event::Scrolled { dy, .. }
+                if b.contains(cursor) && self.ui.is_focused(Some(self.id)) =>
+            {
                 self.emit(self.shifted(dy.signum() as f64), out);
                 true
             }
@@ -235,7 +237,7 @@ impl<M: 'static> Widget<M> for NumberInput<M> {
         let label = self.label();
         let w = self.ui.metrics().width(&label, s.size);
         out.push(DrawCommand::Text {
-                family: alloy_ui_core::FontFamily::Sans,
+            family: alloy_ui_core::FontFamily::Sans,
             weight: 400,
             line_height: None,
             origin: Point::new(

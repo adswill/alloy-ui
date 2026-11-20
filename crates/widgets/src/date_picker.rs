@@ -6,7 +6,7 @@ use crate::{
     util::{self, focus_ring},
 };
 use alloy_ui_core::{
-    style::Style, Border, Color, DrawCommand, DrawList, Element, FontFamily, Event, Key, Layout,
+    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, FontFamily, Key, Layout,
     MouseButton, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
@@ -83,8 +83,18 @@ pub fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 const MONTHS: [&str; 12] = [
-    "January", "February", "March", "April", "May", "June", "July", "August", "September",
-    "October", "November", "December",
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
 ];
 const CELL: f32 = 34.0;
 const HEAD: f32 = 40.0;
@@ -148,7 +158,10 @@ impl<M: 'static> DatePicker<M> {
         match self.ui.slot(self.id) {
             Some(m) => Date::new(m.div_euclid(12) as i32, m.rem_euclid(12) as u32 + 1, 1),
             None => {
-                let d = self.selected.or(self.today).unwrap_or(Date::new(2026, 1, 1));
+                let d = self
+                    .selected
+                    .or(self.today)
+                    .unwrap_or(Date::new(2026, 1, 1));
                 Date::new(d.year, d.month, 1)
             }
         }
@@ -178,16 +191,21 @@ impl<M: 'static> DatePicker<M> {
         } else {
             pop.origin.x + 8.0
         };
-        Rectangle::new(Point::new(x, pop.origin.y + 8.0), Size::new(CELL, HEAD - 4.0))
+        Rectangle::new(
+            Point::new(x, pop.origin.y + 8.0),
+            Size::new(CELL, HEAD - 4.0),
+        )
     }
     /// The date in the cell under `p`, if any.
     fn day_at(&self, pop: &Rectangle, p: Point) -> Option<Date> {
         let first = self.shown();
-        (0..6).flat_map(|w| (0..7).map(move |d| (w, d))).find_map(|(w, wd)| {
-            let n = (w * 7 + wd) as i64 - first.weekday() as i64;
-            let date = Date::from_days(first.to_days() + n);
-            (date.month == first.month && self.cell(pop, w, wd).contains(p)).then_some(date)
-        })
+        (0..6)
+            .flat_map(|w| (0..7).map(move |d| (w, d)))
+            .find_map(|(w, wd)| {
+                let n = (w * 7 + wd) as i64 - first.weekday() as i64;
+                let date = Date::from_days(first.to_days() + n);
+                (date.month == first.month && self.cell(pop, w, wd).contains(p)).then_some(date)
+            })
     }
     fn click(&self, pop: &Rectangle, p: Point, on: &dyn Fn(Date) -> M, out: &mut Vec<M>) {
         if self.arrow(pop, false).contains(p) {
@@ -286,11 +304,12 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
-        self.ui.describe(Role::DatePicker, &self.placeholder, &b, |n| {
-            n.id = Some(self.id);
-            n.value = self.selected.map(|d| d.to_string());
-            n.enabled = self.on_select.is_some();
-        });
+        self.ui
+            .describe(Role::DatePicker, &self.placeholder, &b, |n| {
+                n.id = Some(self.id);
+                n.value = self.selected.map(|d| d.to_string());
+                n.enabled = self.on_select.is_some();
+            });
         let s = t.typography.body;
         let enabled = self.on_select.is_some();
         self.ui.register(self.id);
@@ -312,7 +331,11 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
         let hover = enabled && self.ui.hovered(&b);
         out.push(DrawCommand::Quad {
             bounds: b,
-            fill: if hover || !enabled { p.surface } else { p.surface_raised },
+            fill: if hover || !enabled {
+                p.surface
+            } else {
+                p.surface_raised
+            },
             radius: t.radii.medium,
             border: Some(Border {
                 color: if enabled { p.border_strong } else { p.border },
@@ -326,7 +349,13 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
             Some(d) => (d.to_string(), p.text_disabled),
             None => (self.placeholder.clone(), p.text_secondary),
         };
-        out.push(text(Point::new(b.origin.x + t.spacing.md, y), label, color, 400, s.size));
+        out.push(text(
+            Point::new(b.origin.x + t.spacing.md, y),
+            label,
+            color,
+            400,
+            s.size,
+        ));
         out.push(text(
             Point::new(b.origin.x + b.size.width - t.spacing.md - 10.0, y),
             "\u{25BE}".into(),
@@ -343,7 +372,10 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
             bounds: pop,
             fill: p.surface_raised,
             radius: t.radii.medium,
-            border: Some(Border { color: p.border, width: 1.0 }),
+            border: Some(Border {
+                color: p.border,
+                width: 1.0,
+            }),
             shadow: Some(t.elevation.medium),
         }];
         let m = self.ui.metrics();
@@ -359,7 +391,13 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
             Point::new(pop.origin.x, pop.origin.y + 8.0),
             Size::new(pop.size.width, HEAD - 4.0),
         );
-        c.push(text(centred(&head, &title, s.size, 600), title, p.text, 600, s.size));
+        c.push(text(
+            centred(&head, &title, s.size, 600),
+            title,
+            p.text,
+            600,
+            s.size,
+        ));
         for (next, g) in [(false, "\u{2039}"), (true, "\u{203A}")] {
             let r = self.arrow(&pop, next);
             if r.contains(self.ui.cursor()) {
@@ -371,13 +409,28 @@ impl<M: 'static> Widget<M> for DatePicker<M> {
                     shadow: None,
                 });
             }
-            c.push(text(centred(&r, g, s.size + 4.0, 500), g.into(), p.text, 500, s.size + 4.0));
+            c.push(text(
+                centred(&r, g, s.size + 4.0, 500),
+                g.into(),
+                p.text,
+                500,
+                s.size + 4.0,
+            ));
         }
-        for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].iter().enumerate() {
+        for (i, d) in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+            .iter()
+            .enumerate()
+        {
             let r = self.cell(&pop, 0, i as u32);
             let r = Rectangle::new(Point::new(r.origin.x, r.origin.y - CELL), r.size);
             let cs = t.typography.caption.size;
-            c.push(text(centred(&r, d, cs, 500), (*d).into(), p.text_secondary, 500, cs));
+            c.push(text(
+                centred(&r, d, cs, 500),
+                (*d).into(),
+                p.text_secondary,
+                500,
+                cs,
+            ));
         }
         let hot = self.day_at(&pop, self.ui.cursor());
         for w in 0..6u32 {

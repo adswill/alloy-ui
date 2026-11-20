@@ -2,22 +2,20 @@
 
 use crate::a11y::Role;
 use crate::{
-    text_edit::{
-        apply_key, history_key, index_of, line_col, sanitize, split_lines, Edit, KeyOutcome,
-    },
+    text_edit::{apply_key, history_key, sanitize, Edit, KeyOutcome},
     ui::Ui,
     util::{self, focus_ring},
 };
 use alloy_ui_core::{
-    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, Modifiers,
-    MouseButton, Point, Rectangle, Size, Widget,
+    style::Style, Border, DrawCommand, DrawList, Element, Event, FontFamily, Key, Layout,
+    Modifiers, MouseButton, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
 
 /// A scrolling multi-line text field. Controlled like [`crate::TextInput`]:
 /// you own the string (lines joined by `\n`) and get the new one from
 /// `on_input`. Enter inserts a newline; Tab is left to focus navigation.
-/// Lines do not wrap; long lines scroll sideways.
+/// Long lines wrap at word boundaries; `.wrap(false)` scrolls them sideways.
 pub struct TextEditor<M> {
     ui: Ui,
     id: u64,
@@ -26,6 +24,7 @@ pub struct TextEditor<M> {
     on_input: Option<Box<dyn Fn(String) -> M>>,
     width: Length,
     height: Length,
+    wrap: bool,
 }
 
 impl<M: 'static> TextEditor<M> {
@@ -39,6 +38,7 @@ impl<M: 'static> TextEditor<M> {
             on_input: None,
             width: Length::Fill(1),
             height: Length::Fill(1),
+            wrap: true,
         }
     }
     /// Hint shown while empty.
@@ -61,6 +61,11 @@ impl<M: 'static> TextEditor<M> {
         self.height = h;
         self
     }
+    /// Wrap long lines (default) or scroll them sideways.
+    pub fn wrap(mut self, wrap: bool) -> Self {
+        self.wrap = wrap;
+        self
+    }
     /// Box as an element.
     pub fn into_element(self) -> Element<M> {
         Element::new(self)
@@ -76,20 +81,29 @@ impl<M: 'static> TextEditor<M> {
         self.ui.theme().typography.code.line_height
     }
     fn width_of(&self, s: &str) -> f32 {
-        self.ui.metrics().width(s, self.size())
+        self.ui
+            .metrics()
+            .width_styled(s, self.size(), 400, FontFamily::Mono)
+    }
+    /// The visual rows of the text for a field of bounds `b`.
+    fn vis(&self, b: &Rectangle) -> Vis {
+        let w = self
+            .wrap
+            .then(|| (b.size.width - 2.0 * self.pad()).max(1.0));
+        Vis::new(&self.value, w, &|s| self.width_of(s))
     }
     fn max_scroll(&self, b: &Rectangle, lines: usize) -> f32 {
         (lines as f32 * self.line_h() - (b.size.height - 2.0 * self.pad())).max(0.0)
     }
     /// Character index under `p`.
-    fn index_at(&self, b: &Rectangle, lines: &[String], e_scroll_x: f32, p: Point) -> usize {
+    fn index_at(&self, b: &Rectangle, lines: &Vis, e_scroll_x: f32, p: Point) -> usize {
         let y = p.y - b.origin.y - self.pad() + self.ui.scroll_offset(self.id);
         let line = (y / self.line_h()).floor().max(0.0) as usize;
         let line = line.min(lines.len() - 1);
         let rel = p.x - b.origin.x - self.pad() + e_scroll_x;
         let mut best = (0usize, f32::MAX);
         let mut acc = String::new();
-        let chars: Vec<char> = lines[line].chars().collect();
+        let chars: Vec<char> = lines.rows[line].chars().collect();
         for i in 0..=chars.len() {
             if i > 0 {
                 acc.push(chars[i - 1]);
@@ -99,7 +113,7 @@ impl<M: 'static> TextEditor<M> {
                 best = (i, d);
             }
         }
-        index_of(lines, line, best.0)
+        lines.index_of(line, best.0)
     }
     /// Emit `new` as an edit, remembering the old state for undo.
     fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
@@ -144,7 +158,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         out: &mut Vec<M>,
     ) -> bool {
         let b = layout.bounds;
-        let lines = split_lines(&self.value);
+        let lines = self.vis(&b);
         let mut e = self.ui.edit(self.id);
         e.clamp(self.value.chars().count());
         let caret0 = e.caret;
@@ -188,10 +202,10 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                 true
             }
             Event::KeyPressed(k, m) if focused => {
-                let (line, col) = line_col(&lines, e.caret);
+                let (line, col) = lines.line_col(e.caret);
                 let vertical = |e: &mut Edit, to_line: usize| {
                     let goal = e.goal_col.unwrap_or(col);
-                    e.move_to(index_of(&lines, to_line, goal), m.shift);
+                    e.move_to(lines.index_of(to_line, goal), m.shift);
                     e.goal_col = Some(goal);
                 };
                 let page = (((b.size.height - 2.0 * self.pad()) / self.line_h()) as usize).max(1);
@@ -228,7 +242,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                             let to = if m.ctrl || m.logo {
                                 0
                             } else {
-                                index_of(&lines, line, 0)
+                                lines.index_of(line, 0)
                             };
                             e.move_to(to, m.shift);
                             e.goal_col = None;
@@ -238,7 +252,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                             let to = if m.ctrl || m.logo {
                                 self.value.chars().count()
                             } else {
-                                index_of(&lines, line, usize::MAX)
+                                lines.index_of(line, usize::MAX)
                             };
                             e.move_to(to, m.shift);
                             e.goal_col = None;
@@ -288,21 +302,22 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
-        self.ui.describe(Role::TextEditor, &self.placeholder, &b, |n| {
-            n.id = Some(self.id);
-            n.value = Some(self.value.clone());
-            n.enabled = self.on_input.is_some();
-        });
+        self.ui
+            .describe(Role::TextEditor, &self.placeholder, &b, |n| {
+                n.id = Some(self.id);
+                n.value = Some(self.value.clone());
+                n.enabled = self.on_input.is_some();
+            });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
         self.ui.register(self.id);
-        let lines = split_lines(&self.value);
+        let lines = self.vis(&b);
         let mut e = self.ui.edit(self.id);
         e.clamp(self.value.chars().count());
         let (pad, lh, size) = (self.pad(), self.line_h(), self.size());
-        let (cl, cc) = line_col(&lines, e.caret);
+        let (cl, cc) = lines.line_col(e.caret);
         let col_x = |line: usize, col: usize| -> f32 {
-            let s: String = lines[line].chars().take(col).collect();
+            let s: String = lines.rows[line].chars().take(col).collect();
             self.width_of(&s)
         };
 
@@ -329,7 +344,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         if caret_x < e.scroll_x {
             e.scroll_x = caret_x;
         }
-        e.scroll_x = e.scroll_x.max(0.0);
+        e.scroll_x = if self.wrap { 0.0 } else { e.scroll_x.max(0.0) };
         self.ui.set_edit(self.id, e.clone());
 
         if focused {
@@ -364,7 +379,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let oy = b.origin.y + pad - off;
         if self.value.is_empty() && e.preedit.is_empty() {
             out.push(DrawCommand::Text {
-                family: alloy_ui_core::FontFamily::Sans,
+                family: FontFamily::Mono,
                 weight: 400,
                 line_height: Some(lh),
                 origin: Point::new(ox, oy),
@@ -377,33 +392,35 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let first = (off / lh).floor() as usize;
         let last = (((off + view_h) / lh).ceil() as usize).min(lines.len());
         let (sa, sz) = e.range();
-        let (la, ca) = line_col(&lines, sa);
-        let (lz, cz) = line_col(&lines, sz);
-        for (i, line) in lines.iter().enumerate().take(last).skip(first) {
+        for (i, line) in lines.rows.iter().enumerate().take(last).skip(first) {
             let y = oy + i as f32 * lh;
-            if focused && e.has_selection() && i >= la && i <= lz {
-                let from = if i == la { col_x(i, ca) } else { 0.0 };
-                let mut to = if i == lz {
-                    col_x(i, cz)
-                } else {
-                    col_x(i, usize::MAX) + size * 0.4 // newline stub
-                };
-                if i == lz && i != la && cz == 0 {
-                    to = 0.0;
-                }
-                if to > from {
-                    out.push(DrawCommand::Quad {
-                        bounds: Rectangle::new(Point::new(ox + from, y), Size::new(to - from, lh)),
-                        fill: p.selection,
-                        radius: 0.0,
-                        border: None,
-                        shadow: None,
-                    });
+            if focused && e.has_selection() {
+                let (st, n) = (lines.starts[i], line.chars().count());
+                if sa <= st + n && sz >= st {
+                    let from = col_x(i, sa.saturating_sub(st));
+                    let to = if sz > st + n {
+                        // A hard break shows a small stub for the newline.
+                        col_x(i, n) + if lines.hard[i] { size * 0.4 } else { 0.0 }
+                    } else {
+                        col_x(i, sz - st)
+                    };
+                    if to > from {
+                        out.push(DrawCommand::Quad {
+                            bounds: Rectangle::new(
+                                Point::new(ox + from, y),
+                                Size::new(to - from, lh),
+                            ),
+                            fill: p.selection,
+                            radius: 0.0,
+                            border: None,
+                            shadow: None,
+                        });
+                    }
                 }
             }
             if !line.is_empty() {
                 out.push(DrawCommand::Text {
-                    family: alloy_ui_core::FontFamily::Sans,
+                    family: FontFamily::Mono,
                     weight: 400,
                     line_height: Some(lh),
                     origin: Point::new(ox, y),
@@ -419,7 +436,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             let w = self.width_of(&e.preedit);
             let y = oy + cl as f32 * lh;
             out.push(DrawCommand::Text {
-                family: alloy_ui_core::FontFamily::Sans,
+                family: FontFamily::Mono,
                 weight: 400,
                 line_height: Some(lh),
                 origin: Point::new(x, y),
@@ -450,5 +467,105 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             });
         }
         out.push(DrawCommand::PopClip);
+    }
+}
+
+/// The text laid out in visual rows. A soft row (a wrap) continues straight
+/// into the next in character indices; a hard row is followed by a `\n`.
+struct Vis {
+    rows: Vec<String>,
+    starts: Vec<usize>,
+    hard: Vec<bool>,
+}
+
+impl Vis {
+    fn new(value: &str, width: Option<f32>, w: &dyn Fn(&str) -> f32) -> Self {
+        let mut rows: Vec<String> = Vec::new();
+        let mut hard = Vec::new();
+        for para in value.split('\n') {
+            let mut row = String::new();
+            for word in para.split_inclusive(' ') {
+                let Some(max) = width else {
+                    row.push_str(word);
+                    continue;
+                };
+                if !row.is_empty() && w(format!("{row}{word}").trim_end()) > max {
+                    rows.push(std::mem::take(&mut row));
+                    hard.push(false);
+                }
+                if w(word.trim_end()) > max {
+                    for ch in word.chars() {
+                        if !row.is_empty() && w(&format!("{row}{ch}")) > max {
+                            rows.push(std::mem::take(&mut row));
+                            hard.push(false);
+                        }
+                        row.push(ch);
+                    }
+                } else {
+                    row.push_str(word);
+                }
+            }
+            rows.push(row);
+            hard.push(true);
+        }
+        let mut starts = Vec::with_capacity(rows.len());
+        let mut at = 0;
+        for (r, h) in rows.iter().zip(&hard) {
+            starts.push(at);
+            at += r.chars().count() + *h as usize;
+        }
+        Self { rows, starts, hard }
+    }
+    fn len(&self) -> usize {
+        self.rows.len()
+    }
+    /// The `(row, column)` of character index `idx`.
+    fn line_col(&self, idx: usize) -> (usize, usize) {
+        let i = self.starts.partition_point(|&s| s <= idx).saturating_sub(1);
+        (i, idx - self.starts[i])
+    }
+    /// The character index of `(row, col)`. On a wrapped row the column stops
+    /// before the break so the caret stays on that row.
+    fn index_of(&self, row: usize, col: usize) -> usize {
+        let row = row.min(self.len() - 1);
+        let n = self.rows[row].chars().count();
+        let max = if self.hard[row] {
+            n
+        } else {
+            n.saturating_sub(1)
+        };
+        self.starts[row] + col.min(max)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Vis;
+
+    #[test]
+    fn row_math_round_trips() {
+        let v = Vis::new("ab\n\ncde", None, &|s| s.len() as f32);
+        assert_eq!(v.rows, ["ab", "", "cde"]);
+        for i in 0..=7 {
+            let (r, c) = v.line_col(i);
+            assert_eq!(v.index_of(r, c), i);
+        }
+        assert_eq!(v.index_of(0, 50), 2, "column clamps to row length");
+        assert_eq!(v.index_of(9, 0), 4, "row clamps to the last");
+    }
+
+    #[test]
+    fn soft_wraps_keep_every_character_and_stay_on_their_row() {
+        let v = Vis::new("aa bb cc dd", Some(5.0), &|s| s.len() as f32);
+        assert_eq!(v.rows.concat(), "aa bb cc dd");
+        assert_eq!(v.rows, ["aa bb ", "cc dd"]);
+        assert_eq!(v.line_col(6), (1, 0), "wrap point belongs to the next row");
+        assert_eq!(
+            v.index_of(0, 99),
+            5,
+            "End on a soft row stops before the break"
+        );
+        let long = Vis::new("abcdefgh", Some(3.0), &|s| s.len() as f32);
+        assert_eq!(long.rows, ["abc", "def", "gh"]);
     }
 }

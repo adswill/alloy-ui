@@ -213,11 +213,12 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
-        self.ui.describe(Role::TextInput, &self.placeholder, &b, |n| {
-            n.id = Some(self.id);
-            n.value = Some(self.value.clone());
-            n.enabled = self.on_input.is_some();
-        });
+        self.ui
+            .describe(Role::TextInput, &self.placeholder, &b, |n| {
+                n.id = Some(self.id);
+                n.value = Some(self.value.clone());
+                n.enabled = self.on_input.is_some();
+            });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
         self.ui.register(self.id);

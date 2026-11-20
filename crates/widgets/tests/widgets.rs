@@ -1121,9 +1121,15 @@ fn table_columns_line_up_and_rows_select() {
 fn date_math_round_trips() {
     assert_eq!(Date::new(1970, 1, 1).weekday(), 3); // Thursday
     assert_eq!(Date::new(2026, 11, 20).weekday(), 4); // Friday
-    assert_eq!(Date::from_days(Date::new(2024, 2, 29).to_days()), Date::new(2024, 2, 29));
+    assert_eq!(
+        Date::from_days(Date::new(2024, 2, 29).to_days()),
+        Date::new(2024, 2, 29)
+    );
     assert_eq!(Date::new(2024, 1, 31).add_months(1), Date::new(2024, 2, 29));
-    assert_eq!(Date::new(2024, 12, 15).add_months(1), Date::new(2025, 1, 15));
+    assert_eq!(
+        Date::new(2024, 12, 15).add_months(1),
+        Date::new(2025, 1, 15)
+    );
     assert_eq!(days_in_month(1900, 2), 28);
     assert_eq!(Date::new(2026, 3, 5).to_string(), "2026-03-05");
 }
@@ -1140,20 +1146,30 @@ fn number_input_steps_and_clamps() {
     };
     let mut h = Harness::new(&ui, mk(0.3), 200.0, 40.0);
     let b = h.layout.children[0].bounds;
-    assert_eq!(h.click(b.origin.x + b.size.width - 5.0, 10.0), vec![Msg::Num(0.4)]);
+    assert_eq!(
+        h.click(b.origin.x + b.size.width - 5.0, 10.0),
+        vec![Msg::Num(0.4)]
+    );
     assert_eq!(h.click(5.0, 10.0), vec![Msg::Num(0.2)]);
     assert_eq!(h.key(Key::Named("ArrowUp".into())), vec![Msg::Num(0.4)]);
     assert_eq!(h.key(Key::Named("End".into())), vec![Msg::Num(1.0)]);
     let mut h = Harness::new(&ui, mk(1.0), 200.0, 40.0);
     ui.set_focus(Some(20));
-    assert!(h.key(Key::Named("ArrowUp".into())).is_empty(), "clamped at max");
+    assert!(
+        h.key(Key::Named("ArrowUp".into())).is_empty(),
+        "clamped at max"
+    );
 }
 
 #[test]
 fn date_picker_opens_navigates_and_selects() {
     let ui = ui();
     let sel = Date::new(2026, 11, 20);
-    let mk = |ui: &Ui| DatePicker::new(ui, 30, Some(sel)).on_select(Msg::Day).into_element();
+    let mk = |ui: &Ui| {
+        DatePicker::new(ui, 30, Some(sel))
+            .on_select(Msg::Day)
+            .into_element()
+    };
     let mut h = Harness::new(&ui, mk(&ui), 400.0, 400.0);
     assert!(h.click(5.0, 5.0).is_empty());
     assert_eq!(ui.popup(), Some(30));
@@ -1164,23 +1180,43 @@ fn date_picker_opens_navigates_and_selects() {
     h.click(px + 7.0 * 34.0 + 16.0 - 8.0 - 17.0, py + 20.0);
     let _ = h.draw();
     // 2026-12-01 is a Tuesday: first cell of row 0 is Monday, so the 1st is column 1.
-    let cell = |w: f32, d: f32| (px + 8.0 + d * 34.0 + 17.0, py + 8.0 + 40.0 + (w + 1.0) * 34.0 + 17.0);
+    let cell = |w: f32, d: f32| {
+        (
+            px + 8.0 + d * 34.0 + 17.0,
+            py + 8.0 + 40.0 + (w + 1.0) * 34.0 + 17.0,
+        )
+    };
     let (x, y) = cell(0.0, 1.0);
     assert_eq!(h.click(x, y), vec![Msg::Day(Date::new(2026, 12, 1))]);
     assert_eq!(ui.popup(), None);
     // keyboard: arrow moves a day, PageDown a month
     ui.set_focus(Some(30));
-    assert_eq!(h.key(Key::Named("ArrowRight".into())), vec![Msg::Day(Date::new(2026, 11, 21))]);
-    assert_eq!(h.key(Key::Named("PageDown".into())), vec![Msg::Day(Date::new(2026, 12, 20))]);
+    assert_eq!(
+        h.key(Key::Named("ArrowRight".into())),
+        vec![Msg::Day(Date::new(2026, 11, 21))]
+    );
+    assert_eq!(
+        h.key(Key::Named("PageDown".into())),
+        vec![Msg::Day(Date::new(2026, 12, 20))]
+    );
 }
 
 #[test]
 fn accessibility_tree_lists_roles_labels_values_and_focus() {
     let ui = ui();
     let col = Column::new(vec![
-        Button::new(&ui, "Save").on_press(Msg::Clicked).id(1).into_element(),
-        Checkbox::new(&ui, "Dark", true).on_toggle(Msg::Toggled).id(2).into_element(),
-        TextInput::new(&ui, 3, "hi").placeholder("Name").on_input(Msg::Text).into_element(),
+        Button::new(&ui, "Save")
+            .on_press(Msg::Clicked)
+            .id(1)
+            .into_element(),
+        Checkbox::new(&ui, "Dark", true)
+            .on_toggle(Msg::Toggled)
+            .id(2)
+            .into_element(),
+        TextInput::new(&ui, 3, "hi")
+            .placeholder("Name")
+            .on_input(Msg::Text)
+            .into_element(),
         Button::<Msg>::new(&ui, "Locked").into_element(),
     ])
     .into_element();
@@ -1189,9 +1225,70 @@ fn accessibility_tree_lists_roles_labels_values_and_focus() {
     let _ = h.draw();
     let n = ui.accessibility();
     let roles: Vec<_> = n.iter().map(|n| n.role).collect();
-    assert_eq!(roles, [Role::Button, Role::Checkbox, Role::TextInput, Role::Button]);
+    assert_eq!(
+        roles,
+        [Role::Button, Role::Checkbox, Role::TextInput, Role::Button]
+    );
     assert_eq!(n[0].label, "Save");
     assert!(n[1].focused && n[1].checked == Some(true));
     assert_eq!(n[2].value.as_deref(), Some("hi"));
     assert!(!n[3].enabled);
+}
+
+#[test]
+fn table_sort_headers_emit_column_and_show_arrow() {
+    let ui = ui();
+    let t = Table::new(
+        &ui,
+        40,
+        vec![
+            TableColumn::new("Name", Length::Fill(1)),
+            TableColumn::new("Size", Length::Fixed(60.0)).right(),
+        ],
+        Msg::Picked,
+    )
+    .on_sort(Msg::Picked)
+    .sorted(1, false)
+    .row(vec![
+        Text::new(&ui, "a").into_element(),
+        Text::new(&ui, "1").into_element(),
+    ])
+    .into_element();
+    let mut h = Harness::new(&ui, t, 300.0, 200.0);
+    assert!(h.texts().contains(&"\u{2193}".to_string()));
+    assert_eq!(h.click(250.0, 12.0), vec![Msg::Picked(1)]);
+    assert_eq!(h.click(20.0, 12.0), vec![Msg::Picked(0)]);
+}
+
+#[test]
+fn text_editor_wraps_long_lines_and_navigates_visual_rows() {
+    let ui = ui();
+    let long = "alpha beta gamma delta epsilon zeta eta theta iota kappa".to_string();
+    let mk = |wrap| {
+        TextEditor::new(&ui, 50, long.clone())
+            .wrap(wrap)
+            .on_input(Msg::Text)
+            .into_element()
+    };
+    let rows = |h: &Harness| {
+        h.draw()
+            .0
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Text { .. }))
+            .count()
+    };
+    let narrow = Harness::new(&ui, mk(true), 120.0, 200.0);
+    let flat = Harness::new(&ui, mk(false), 120.0, 200.0);
+    assert!(rows(&narrow) > 2, "wrapped into several rows");
+    assert_eq!(rows(&flat), 1);
+    // Down moves one visual row, not to the end of the paragraph.
+    let mut h = narrow;
+    ui.set_focus(Some(50));
+    h.key(Key::Named("Home".into()));
+    h.key(Key::Named("ArrowDown".into()));
+    assert_eq!(h.key(Key::Character("X".into())), Vec::<Msg>::new());
+    let out = h.send(Event::TextInput("X".into()));
+    let Msg::Text(v) = &out[0] else { panic!() };
+    let at = v.find('X').unwrap();
+    assert!(at > 0 && at < 20, "caret on second row, got {at}: {v}");
 }
