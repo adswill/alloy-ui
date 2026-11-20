@@ -1,5 +1,6 @@
 //! Multi-line text editor field.
 
+use crate::a11y::Role;
 use crate::{
     text_edit::{
         apply_key, history_key, index_of, line_col, sanitize, split_lines, Edit, KeyOutcome,
@@ -287,6 +288,11 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::TextEditor, &self.placeholder, &b, |n| {
+            n.id = Some(self.id);
+            n.value = Some(self.value.clone());
+            n.enabled = self.on_input.is_some();
+        });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
         self.ui.register(self.id);

@@ -1,5 +1,6 @@
 //! Determinate progress bar.
 
+use crate::a11y::Role;
 use crate::{ui::Ui, util};
 use alloy_ui_core::{
     style::Style, DrawCommand, DrawList, Element, Layout, Point, Rectangle, Size, Widget,
@@ -50,6 +51,9 @@ impl<M> Widget<M> for ProgressBar {
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let t = self.ui.theme();
         let b = layout.bounds;
+        self.ui.describe(Role::ProgressBar, "", &b, |n| {
+            n.value = Some(format!("{:.0}%", self.fraction * 100.0));
+        });
         let r = b.size.height / 2.0;
         out.push(DrawCommand::Quad {
             bounds: b,

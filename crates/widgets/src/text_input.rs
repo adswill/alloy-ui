@@ -1,5 +1,6 @@
 //! Single-line text field with selection, clipboard and IME preedit.
 
+use crate::a11y::Role;
 use crate::{
     text_edit::{apply_key, history_key, sanitize, Edit, KeyOutcome},
     ui::Ui,
@@ -212,6 +213,11 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::TextInput, &self.placeholder, &b, |n| {
+            n.id = Some(self.id);
+            n.value = Some(self.value.clone());
+            n.enabled = self.on_input.is_some();
+        });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
         self.ui.register(self.id);

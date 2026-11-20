@@ -14,6 +14,7 @@
 //! metrics) and emit `alloy_ui_core::DrawCommand`s.
 #![warn(missing_docs)]
 
+mod a11y;
 mod button;
 mod checkbox;
 mod container;
@@ -39,6 +40,7 @@ mod tooltip;
 mod ui;
 mod util;
 
+pub use a11y::{A11yNode, Role};
 pub use button::{Button, Variant};
 pub use checkbox::Checkbox;
 pub use container::Container;

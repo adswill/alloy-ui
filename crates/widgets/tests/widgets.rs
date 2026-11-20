@@ -1173,3 +1173,25 @@ fn date_picker_opens_navigates_and_selects() {
     assert_eq!(h.key(Key::Named("ArrowRight".into())), vec![Msg::Day(Date::new(2026, 11, 21))]);
     assert_eq!(h.key(Key::Named("PageDown".into())), vec![Msg::Day(Date::new(2026, 12, 20))]);
 }
+
+#[test]
+fn accessibility_tree_lists_roles_labels_values_and_focus() {
+    let ui = ui();
+    let col = Column::new(vec![
+        Button::new(&ui, "Save").on_press(Msg::Clicked).id(1).into_element(),
+        Checkbox::new(&ui, "Dark", true).on_toggle(Msg::Toggled).id(2).into_element(),
+        TextInput::new(&ui, 3, "hi").placeholder("Name").on_input(Msg::Text).into_element(),
+        Button::<Msg>::new(&ui, "Locked").into_element(),
+    ])
+    .into_element();
+    let h = Harness::new(&ui, col, 300.0, 300.0);
+    ui.set_focus(Some(2));
+    let _ = h.draw();
+    let n = ui.accessibility();
+    let roles: Vec<_> = n.iter().map(|n| n.role).collect();
+    assert_eq!(roles, [Role::Button, Role::Checkbox, Role::TextInput, Role::Button]);
+    assert_eq!(n[0].label, "Save");
+    assert!(n[1].focused && n[1].checked == Some(true));
+    assert_eq!(n[2].value.as_deref(), Some("hi"));
+    assert!(!n[3].enabled);
+}

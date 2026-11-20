@@ -1,6 +1,7 @@
 //! Persistent UI state shared by widgets, text metrics and the clipboard seam.
 
 use crate::{
+    a11y::{A11yNode, Role},
     text_edit::{Edit, History},
     util,
 };
@@ -92,6 +93,7 @@ struct Inner {
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
+    a11y: Vec<A11yNode>,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -151,6 +153,7 @@ impl Ui {
             clip: None,
             histories: HashMap::new(),
             slots: HashMap::new(),
+            a11y: Vec::new(),
         })))
     }
 
@@ -216,6 +219,27 @@ impl Ui {
         };
         s.focused = Some(s.order[next as usize]);
     }
+    /// Record an accessibility node for the widget being drawn; `f` fills in
+    /// the details. Focus state is filled from `Ui`.
+    pub(crate) fn describe(
+        &self,
+        role: Role,
+        label: &str,
+        bounds: &Rectangle,
+        f: impl FnOnce(&mut A11yNode),
+    ) {
+        if self.culled(bounds) {
+            return;
+        }
+        let mut n = A11yNode::new(role, label, *bounds);
+        f(&mut n);
+        n.focused = n.id.is_some() && self.focused() == n.id;
+        self.0.borrow_mut().a11y.push(n);
+    }
+    /// The accessibility nodes of the last drawn frame, in reading order.
+    pub fn accessibility(&self) -> Vec<A11yNode> {
+        self.0.borrow().a11y.clone()
+    }
     /// Focusable widgets register themselves while drawing, in tab order.
     pub(crate) fn register(&self, id: u64) {
         let mut s = self.0.borrow_mut();
@@ -228,6 +252,7 @@ impl Ui {
         s.order.clear();
         s.overlay.clear();
         s.regions.clear();
+        s.a11y.clear();
     }
 
     /// The innermost scroll viewport being drawn, if any. Widgets that are

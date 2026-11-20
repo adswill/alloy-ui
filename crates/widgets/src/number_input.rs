@@ -1,5 +1,6 @@
 //! Numeric stepper.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{self, focus_ring, key_of},
@@ -172,6 +173,11 @@ impl<M: 'static> Widget<M> for NumberInput<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::SpinButton, &self.unit, &b, |n| {
+            n.id = Some(self.id);
+            n.value = Some(self.label());
+            n.enabled = self.on_change.is_some();
+        });
         let s = t.typography.body;
         let enabled = self.on_change.is_some();
         self.ui.register(self.id);

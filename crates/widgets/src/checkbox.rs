@@ -1,5 +1,6 @@
 //! Checkbox with a label.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{focus_ring, key_of},
@@ -99,6 +100,11 @@ impl<M: 'static> Widget<M> for Checkbox<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui.describe(Role::Checkbox, &self.label, &b, |n| {
+            n.id = self.id;
+            n.checked = Some(self.checked);
+            n.enabled = self.on_toggle.is_some();
+        });
         let enabled = self.on_toggle.is_some();
         let hover = enabled && self.ui.hovered(&b);
         let bx = Rectangle::new(
