@@ -1,6 +1,7 @@
 //! Persistent UI state shared by widgets, text metrics and the clipboard seam.
 
 use crate::{
+    a11y::{A11yNode, Role},
     text_edit::{Edit, History},
     util,
 };
@@ -52,6 +53,49 @@ impl TextMetrics for ApproxMetrics {
     }
 }
 
+/// Memoises a [`TextMetrics`]: shaping a string costs far more than a hash
+/// lookup, and a no-op event re-measures every visible label.
+struct CachedMetrics {
+    inner: Rc<dyn TextMetrics>,
+    seen: RefCell<HashMap<u64, f32>>,
+}
+
+impl CachedMetrics {
+    const CAP: usize = 8192;
+    fn memo(&self, key: impl std::hash::Hash, f: impl FnOnce() -> f32) -> f32 {
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        key.hash(&mut h);
+        let k = h.finish();
+        if let Some(w) = self.seen.borrow().get(&k) {
+            return *w;
+        }
+        let w = f();
+        let mut m = self.seen.borrow_mut();
+        if m.len() >= Self::CAP {
+            m.clear();
+        }
+        m.insert(k, w);
+        w
+    }
+}
+
+impl TextMetrics for CachedMetrics {
+    fn width(&self, text: &str, size: f32) -> f32 {
+        self.memo((text, size.to_bits()), || self.inner.width(text, size))
+    }
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        family: alloy_ui_core::FontFamily,
+    ) -> f32 {
+        let key = (text, size.to_bits(), weight, family as u8);
+        self.memo(key, || self.inner.width_styled(text, size, weight, family))
+    }
+}
+
 /// Clipboard seam. The platform crate supplies the real one.
 pub trait Clipboard {
     /// Current text contents.
@@ -91,6 +135,8 @@ struct Inner {
     hit: Option<(u64, Point)>,
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
+    slots: HashMap<u64, i64>,
+    a11y: Vec<A11yNode>,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -149,6 +195,8 @@ impl Ui {
             hit: None,
             clip: None,
             histories: HashMap::new(),
+            slots: HashMap::new(),
+            a11y: Vec::new(),
         })))
     }
 
@@ -165,8 +213,12 @@ impl Ui {
         self.0.borrow().metrics.clone()
     }
     /// Install renderer-backed text metrics.
+    /// Widths are cached, so install it once, after fonts are loaded.
     pub fn set_metrics(&self, m: Rc<dyn TextMetrics>) {
-        self.0.borrow_mut().metrics = m;
+        self.0.borrow_mut().metrics = Rc::new(CachedMetrics {
+            inner: m,
+            seen: RefCell::default(),
+        });
     }
     /// Clipboard in use.
     pub fn clipboard(&self) -> Rc<dyn Clipboard> {
@@ -214,6 +266,27 @@ impl Ui {
         };
         s.focused = Some(s.order[next as usize]);
     }
+    /// Record an accessibility node for the widget being drawn; `f` fills in
+    /// the details. Focus state is filled from `Ui`.
+    pub(crate) fn describe(
+        &self,
+        role: Role,
+        label: &str,
+        bounds: &Rectangle,
+        f: impl FnOnce(&mut A11yNode),
+    ) {
+        if self.culled(bounds) {
+            return;
+        }
+        let mut n = A11yNode::new(role, label, *bounds);
+        f(&mut n);
+        n.focused = n.id.is_some() && self.focused() == n.id;
+        self.0.borrow_mut().a11y.push(n);
+    }
+    /// The accessibility nodes of the last drawn frame, in reading order.
+    pub fn accessibility(&self) -> Vec<A11yNode> {
+        self.0.borrow().a11y.clone()
+    }
     /// Focusable widgets register themselves while drawing, in tab order.
     pub(crate) fn register(&self, id: u64) {
         let mut s = self.0.borrow_mut();
@@ -226,6 +299,7 @@ impl Ui {
         s.order.clear();
         s.overlay.clear();
         s.regions.clear();
+        s.a11y.clear();
     }
 
     /// The innermost scroll viewport being drawn, if any. Widgets that are
@@ -382,6 +456,18 @@ impl Ui {
     /// Run `f` on the undo history of text field `id`. `f` must not call back into `Ui`.
     pub(crate) fn with_history<R>(&self, id: u64, f: impl FnOnce(&mut History) -> R) -> R {
         f(self.0.borrow_mut().histories.entry(id).or_default())
+    }
+
+    /// A small integer remembered for widget `id` (e.g. the month a date picker shows).
+    pub(crate) fn slot(&self, id: u64) -> Option<i64> {
+        self.0.borrow().slots.get(&id).copied()
+    }
+    pub(crate) fn set_slot(&self, id: u64, v: Option<i64>) {
+        let mut s = self.0.borrow_mut();
+        match v {
+            Some(v) => s.slots.insert(id, v),
+            None => s.slots.remove(&id),
+        };
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {

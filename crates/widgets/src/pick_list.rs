@@ -1,5 +1,6 @@
 //! Drop-down selection.
 
+use crate::a11y::Role;
 use crate::{
     ui::Ui,
     util::{self, focus_ring},
@@ -177,6 +178,12 @@ impl<M: 'static> Widget<M> for PickList<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui
+            .describe(Role::ComboBox, &self.placeholder, &b, |n| {
+                n.id = Some(self.id);
+                n.value = self.selected.and_then(|i| self.options.get(i)).cloned();
+                n.enabled = self.on_select.is_some();
+            });
         let enabled = self.on_select.is_some();
         let s = t.typography.body;
         self.ui.register(self.id);

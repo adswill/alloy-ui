@@ -202,40 +202,14 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
                 }
             })
             .collect();
-        let mut header: Vec<_> = t
-            .cols
-            .iter()
-            .enumerate()
-            .map(|(i, c)| {
-                let arrow = match sort {
-                    Some((s, false)) if s == i => " \u{2191}",
-                    Some((s, true)) if s == i => " \u{2193}",
-                    _ => "",
-                };
-                let sort = t.sort.clone();
-                let act = Act::new(move |_: &mut S| {
-                    sort.with(|v| {
-                        *v = match *v {
-                            Some((s, false)) if s == i => Some((i, true)),
-                            Some((s, true)) if s == i => None,
-                            _ => Some((i, false)),
-                        }
-                    })
-                });
-                button(format!("{}{arrow}", c.title)).ghost().on(act).into()
-            })
-            .collect::<Vec<Node<Act<S>>>>()
-            .into_iter()
-            .map(|n| n.0)
-            .collect();
         if !t.actions.is_empty() {
             columns.push(w::TableColumn::new(
                 "",
                 Length::Fixed(76.0 * t.actions.len() as f32),
             ));
-            header.push(Node::<Act<S>>::from(caption("")).0);
         }
 
+        let sort_cell = t.sort.clone();
         let order_sel = order.clone();
         let on_select = t.on_select.clone();
         let mut grid = w::Table::new(&cx::ui(), t.id, columns, move |pos| {
@@ -246,8 +220,22 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
                 }
             })
         })
-        .header_cells(header)
+        .on_sort(move |i| {
+            let sort = sort_cell.clone();
+            Act::new(move |_: &mut S| {
+                sort.with(|v| {
+                    *v = match *v {
+                        Some((s, false)) if s == i => Some((i, true)),
+                        Some((s, true)) if s == i => None,
+                        _ => Some((i, false)),
+                    }
+                })
+            })
+        })
         .selected(t.selected.and_then(|s| order.iter().position(|&i| i == s)));
+        if let Some((c, desc)) = sort {
+            grid = grid.sorted(c, !desc);
+        }
         for &i in &order {
             let mut row: Vec<_> = cells[i]
                 .iter()

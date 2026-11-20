@@ -299,3 +299,13 @@ pub fn clear_tray() {
         }
     });
 }
+
+/// Connect `window` to NSAccessibility (see `macos_access`).
+pub fn new_access_adapter(
+    window: &std::sync::Arc<winit::window::Window>,
+    _key: crate::shell::WindowKey,
+    sink: crate::access::ActionSink,
+) -> Option<Box<dyn crate::access::AccessAdapter>> {
+    let a = super::macos_access::MacAdapter::new(window, sink)?;
+    Some(Box::new(a))
+}

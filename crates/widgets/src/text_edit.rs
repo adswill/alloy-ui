@@ -2,8 +2,10 @@
 
 use crate::ui::Clipboard;
 use alloy_ui_core::{Key, Modifiers};
+use unicode_segmentation::UnicodeSegmentation;
 
-/// Caret and selection state of one text field, in `char` indices.
+/// Caret and selection state of one text field. Indices count `char`s but
+/// always sit on grapheme-cluster boundaries (see [`prev_grapheme`]).
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Edit {
     /// Caret position.
@@ -18,6 +20,12 @@ pub struct Edit {
     pub goal_col: Option<usize>,
     /// Time of the last edit or caret move; the caret blink restarts from it.
     pub blink_epoch: u64,
+    /// Consecutive mouse presses at about the same spot (1 single, 2 double, 3 triple).
+    pub clicks: u8,
+    /// Time of the last mouse press, for multi-click detection.
+    pub click_ms: u64,
+    /// Position of the last mouse press.
+    pub click_at: (f32, f32),
 }
 
 impl Edit {
@@ -61,15 +69,15 @@ impl Edit {
         self.anchor = self.caret;
         out
     }
-    /// Delete the selection, or one character before (`forward == false`)
+    /// Delete the selection, or one grapheme cluster before (`forward == false`)
     /// or after the caret. Returns the new value, or `None` if nothing changed.
     pub fn delete(&mut self, value: &str, forward: bool) -> Option<String> {
         let len = value.chars().count();
         if !self.has_selection() {
             if forward && self.caret < len {
-                self.anchor = self.caret + 1;
+                self.anchor = next_grapheme(value, self.caret);
             } else if !forward && self.caret > 0 {
-                self.anchor = self.caret - 1;
+                self.anchor = prev_grapheme(value, self.caret);
             } else {
                 return None;
             }
@@ -104,7 +112,9 @@ pub(crate) fn apply_key(
 ) -> KeyOutcome {
     use KeyOutcome::*;
     let len = value.chars().count();
-    let word = m.alt || m.ctrl;
+    let mac = is_mac();
+    let word = word_mod(m);
+    let rtl = line_is_rtl(value, e.caret);
     let changed = |v: Option<String>| v.map_or(Handled, Changed);
     match key {
         Key::Backspace if editable => {
@@ -114,28 +124,33 @@ pub(crate) fn apply_key(
             changed(e.delete(value, false))
         }
         Key::Named(n) => match n.as_str() {
-            "ArrowLeft" => {
+            "ArrowLeft" | "ArrowRight" => {
+                let left = n == "ArrowLeft";
+                // Plain arrows are visual: in a right-to-left line Left goes
+                // logically forward. Word and line moves stay logical.
+                let back = left != rtl;
                 let to = if e.has_selection() && !m.shift {
-                    e.range().0
+                    if back {
+                        e.range().0
+                    } else {
+                        e.range().1
+                    }
                 } else if m.logo {
-                    0
+                    if left {
+                        0
+                    } else {
+                        len
+                    }
                 } else if word {
-                    word_left(value, e.caret)
+                    if left {
+                        word_left(value, e.caret)
+                    } else {
+                        word_right(value, e.caret)
+                    }
+                } else if back {
+                    prev_grapheme(value, e.caret)
                 } else {
-                    e.caret.saturating_sub(1)
-                };
-                e.move_to(to, m.shift);
-                Handled
-            }
-            "ArrowRight" => {
-                let to = if e.has_selection() && !m.shift {
-                    e.range().1
-                } else if m.logo {
-                    len
-                } else if word {
-                    word_right(value, e.caret)
-                } else {
-                    (e.caret + 1).min(len)
+                    next_grapheme(value, e.caret)
                 };
                 e.move_to(to, m.shift);
                 Handled
@@ -156,7 +171,13 @@ pub(crate) fn apply_key(
             }
             _ => Ignored,
         },
-        Key::Character(c) if m.ctrl || m.logo => match c.to_lowercase().as_str() {
+        // Cocoa's Emacs bindings: Ctrl+A / Ctrl+E are line start / end.
+        Key::Character(c) if mac && m.ctrl && !m.logo && matches!(c.as_str(), "a" | "e") => {
+            let (start, end) = line_range(value, e.caret);
+            e.move_to(if c == "a" { start } else { end }, m.shift);
+            Handled
+        }
+        Key::Character(c) if primary(m) => match c.to_lowercase().as_str() {
             "a" => {
                 e.select_all(len);
                 Handled
@@ -184,11 +205,49 @@ pub(crate) fn apply_key(
     }
 }
 
-/// Strip control characters (keeping newlines when `multiline`).
+/// True when compiled for macOS, whose text shortcuts differ from the rest.
+pub(crate) fn is_mac() -> bool {
+    cfg!(target_os = "macos")
+}
+
+/// The shortcut modifier: Cmd on macOS, Ctrl elsewhere. Super off macOS is
+/// the window manager's, and Ctrl+Alt there is AltGr, so neither counts.
+pub(crate) fn primary(m: &Modifiers) -> bool {
+    if is_mac() {
+        m.logo && !m.ctrl
+    } else {
+        m.ctrl && !m.alt && !m.logo
+    }
+}
+
+/// The word-wise movement modifier: Option on macOS, Ctrl elsewhere.
+pub(crate) fn word_mod(m: &Modifiers) -> bool {
+    if is_mac() {
+        m.alt && !m.ctrl && !m.logo
+    } else {
+        m.ctrl && !m.alt && !m.logo
+    }
+}
+
+/// Strip control characters (keeping newlines when `multiline`). CRLF and a
+/// lone CR (classic Mac line ending) both count as one newline.
 pub(crate) fn sanitize(text: &str, multiline: bool) -> String {
-    text.chars()
-        .filter(|c| !c.is_control() || (multiline && *c == '\n'))
-        .collect()
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        let c = if c == '\r' {
+            if chars.peek() == Some(&'\n') {
+                chars.next();
+            }
+            '\n'
+        } else {
+            c
+        };
+        if !c.is_control() || (multiline && c == '\n') {
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Undo/redo stack of one text field. Runs of single-character typing within
@@ -247,13 +306,13 @@ pub(crate) fn history_key(
     let Key::Character(c) = key else {
         return None;
     };
-    if !(m.ctrl || m.logo) {
+    if !primary(m) {
         return None;
     }
     let step = match c.to_lowercase().as_str() {
         "z" if m.shift => h.redo(value, e.caret),
         "z" => h.undo(value, e.caret),
-        "y" if m.ctrl && !m.logo => h.redo(value, e.caret),
+        "y" if !is_mac() => h.redo(value, e.caret),
         _ => return None,
     };
     // A key that is undo/redo but has nothing to do still counts as handled.
@@ -263,56 +322,132 @@ pub(crate) fn history_key(
     Some(v)
 }
 
-/// Split `value` into lines (a trailing newline yields a final empty line).
-pub fn split_lines(value: &str) -> Vec<String> {
-    value.split('\n').map(str::to_owned).collect()
+/// Byte offset of char index `idx` (the end when past it).
+fn byte_of(value: &str, idx: usize) -> usize {
+    value
+        .char_indices()
+        .nth(idx)
+        .map_or(value.len(), |(b, _)| b)
 }
 
-/// The `(line, column)` of character index `idx`.
-pub fn line_col(lines: &[String], idx: usize) -> (usize, usize) {
-    let mut start = 0;
-    for (i, l) in lines.iter().enumerate() {
-        let n = l.chars().count();
-        if idx <= start + n {
-            return (i, idx - start);
-        }
-        start += n + 1;
+/// The grapheme-cluster boundary before `idx` (0 at the start). Clusters are
+/// what a user sees as one character: ZWJ emoji, flags, base plus combining
+/// marks, Hangul syllables.
+pub fn prev_grapheme(value: &str, idx: usize) -> usize {
+    let b = byte_of(value, idx);
+    match value[..b].graphemes(true).next_back() {
+        Some(g) => idx - g.chars().count(),
+        None => 0,
     }
-    let last = lines.len().saturating_sub(1);
-    (last, lines.get(last).map_or(0, |l| l.chars().count()))
 }
 
-/// The character index of `(line, col)`, clamping both into range.
-pub fn index_of(lines: &[String], line: usize, col: usize) -> usize {
-    let line = line.min(lines.len().saturating_sub(1));
-    let start: usize = lines[..line].iter().map(|l| l.chars().count() + 1).sum();
-    start + col.min(lines[line].chars().count())
+/// The grapheme-cluster boundary after `idx` (unchanged at the end).
+pub fn next_grapheme(value: &str, idx: usize) -> usize {
+    let b = byte_of(value, idx);
+    match value[b..].graphemes(true).next() {
+        Some(g) => idx + g.chars().count(),
+        None => idx,
+    }
 }
 
-/// Index of the start of the word before `from`.
+/// Char range `(start, end)` of the line containing char index `idx`.
+pub(crate) fn line_range(value: &str, idx: usize) -> (usize, usize) {
+    let b = byte_of(value, idx);
+    let start = value[..b].rfind('\n').map_or(0, |i| i + 1);
+    let end = value[b..].find('\n').map_or(value.len(), |i| b + i);
+    (value[..start].chars().count(), value[..end].chars().count())
+}
+
+/// True when the first strong letter of the line holding `idx` is from a
+/// right-to-left script (Hebrew, Arabic, Syriac, Thaana, N'Ko and friends).
+fn line_is_rtl(value: &str, idx: usize) -> bool {
+    let b = byte_of(value, idx);
+    let start = value[..b].rfind('\n').map_or(0, |i| i + 1);
+    let end = value[b..].find('\n').map_or(value.len(), |i| b + i);
+    value[start..end]
+        .chars()
+        .find(|c| c.is_alphabetic())
+        .is_some_and(|c| {
+            matches!(c as u32,
+                0x0590..=0x08FF | 0xFB1D..=0xFDFF | 0xFE70..=0xFEFF
+                | 0x10800..=0x10FFF | 0x1E800..=0x1EFFF)
+        })
+}
+
+/// UAX #29 word segments as `(start, end, is_word)` in char indices;
+/// `is_word` is false for spaces and punctuation.
+fn word_segments(value: &str) -> Vec<(usize, usize, bool)> {
+    let mut at = 0;
+    value
+        .split_word_bounds()
+        .map(|seg| {
+            let n = seg.chars().count();
+            let r = (at, at + n, seg.chars().any(char::is_alphanumeric));
+            at += n;
+            r
+        })
+        .collect()
+}
+
+/// Index of the start of the word before `from`. Words follow UAX #29, so
+/// `don't` and `foo_bar` are one word and each CJK ideograph is its own.
 pub fn word_left(value: &str, from: usize) -> usize {
-    let c: Vec<char> = value.chars().collect();
-    let mut i = from.min(c.len());
-    while i > 0 && !c[i - 1].is_alphanumeric() {
-        i -= 1;
-    }
-    while i > 0 && c[i - 1].is_alphanumeric() {
-        i -= 1;
-    }
-    i
+    word_segments(value)
+        .into_iter()
+        .rev()
+        .find(|&(start, _, word)| word && start < from)
+        .map_or(0, |(start, _, _)| start)
 }
 
 /// Index of the end of the word after `from`.
 pub fn word_right(value: &str, from: usize) -> usize {
-    let c: Vec<char> = value.chars().collect();
-    let mut i = from.min(c.len());
-    while i < c.len() && !c[i].is_alphanumeric() {
-        i += 1;
+    word_segments(value)
+        .into_iter()
+        .find(|&(_, end, word)| word && end > from)
+        .map_or_else(|| value.chars().count(), |(_, end, _)| end)
+}
+
+/// The word, or the run of spaces or punctuation, under char index `idx`,
+/// as a `(start, end)` range. Used for double-click selection.
+pub fn word_bounds(value: &str, idx: usize) -> (usize, usize) {
+    let segs = word_segments(value);
+    segs.iter()
+        .find(|&&(s, e, _)| s <= idx && idx < e)
+        .or(segs.last())
+        .map_or((0, 0), |&(s, e, _)| (s, e))
+}
+
+/// Char index in `s` (on a grapheme boundary) whose x position, measured
+/// with `width`, is nearest `x`. Binary search over boundaries, so a click
+/// costs O(log n) measurements instead of one per character.
+pub(crate) fn nearest_boundary(s: &str, x: f32, width: impl Fn(&str) -> f32) -> usize {
+    if x <= 0.0 {
+        return 0;
     }
-    while i < c.len() && c[i].is_alphanumeric() {
-        i += 1;
+    // (char index, byte offset) of every boundary, the end included.
+    let mut cuts = Vec::new();
+    let (mut ci, mut bi) = (0, 0);
+    for g in s.graphemes(true) {
+        cuts.push((ci, bi));
+        ci += g.chars().count();
+        bi += g.len();
     }
-    i
+    cuts.push((ci, bi));
+    let at = |k: usize| width(&s[..cuts[k].1]);
+    // Smallest boundary whose prefix is at least `x` wide.
+    let (mut lo, mut hi) = (0, cuts.len() - 1);
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        if at(mid) >= x {
+            hi = mid;
+        } else {
+            lo = mid + 1;
+        }
+    }
+    if lo > 0 && (x - at(lo - 1)) < (at(lo) - x) {
+        lo -= 1;
+    }
+    cuts[lo].0
 }
 
 #[cfg(test)]
@@ -354,22 +489,6 @@ mod tests {
         assert_eq!(e.selected("éx😀"), "");
         e.select_all(3);
         assert_eq!(e.selected("éx😀"), "éx😀");
-    }
-    #[test]
-    fn line_math_round_trips() {
-        let lines = split_lines("ab\n\ncde");
-        assert_eq!(lines, ["ab", "", "cde"]);
-        assert_eq!(line_col(&lines, 0), (0, 0));
-        assert_eq!(line_col(&lines, 2), (0, 2));
-        assert_eq!(line_col(&lines, 3), (1, 0));
-        assert_eq!(line_col(&lines, 6), (2, 2));
-        assert_eq!(line_col(&lines, 99), (2, 3));
-        for i in 0..=7 {
-            let (l, c) = line_col(&lines, i);
-            assert_eq!(index_of(&lines, l, c), i);
-        }
-        assert_eq!(index_of(&lines, 0, 50), 2, "column clamps to line length");
-        assert_eq!(index_of(&lines, 9, 0), 4, "line clamps to the last");
     }
     #[test]
     fn history_undo_redo_and_typing_coalesce() {
@@ -422,5 +541,19 @@ mod tests {
         assert_eq!(word_left("foo bar", 4), 0);
         assert_eq!(word_right("foo bar", 0), 3);
         assert_eq!(word_right("foo bar", 3), 7);
+    }
+    #[test]
+    fn graphemes_words_and_boundaries() {
+        let flag = "a\u{1f1ef}\u{1f1f5}b";
+        assert_eq!(next_grapheme(flag, 1), 3);
+        assert_eq!(prev_grapheme(flag, 3), 1);
+        assert_eq!(word_right("we don't know", 3), 8);
+        assert_eq!(word_left("we don't know", 8), 3);
+        assert_eq!(word_bounds("alpha beta", 7), (6, 10));
+        assert_eq!(sanitize("a\rb\r\nc", true), "a\nb\nc");
+        let w = |s: &str| s.chars().count() as f32 * 10.0;
+        assert_eq!(nearest_boundary("abcd", 24.0, w), 2);
+        assert_eq!(nearest_boundary("abcd", 99.0, w), 4);
+        assert_eq!(nearest_boundary("a\u{1f1ef}\u{1f1f5}b", 15.0, w), 1);
     }
 }

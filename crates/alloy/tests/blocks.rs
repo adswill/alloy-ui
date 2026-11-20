@@ -28,7 +28,7 @@ fn records_add_delete_and_sort() {
     assert!(order(&h, "Pear", "Apple"));
     h.click("Name");
     assert!(order(&h, "Apple", "Pear"), "ascending by name");
-    h.click("Name ↑");
+    h.click("Name");
     assert!(order(&h, "Pear", "Apple"), "descending by name");
     h.click("Qty");
     assert!(

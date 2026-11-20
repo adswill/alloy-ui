@@ -117,7 +117,9 @@ where
         Host {
             pending: Some((Box::new(build), size, layouter)),
             runtime: None,
-            renderer: None,
+            renderers: HashMap::new(),
+            ui: None,
+            access: HashMap::new(),
             tasks: TaskRunner::new(move || {
                 task_proxy.wake();
             }),
@@ -168,7 +170,10 @@ type Pending<A> = (Build<A>, Size, Layouter<<A as Application>::Message>);
 struct Host<A: Application> {
     pending: Option<Pending<A>>,
     runtime: Option<Runtime<A>>,
-    renderer: Option<WindowRenderer>,
+    renderers: HashMap<WindowId, WindowRenderer>,
+    ui: Option<widgets::Ui>,
+    /// Last published accessibility nodes per window, to resolve requests back to widgets.
+    access: HashMap<WindowId, Vec<platform::access::AccessNode>>,
     tasks: TaskRunner<A::Message>,
     proxy: alloy_ui_platform::shell::ShellProxy,
     start: Instant,
@@ -185,8 +190,25 @@ impl<A: Application + 'static> Host<A> {
             ctx.exit();
             return;
         }
-        if outcome.redraw {
-            ctx.request_redraw();
+        if let Some(rt) = self.runtime.as_mut() {
+            for req in rt.take_window_requests() {
+                match req {
+                    WindowRequest::Open(id, spec) => ctx.open_window(
+                        platform::shell::WindowKey(id.0),
+                        WindowSettings {
+                            title: spec.title,
+                            size: spec.size,
+                        },
+                    ),
+                    WindowRequest::Close(id) => {
+                        self.renderers.remove(&id);
+                        ctx.close_window(platform::shell::WindowKey(id.0));
+                    }
+                }
+            }
+            for id in rt.take_dirty() {
+                ctx.request_redraw_of(platform::shell::WindowKey(id.0));
+            }
         }
         if outcome.tick && !self.tick_pending {
             // Animation is active: one short-lived timer thread per frame, so an
@@ -248,7 +270,9 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let size = ctx.logical_size();
         let (w, h) = ctx.physical_size();
         match WindowRenderer::new(ctx.window().clone(), w, h) {
-            Ok(r) => self.renderer = Some(r),
+            Ok(r) => {
+                self.renderers.insert(WindowId::MAIN, r);
+            }
             Err(e) => {
                 log::error!("renderer init failed: {e}");
                 ctx.exit();
@@ -261,13 +285,14 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             theme::Theme::light()
         };
         let ui = widgets::Ui::new(theme);
-        if let Some(r) = self.renderer.as_ref() {
+        if let Some(r) = self.renderers.get(&WindowId::MAIN) {
             ui.set_metrics(std::rc::Rc::new(MeasurerMetrics(r.text_measurer())));
         }
         ui.set_clipboard(std::rc::Rc::new(OsClipboard(std::cell::RefCell::new(
             platform::default_clipboard(),
         ))));
         let app = build(&ui);
+        self.ui = Some(ui);
         let mut rt = Runtime::new(app, size, layouter);
         for fut in rt.take_futures() {
             self.tasks.spawn(fut);
@@ -281,15 +306,31 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
+        let win = WindowId(ctx.window_key().0);
         let outcome = match event {
+            PlatformEvent::Accessibility { window, request } => {
+                let w = WindowId(window.0);
+                let nodes = self.access.get(&w).map(Vec::as_slice).unwrap_or(&[]);
+                let Some(node) = nodes.iter().find(|n| n.id == request.target) else {
+                    return;
+                };
+                let o = apply_access(rt, self.ui.as_ref(), w, node, &request.action);
+                self.pump(ctx, o);
+                return;
+            }
+            PlatformEvent::WindowClosed => {
+                self.renderers.remove(&win);
+                self.access.remove(&win);
+                rt.window_closed(win)
+            }
             PlatformEvent::Input(Event::Resized(s)) => {
                 let (w, h) = ctx.physical_size();
-                if let Some(r) = self.renderer.as_mut() {
+                if let Some(r) = self.renderers.get_mut(&win) {
                     r.resize(w, h);
                 }
-                rt.handle_event(&Event::Resized(s))
+                rt.handle_window_event(win, &Event::Resized(s))
             }
-            PlatformEvent::Input(e) => rt.handle_event(&e),
+            PlatformEvent::Input(e) => rt.handle_window_event(win, &e),
             PlatformEvent::Wake => {
                 let mut outcome = Outcome::default();
                 if self.tick_due.swap(false, Ordering::AcqRel) {
@@ -319,9 +360,135 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
     }
 
     fn redraw(&mut self, ctx: &mut ShellContext) {
-        let (Some(rt), Some(r)) = (self.runtime.as_ref(), self.renderer.as_mut()) else {
+        let Some(rt) = self.runtime.as_ref() else {
             return;
         };
-        r.render(&rt.draw(), ctx.scale_factor() as f32);
+        let win = WindowId(ctx.window_key().0);
+        if let std::collections::hash_map::Entry::Vacant(slot) = self.renderers.entry(win) {
+            // A window opened by `Command::open_window`: build its surface on first paint.
+            let (w, h) = ctx.physical_size();
+            match WindowRenderer::new(ctx.window().clone(), w, h) {
+                Ok(r) => {
+                    slot.insert(r);
+                }
+                Err(e) => {
+                    log::error!("renderer init failed for {win:?}: {e}");
+                    return;
+                }
+            }
+        }
+        if let Some(r) = self.renderers.get_mut(&win) {
+            r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
+        }
+        if let Some(ui) = self.ui.as_ref() {
+            let nodes = access_nodes(&ui.accessibility());
+            ctx.set_accessibility(&platform::access::AccessTree {
+                title: ctx.window().title(),
+                nodes: nodes.clone(),
+            });
+            self.access.insert(win, nodes);
+        }
+    }
+}
+
+/// Map the widgets' accessibility description onto the platform's tree.
+///
+/// Focusable widgets keep their focus id; the rest get a hash of role, label
+/// and how many identical ones came before, which is stable while the layout is.
+fn access_nodes(nodes: &[widgets::A11yNode]) -> Vec<platform::access::AccessNode> {
+    use platform::access::{AccessId, AccessNode, AccessRole};
+    use std::hash::{Hash, Hasher};
+    use widgets::Role;
+    let mut seen: HashMap<(u8, &str), u64> = HashMap::new();
+    nodes
+        .iter()
+        .map(|n| {
+            let role = match n.role {
+                Role::Label => AccessRole::Label,
+                Role::Button => AccessRole::Button,
+                Role::Checkbox => AccessRole::Checkbox,
+                Role::Switch => AccessRole::Switch,
+                Role::Radio => AccessRole::Radio,
+                Role::Slider => AccessRole::Slider,
+                Role::SpinButton => AccessRole::SpinButton,
+                Role::TextInput => AccessRole::TextInput,
+                Role::TextEditor => AccessRole::TextEditor,
+                Role::ComboBox => AccessRole::ComboBox,
+                Role::DatePicker => AccessRole::DatePicker,
+                Role::Tab => AccessRole::Tab,
+                Role::ProgressBar => AccessRole::ProgressBar,
+            };
+            let id = n.id.unwrap_or_else(|| {
+                let count = seen.entry((role as u8, n.label.as_str())).or_insert(0);
+                *count += 1;
+                let mut h = std::collections::hash_map::DefaultHasher::new();
+                (role as u8, &n.label, *count).hash(&mut h);
+                // Keep hashed ids clear of small sequential focus ids.
+                h.finish() | (1 << 63)
+            });
+            AccessNode {
+                id: AccessId(id),
+                role,
+                label: n.label.clone(),
+                value: n.value.clone(),
+                checked: n.checked,
+                focused: n.focused,
+                enabled: n.enabled,
+                bounds: n.bounds,
+                range: None,
+            }
+        })
+        .collect()
+}
+
+/// Carry out a screen-reader request by replaying the input a user would give.
+fn apply_access<A: Application>(
+    rt: &mut Runtime<A>,
+    ui: Option<&widgets::Ui>,
+    win: WindowId,
+    node: &platform::access::AccessNode,
+    action: &platform::access::AccessAction,
+) -> Outcome {
+    use platform::access::AccessAction as Act;
+    let b = node.bounds;
+    let centre = Point::new(
+        b.origin.x + b.size.width / 2.0,
+        b.origin.y + b.size.height / 2.0,
+    );
+    let focus = |ui: Option<&widgets::Ui>| {
+        if let Some(ui) = ui {
+            // Hashed ids (bit 63 set) belong to non-focusable widgets.
+            if node.id.0 >> 63 == 0 {
+                ui.set_focus(Some(node.id.0));
+            }
+        }
+    };
+    let key = |rt: &mut Runtime<A>, name: &str| {
+        let k = Key::Named(name.to_string());
+        rt.handle_window_event(win, &Event::KeyPressed(k.clone(), Modifiers::default()));
+        rt.handle_window_event(win, &Event::KeyReleased(k, Modifiers::default()))
+    };
+    match action {
+        Act::Press => {
+            rt.handle_window_event(win, &Event::CursorMoved(centre));
+            rt.handle_window_event(win, &Event::MousePressed(MouseButton::Left));
+            rt.handle_window_event(win, &Event::MouseReleased(MouseButton::Left))
+        }
+        Act::Focus => {
+            focus(ui);
+            rt.handle_window_event(win, &Event::RedrawRequested)
+        }
+        Act::Increment => {
+            focus(ui);
+            key(rt, "ArrowUp")
+        }
+        Act::Decrement => {
+            focus(ui);
+            key(rt, "ArrowDown")
+        }
+        Act::SetValue(_) => {
+            log::debug!("accessibility SetValue is not supported yet");
+            Outcome::default()
+        }
     }
 }

@@ -10,13 +10,23 @@ mod dbus;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+pub(crate) mod linux_atspi;
+#[cfg(target_os = "linux")]
 mod linux_tray;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos;
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod macos_access;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+mod windows_access;
+#[cfg(target_os = "linux")]
+mod wl_clip;
 #[cfg(target_os = "linux")]
 mod x11_clip;
 
@@ -160,4 +170,31 @@ pub(crate) fn take_pending() -> Vec<crate::PlatformEvent> {
         .lock()
         .map(|mut q| std::mem::take(&mut *q))
         .unwrap_or_default()
+}
+
+/// Connect `window` to the OS accessibility service. `None` where the backend
+/// is unavailable (the app then simply is not exposed to assistive technology).
+pub(crate) fn new_access_adapter(
+    window: &std::sync::Arc<winit::window::Window>,
+    key: crate::shell::WindowKey,
+    sink: crate::access::ActionSink,
+) -> Option<Box<dyn crate::access::AccessAdapter>> {
+    #[cfg(target_os = "linux")]
+    {
+        let w = window.clone();
+        let origin: linux_atspi::Origin = std::sync::Arc::new(move || linux_atspi::ScreenOrigin {
+            // `inner_position` fails on Wayland, where clients cannot know
+            // where they are; screen coordinates are then window-relative.
+            x: w.inner_position().map_or(0, |p| p.x),
+            y: w.inner_position().map_or(0, |p| p.y),
+            scale: w.scale_factor(),
+        });
+        Some(Box::new(linux_atspi::AtspiAdapter::new(
+            key.0, origin, sink,
+        )))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        backend::new_access_adapter(window, key, sink)
+    }
 }

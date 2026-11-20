@@ -9,6 +9,10 @@
 use std::{
     io::{Read, Write},
     os::unix::net::UnixStream,
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc, Mutex,
+    },
 };
 
 /// Error from the bus connection.
@@ -48,6 +52,20 @@ impl Writer {
     }
     pub fn i32(&mut self, v: i32) {
         self.u32(v as u32);
+    }
+    pub fn i16(&mut self, v: i16) {
+        self.align(2);
+        self.buf.extend(v.to_le_bytes());
+    }
+    pub fn f64(&mut self, v: f64) {
+        self.align(8);
+        self.buf.extend(v.to_le_bytes());
+    }
+    /// Object reference `(so)`: bus name and path.
+    pub fn reference(&mut self, name: &str, path: &str) {
+        self.align(8);
+        self.string(name);
+        self.string(path);
     }
     pub fn bool(&mut self, v: bool) {
         self.u32(v as u32);
@@ -93,7 +111,7 @@ impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
         Self { data, pos: 0 }
     }
-    fn align(&mut self, n: usize) {
+    pub fn align(&mut self, n: usize) {
         while self.pos % n != 0 {
             self.pos += 1;
         }
@@ -116,6 +134,10 @@ impl<'a> Reader<'a> {
     }
     pub fn i32(&mut self) -> Result<i32> {
         Ok(self.u32()? as i32)
+    }
+    pub fn f64(&mut self) -> Result<f64> {
+        self.align(8);
+        Ok(f64::from_le_bytes(self.take(8)?.try_into().unwrap()))
     }
     pub fn string(&mut self) -> Result<String> {
         let n = self.u32()? as usize;
@@ -261,20 +283,25 @@ pub fn decode(raw: &[u8]) -> Result<Message> {
 /// A connection to the session bus.
 pub struct Connection {
     stream: UnixStream,
-    serial: u32,
+    /// Write half, shared with [`Emitter`]s so other threads can send signals.
+    writer: Arc<Mutex<UnixStream>>,
+    serial: Arc<AtomicU32>,
     /// Our unique name, e.g. `:1.42`.
     pub unique_name: String,
 }
 
-fn connect_stream() -> Result<UnixStream> {
-    let addr = std::env::var("DBUS_SESSION_BUS_ADDRESS")
+fn session_address() -> Result<String> {
+    std::env::var("DBUS_SESSION_BUS_ADDRESS")
         .ok()
         .or_else(|| {
             std::env::var("XDG_RUNTIME_DIR")
                 .ok()
                 .map(|d| format!("unix:path={d}/bus"))
         })
-        .ok_or_else(|| DbusError("no session bus address".into()))?;
+        .ok_or_else(|| DbusError("no session bus address".into()))
+}
+
+fn connect_stream(addr: &str) -> Result<UnixStream> {
     for part in addr.split(';') {
         let Some(rest) = part.strip_prefix("unix:") else {
             continue;
@@ -296,8 +323,14 @@ fn connect_stream() -> Result<UnixStream> {
 impl Connection {
     /// Connect, authenticate (EXTERNAL) and say Hello.
     pub fn session() -> Result<Self> {
+        Self::open(&session_address()?)
+    }
+
+    /// Connect to the bus at `addr` (a `unix:path=...` or `unix:abstract=...`
+    /// address, as used for the accessibility bus), authenticate and say Hello.
+    pub fn open(addr: &str) -> Result<Self> {
         use std::os::unix::fs::MetadataExt;
-        let mut stream = connect_stream()?;
+        let mut stream = connect_stream(addr)?;
         let uid = std::fs::metadata("/proc/self")?.uid().to_string();
         let hex: String = uid.bytes().map(|b| format!("{b:02x}")).collect();
         stream.write_all(format!("\0AUTH EXTERNAL {hex}\r\n").as_bytes())?;
@@ -311,9 +344,11 @@ impl Connection {
             return err("bus rejected authentication");
         }
         stream.write_all(b"BEGIN\r\n")?;
+        let writer = Arc::new(Mutex::new(stream.try_clone()?));
         let mut c = Connection {
             stream,
-            serial: 0,
+            writer,
+            serial: Arc::new(AtomicU32::new(0)),
             unique_name: String::new(),
         };
         let reply = c.call(
@@ -334,8 +369,23 @@ impl Connection {
     }
 
     fn next_serial(&mut self) -> u32 {
-        self.serial += 1;
-        self.serial
+        self.serial.fetch_add(1, Ordering::Relaxed) + 1
+    }
+
+    fn send(&self, msg: &[u8]) -> Result<()> {
+        let mut w = self
+            .writer
+            .lock()
+            .map_err(|_| DbusError("writer poisoned".into()))?;
+        Ok(w.write_all(msg)?)
+    }
+
+    /// A cloneable handle for sending signals from other threads.
+    pub fn emitter(&self) -> Emitter {
+        Emitter {
+            writer: self.writer.clone(),
+            serial: self.serial.clone(),
+        }
     }
 
     /// Read one message.
@@ -379,7 +429,7 @@ impl Connection {
             sig,
             body,
         );
-        self.stream.write_all(&msg)?;
+        self.send(&msg)?;
         loop {
             let m = self.read()?;
             if m.reply_serial == Some(serial) {
@@ -399,7 +449,7 @@ impl Connection {
             fields.push((6u8, "s", s.as_str()));
         }
         let msg = encode(2, serial, &fields, &[(5, to.serial)], sig, body);
-        Ok(self.stream.write_all(&msg)?)
+        self.send(&msg)
     }
 
     /// Reply with an error.
@@ -412,7 +462,42 @@ impl Connection {
             fields.push((6u8, "s", s.as_str()));
         }
         let msg = encode(3, serial, &fields, &[(5, to.serial)], "s", &w.buf);
-        Ok(self.stream.write_all(&msg)?)
+        self.send(&msg)
+    }
+}
+
+/// Sends signals on a connection from any thread. Messages are written whole
+/// under a lock, so they never interleave with the connection's own replies.
+#[derive(Clone)]
+pub struct Emitter {
+    writer: Arc<Mutex<UnixStream>>,
+    serial: Arc<AtomicU32>,
+}
+
+impl Emitter {
+    /// Broadcast a signal (no destination) with the given body.
+    pub fn signal(
+        &self,
+        path: &str,
+        iface: &str,
+        member: &str,
+        sig: &str,
+        body: &[u8],
+    ) -> Result<()> {
+        let serial = self.serial.fetch_add(1, Ordering::Relaxed) + 1;
+        let msg = encode(
+            4,
+            serial,
+            &[(1, "o", path), (2, "s", iface), (3, "s", member)],
+            &[],
+            sig,
+            body,
+        );
+        let mut w = self
+            .writer
+            .lock()
+            .map_err(|_| DbusError("writer poisoned".into()))?;
+        Ok(w.write_all(&msg)?)
     }
 }
 

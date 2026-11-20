@@ -1,7 +1,8 @@
 //! Single-line text field with selection, clipboard and IME preedit.
 
+use crate::a11y::Role;
 use crate::{
-    text_edit::{apply_key, history_key, sanitize, Edit, KeyOutcome},
+    text_edit::{apply_key, history_key, nearest_boundary, sanitize, Edit, KeyOutcome},
     ui::Ui,
     util::{self, focus_ring},
 };
@@ -76,18 +77,8 @@ impl<M: 'static> TextInput<M> {
     fn index_at(&self, b: &Rectangle, scroll: f32, x: f32) -> usize {
         let rel = x - b.origin.x - self.pad() + scroll;
         let m = self.ui.metrics();
-        let mut best = (0usize, f32::MAX);
-        let mut acc = String::new();
-        for i in 0..=self.value.chars().count() {
-            if i > 0 {
-                acc.extend(self.value.chars().nth(i - 1));
-            }
-            let d = (m.width(&acc, self.size()) - rel).abs();
-            if d < best.1 {
-                best = (i, d);
-            }
-        }
-        best.0
+        let size = self.size();
+        nearest_boundary(&self.value, rel, |s| m.width(s, size))
     }
     /// Emit `new` as an edit, remembering the old state for undo.
     fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
@@ -166,6 +157,13 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                 }
                 true
             }
+            // While the IME composes it owns the keyboard: edit keys would act
+            // on text under the preedit (platforms that still deliver them).
+            Event::KeyPressed(k, _)
+                if self.ui.is_focused(Some(self.id)) && !e.preedit.is_empty() =>
+            {
+                !matches!(k, Key::Tab)
+            }
             Event::KeyPressed(k, m) if self.ui.is_focused(Some(self.id)) => match k {
                 Key::Tab => return false,
                 Key::Enter => {
@@ -212,6 +210,12 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
+        self.ui
+            .describe(Role::TextInput, &self.placeholder, &b, |n| {
+                n.id = Some(self.id);
+                n.value = Some(self.value.clone());
+                n.enabled = self.on_input.is_some();
+            });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
         self.ui.register(self.id);

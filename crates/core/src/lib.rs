@@ -15,6 +15,7 @@ pub use draw::{Border, DrawCommand, DrawList, FontFamily, Shadow};
 pub use event::{Event, Key, Modifiers, MouseButton};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
 pub use runtime::{
-    Application, Command, Layouter, Outcome, Runtime, Subscription, SubscriptionKind,
+    Application, Command, Layouter, Outcome, Runtime, Subscription, SubscriptionKind, WindowId,
+    WindowRequest, WindowSpec,
 };
 pub use widget::{Element, Layout, Widget};

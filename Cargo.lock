@@ -131,6 +131,11 @@ dependencies = [
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
  "raw-window-handle",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
+ "windows",
+ "windows-core",
  "windows-sys 0.59.0",
  "winit",
  "x11rb",
@@ -153,6 +158,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-ui-text-conformance"
+version = "0.0.1"
+dependencies = [
+ "alloy-ui-core",
+ "alloy-ui-theme",
+ "alloy-ui-widgets",
+ "unicode-segmentation",
+]
+
+[[package]]
 name = "alloy-ui-theme"
 version = "0.0.1"
 dependencies = [
@@ -167,6 +182,7 @@ dependencies = [
  "alloy-ui-layout",
  "alloy-ui-render",
  "alloy-ui-theme",
+ "unicode-segmentation",
 ]
 
 [[package]]
