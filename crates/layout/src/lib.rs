@@ -93,11 +93,31 @@ impl Node {
         self
     }
 
+    /// The length this node asks its parent for on `axis`.
+    ///
+    /// A `Shrink` container that holds a `Fill` child on that axis is itself
+    /// `Fill` (as in iced's `Length::fluid`): otherwise the child could only
+    /// ever fall back to its content size, and a row of `Fill` columns inside
+    /// an auto-sized column would collapse instead of using the space on offer.
     fn length(&self, axis: Axis) -> Length {
-        match axis {
+        let own = match axis {
             Axis::Horizontal => self.style.width,
             Axis::Vertical => self.style.height,
+        };
+        if own == Length::Shrink {
+            let weight = self
+                .children
+                .iter()
+                .filter_map(|c| match c.length(axis) {
+                    Length::Fill(w) if w > 0 => Some(w),
+                    _ => None,
+                })
+                .max();
+            if let Some(w) = weight {
+                return Length::Fill(w);
+            }
         }
+        own
     }
 
     /// Size of the node's content box (children plus spacing, or the leaf's
@@ -176,8 +196,8 @@ pub fn compute(root: &Node, origin: Point, available: Size) -> Layout {
         _ => pref,
     };
     let size = root.style.limits.clamp(Size::new(
-        pick(root.style.width, available.width, pref.width),
-        pick(root.style.height, available.height, pref.height),
+        pick(root.length(Axis::Horizontal), available.width, pref.width),
+        pick(root.length(Axis::Vertical), available.height, pref.height),
     ));
     place(root, origin, size)
 }
@@ -466,11 +486,33 @@ mod tests {
     }
 
     #[test]
-    fn fill_in_shrink_container_uses_content_size() {
+    fn shrink_container_with_fill_child_becomes_fill() {
         let n = Node::row(vec![Node::leaf(12.0, 3.0).width(fill())]);
         let l = compute(&n, O, sz(500.0, 500.0));
-        assert_eq!(b(&l), (0.0, 0.0, 12.0, 3.0));
-        assert_eq!(l.children[0].bounds.size.width, 12.0);
+        assert_eq!(b(&l), (0.0, 0.0, 500.0, 3.0));
+        assert_eq!(l.children[0].bounds.size.width, 500.0);
+    }
+
+    #[test]
+    fn fill_columns_in_auto_sized_column_share_the_width() {
+        // column(auto) > row(auto) > [Fill(1), Fill(2)]: the table-collapse case.
+        let cols = Node::row(vec![
+            Node::leaf(80.0, 10.0).width(Length::Fill(1)),
+            Node::leaf(80.0, 10.0).width(Length::Fill(2)),
+        ]);
+        let n = Node::column(vec![cols]);
+        let l = compute(&n, O, sz(300.0, 100.0));
+        let row = &l.children[0];
+        assert_eq!(row.bounds.size.width, 300.0);
+        assert_eq!(row.children[0].bounds.size.width, 100.0);
+        assert_eq!(row.children[1].bounds.size.width, 200.0);
+    }
+
+    #[test]
+    fn fill_propagation_is_per_axis() {
+        let n = Node::row(vec![Node::leaf(12.0, 3.0).width(fill())]);
+        let l = compute(&n, O, sz(500.0, 500.0));
+        assert_eq!(l.bounds.size.height, 3.0, "height stays shrink-wrapped");
     }
 
     #[test]
