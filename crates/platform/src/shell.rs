@@ -38,6 +38,10 @@ pub enum PlatformEvent {
     /// The user asked to close the window. The default is to exit; call
     /// [`ShellContext::cancel_close`] to keep the window open.
     CloseRequested,
+    /// The user chose a menu item (menu bar or tray menu); carries its id.
+    MenuAction(String),
+    /// The tray icon was clicked (left button).
+    TrayClicked,
     /// A [`ShellProxy::wake`] arrived from another thread.
     Wake,
 }
@@ -133,6 +137,20 @@ impl ShellContext {
             LogicalSize::new(size.width, size.height),
         );
     }
+    /// Install the application menu bar. Item activations arrive as
+    /// [`PlatformEvent::MenuAction`]. Errors where the OS has no menu bar.
+    pub fn set_menu(&self, menus: &[crate::menu::Menu]) -> Result<(), PlatformError> {
+        crate::os::set_menu(&self.window, menus)
+    }
+    /// Show a tray icon. Activations arrive as [`PlatformEvent::TrayClicked`]
+    /// and [`PlatformEvent::MenuAction`].
+    pub fn set_tray(&self, tray: &crate::tray::TraySettings) -> Result<(), PlatformError> {
+        crate::os::set_tray(&self.window, tray)
+    }
+    /// Remove the tray icon.
+    pub fn clear_tray(&self) {
+        crate::os::clear_tray();
+    }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
         self.window.theme().map(|t| t == Theme::Dark)
@@ -209,6 +227,9 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
     }
 
     fn user_event(&mut self, el: &ActiveEventLoop, _: Wake) {
+        for e in crate::os::take_pending() {
+            self.dispatch(el, e);
+        }
         self.dispatch(el, PlatformEvent::Wake);
     }
 
@@ -297,11 +318,18 @@ pub fn run<H: ShellHandler + 'static>(
     settings: WindowSettings,
     make: impl FnOnce(ShellProxy) -> H + 'static,
 ) -> Result<(), PlatformError> {
-    let el = EventLoop::<Wake>::with_user_event()
+    let mut builder = EventLoop::<Wake>::with_user_event();
+    #[cfg(windows)]
+    {
+        use winit::platform::windows::EventLoopBuilderExtWindows;
+        builder.with_msg_hook(crate::os::msg_hook);
+    }
+    let el = builder
         .build()
         .map_err(|e| PlatformError(format!("event loop: {e}")))?;
     el.set_control_flow(ControlFlow::Wait);
     let proxy = ShellProxy(el.create_proxy());
+    crate::os::set_waker(proxy.clone());
     let mut app = App {
         settings,
         make: Some(Box::new(make)),

@@ -4,9 +4,10 @@
 //! Design: windowing and input go through `winit` on every OS (one code path,
 //! X11 and Wayland both covered). Clipboard, dialogs and theme queries use the
 //! OS's own tools or settings, selected by `cfg(target_os)` in `os/`, so this
-//! crate contains no `unsafe`. See `DECISIONS.md`.
+//! crate contains no `unsafe` outside the native menu/tray code in `os/`
+//! (each use carries a SAFETY comment).
 #![warn(missing_docs)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod convert;
 pub mod fonts;
