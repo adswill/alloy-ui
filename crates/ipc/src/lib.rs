@@ -1,17 +1,15 @@
-//! Typed background commands and the capability/permissions config. Implemented in the ipc workstream.
+//! Typed background commands and the capability/permissions config.
+//!
+//! * [`capability`]: the TOML permissions file, [`CapabilitySet`] and its checks.
+//! * [`task`]: a thread-based [`TaskRunner`] that runs futures or blocking
+//!   closures off the UI thread and wakes the platform shell when results arrive.
+//! * [`command`]: a [`CommandRegistry`] of named, capability-gated, typed commands.
 #![warn(missing_docs)]
 
-/// A capability an app can be granted in its config file.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Capability {
-    /// Read and write the clipboard.
-    Clipboard,
-    /// Open native file dialogs.
-    Dialogs,
-    /// Read the filesystem.
-    FsRead,
-    /// Write the filesystem.
-    FsWrite,
-    /// Make network requests.
-    Network,
-}
+pub mod capability;
+pub mod command;
+pub mod task;
+
+pub use capability::{Capability, CapabilityError, CapabilitySet};
+pub use command::{CommandError, CommandRegistry};
+pub use task::{CancelToken, TaskHandle, TaskRunner};
