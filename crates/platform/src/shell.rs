@@ -136,7 +136,6 @@ pub struct ShellContext {
     window: Arc<Window>,
     key: WindowKey,
     windows: HashMap<WindowKey, Arc<Window>>,
-    next_key: u64,
     open_queue: Vec<(WindowKey, WindowSettings)>,
     close_queue: Vec<WindowKey>,
     stats: FrameStats,
@@ -168,14 +167,16 @@ impl ShellContext {
     pub fn window_keys(&self) -> impl Iterator<Item = WindowKey> + '_ {
         self.windows.keys().copied()
     }
-    /// Open another window. It is created when this callback returns and gets
-    /// a first `redraw` call right after; build its surface there, keyed by
-    /// [`ShellContext::window_key`]. Returns the key it will have.
-    pub fn open_window(&mut self, settings: WindowSettings) -> WindowKey {
-        self.next_key += 1;
-        let key = WindowKey(self.next_key);
+    /// Open another window under a key the caller picks (`WindowKey::MAIN`
+    /// is taken; reusing an open key is ignored). It is created when this
+    /// callback returns and gets a first `redraw` call right after; build its
+    /// surface there, keyed by [`ShellContext::window_key`].
+    pub fn open_window(&mut self, key: WindowKey, settings: WindowSettings) {
+        if self.windows.contains_key(&key) || self.open_queue.iter().any(|(k, _)| *k == key) {
+            log::warn!("open_window: key {key:?} is already in use");
+            return;
+        }
         self.open_queue.push((key, settings));
-        key
     }
     /// Close a window after this callback, without a `CloseRequested`
     /// round trip. The loop exits when the last window closes.
@@ -350,7 +351,10 @@ impl<H: ShellHandler> App<H> {
                 }
             }
             for key in closes {
-                let known = self.ctx.as_ref().is_some_and(|c| c.windows.contains_key(&key));
+                let known = self
+                    .ctx
+                    .as_ref()
+                    .is_some_and(|c| c.windows.contains_key(&key));
                 if !known {
                     continue;
                 }
@@ -369,7 +373,9 @@ impl<H: ShellHandler> App<H> {
                     } else if prev != Some(key) {
                         let back = prev.unwrap_or(WindowKey::MAIN);
                         self.focus_ctx(back);
-                    } else if let Some(&next) = self.ctx.as_ref().and_then(|c| c.windows.keys().min()) {
+                    } else if let Some(&next) =
+                        self.ctx.as_ref().and_then(|c| c.windows.keys().min())
+                    {
                         self.focus_ctx(next);
                     }
                 }
@@ -396,7 +402,6 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                     window: w.clone(),
                     key: WindowKey::MAIN,
                     windows: HashMap::from([(WindowKey::MAIN, w)]),
-                    next_key: 0,
                     open_queue: Vec::new(),
                     close_queue: Vec::new(),
                     stats: FrameStats::default(),

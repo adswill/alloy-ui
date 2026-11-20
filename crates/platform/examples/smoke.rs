@@ -28,7 +28,9 @@ impl ShellHandler for H {
         std::thread::spawn(move || {
             p.wake();
         });
-        self.second = Some(ctx.open_window(settings("second")));
+        let key = WindowKey(1);
+        ctx.open_window(key, settings("second"));
+        self.second = Some(key);
     }
     fn event(&mut self, ctx: &mut ShellContext, e: PlatformEvent) {
         match e {
