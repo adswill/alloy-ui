@@ -419,9 +419,23 @@ where
 {
     use crate::view::View;
     let side: Node<Act<S>> = crate::nav(page).bind(lens).into();
-    crate::view::row([side.surface().w(170.0).fill_h().into(), body.into()])
-        .gap(0.0)
-        .fill()
+    crate::view::row([
+        side.surface().w(170.0).fill_h().into(),
+        sidebar_edge(),
+        body.into(),
+    ])
+    .gap(0.0)
+    .fill()
+    .into()
+}
+
+/// The hairline between a sidebar and its page.
+fn sidebar_edge<M: 'static>() -> Node<M> {
+    use crate::view::View;
+    crate::view::col(Vec::<Node<M>>::new())
+        .w(1.0)
+        .fill_h()
+        .bg(cx::palette().border)
         .into()
 }
 
@@ -549,9 +563,13 @@ impl App for Pages {
         })
         .into();
         let body = cx::scope(names[at], || (self.pages[at].1)());
-        crate::view::row([side.surface().w(170.0).fill_h().into(), body])
-            .gap(0.0)
-            .fill()
+        crate::view::row([
+            side.surface().w(170.0).fill_h().into(),
+            sidebar_edge(),
+            body,
+        ])
+        .gap(0.0)
+        .fill()
     }
 }
 

@@ -19,6 +19,7 @@ struct Row<M> {
     ui: Ui,
     index: usize,
     selected: bool,
+    ruled: bool,
     on_select: Rc<dyn Fn(usize) -> M>,
     child: Vec<Element<M>>,
 }
@@ -27,7 +28,14 @@ impl<M: 'static> Widget<M> for Row<M> {
     fn style(&self) -> Style {
         Style {
             axis: alloy_ui_core::style::Axis::Vertical,
-            padding: Padding::symmetric(self.ui.theme().spacing.md, self.ui.theme().spacing.xs),
+            padding: Padding::symmetric(
+                self.ui.theme().spacing.md,
+                if self.ruled {
+                    self.ui.theme().spacing.sm
+                } else {
+                    self.ui.theme().spacing.xs
+                },
+            ),
             width: Length::Fill(1),
             ..Style::default()
         }
@@ -82,7 +90,11 @@ impl<M: 'static> Widget<M> for Row<M> {
         let fill = if self.selected {
             Some(t.palette.selection)
         } else if hot > 0.0 {
-            Some(t.palette.surface.with_alpha(hot))
+            Some(if self.ruled {
+                t.palette.hover.with_alpha(t.palette.hover.a * hot)
+            } else {
+                t.palette.surface.with_alpha(hot)
+            })
         } else {
             None
         };
@@ -96,6 +108,21 @@ impl<M: 'static> Widget<M> for Row<M> {
             });
         }
         util::draw_children(&self.child, layout, out);
+        if self.ruled && !self.selected {
+            // A hairline under the row, inset like the cells, so rows read as a
+            // table without zebra stripes or boxes.
+            let inset = t.spacing.md;
+            out.push(DrawCommand::Quad {
+                bounds: Rectangle::new(
+                    Point::new(b.origin.x + inset, b.origin.y + b.size.height - 1.0),
+                    Size::new((b.size.width - 2.0 * inset).max(0.0), 1.0),
+                ),
+                fill: t.palette.border.with_alpha(0.6),
+                radius: 0.0,
+                border: None,
+                shadow: None,
+            });
+        }
     }
 }
 
@@ -119,6 +146,27 @@ impl<M: 'static> List<M> {
         selected: Option<usize>,
         on_select: impl Fn(usize) -> M + 'static,
     ) -> Self {
+        Self::build(ui, id, items, selected, on_select, false)
+    }
+    /// Like [`List::new`] with a hairline between rows, a taller row and an
+    /// overlay hover: the look of a data table.
+    pub fn ruled(
+        ui: &Ui,
+        id: u64,
+        items: Vec<Element<M>>,
+        selected: Option<usize>,
+        on_select: impl Fn(usize) -> M + 'static,
+    ) -> Self {
+        Self::build(ui, id, items, selected, on_select, true)
+    }
+    fn build(
+        ui: &Ui,
+        id: u64,
+        items: Vec<Element<M>>,
+        selected: Option<usize>,
+        on_select: impl Fn(usize) -> M + 'static,
+        ruled: bool,
+    ) -> Self {
         let on_select: Rc<dyn Fn(usize) -> M> = Rc::new(on_select);
         let count = items.len();
         let rows = items
@@ -129,6 +177,7 @@ impl<M: 'static> List<M> {
                     ui: ui.clone(),
                     index: i,
                     selected: selected == Some(i),
+                    ruled,
                     on_select: on_select.clone(),
                     child: vec![item],
                 })

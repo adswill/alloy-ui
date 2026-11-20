@@ -34,3 +34,11 @@ Review surface: `cargo run -p alloy-ui-examples --bin gallery -- --headless gall
 - **Segmented control**: recessed track, selected segment is a raised white chip with `elevation.low`; no dark outline.
 - **Switch**: off track is a quiet neutral with a white knob; on is the accent. Same colours in both themes' roles.
 - Elevation, radii (2/4/6) and motion (90/150/240 ms ease-out) are unchanged.
+
+## Navigation, tables and dates (visual pass 2, 2026-11-20)
+Renders: `docs/gallery/pass1_light.png` (before) and `pass2_light.png`/`pass2_dark.png` (after). The gallery gained Navigation and date-picker sections (picker shown open).
+
+- **Nav rows**: `Variant::Nav` on `Button` (facade: `button(..).nav(current)`). Left-aligned in the cell's 12px inset, no outline, hover overlay, selected = `selection` tint plus semibold label. No side stripe. `nav` and `shell` use it, and a 1px hairline separates sidebar from page.
+- **Tables**: `List::ruled`. Rows get a hairline (inset like the cells, hidden under the selected row), taller padding and an overlay hover, instead of a surface-coloured hover that vanished on the page background. Header reserves arrow space only on the sorted column, so right-aligned numbers line up under their headers.
+- **Date picker**: hover and selected chips use the shared overlay and radius; today is accent semibold text (no ring); a hairline separates month header from weekday labels.
+- Not done: toast styling (another thread owns toasts in `crates/alloy`), board and browse layouts untouched beyond the nav change.
