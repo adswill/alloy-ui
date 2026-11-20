@@ -3,9 +3,10 @@
 use crate::custom::bars;
 use crate::run::{Demo, Step};
 use alloy_ui_core::style::{Align, Length, Padding};
-use alloy_ui_core::{Application, Command, Element};
+use alloy_ui_core::{Application, Command, Element, Subscription};
 use alloy_ui_theme::Theme;
 use alloy_ui_widgets::{Button, Column, Container, Root, Row, Text, TextRole, Ui, Variant};
+use std::time::Duration;
 
 /// Range shown in the chart.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +21,9 @@ pub enum Range {
 pub struct Dashboard {
     /// Selected range.
     pub range: Range,
+    /// Live series, oldest first, each in 0..=1.
+    pub live: Vec<f32>,
+    seed: u32,
     ui: Ui,
 }
 
@@ -28,6 +32,8 @@ pub struct Dashboard {
 pub enum Msg {
     /// Change range.
     Range(Range),
+    /// One second passed: append a sample.
+    Tick,
 }
 
 const HOURS: [f32; 12] = [
@@ -45,10 +51,12 @@ const JOBS: [(&str, &str, &str); 4] = [
 
 impl Dashboard {
     /// Default view.
-    pub fn new(theme: Theme) -> Self {
+    pub fn new(ui: &Ui) -> Self {
         Self {
             range: Range::Hours,
-            ui: Ui::new(theme),
+            live: HOURS.to_vec(),
+            seed: 7,
+            ui: ui.clone(),
         }
     }
 }
@@ -57,19 +65,38 @@ impl Application for Dashboard {
     type Message = Msg;
 
     fn update(&mut self, m: Msg) -> Command<Msg> {
-        let Msg::Range(r) = m;
-        self.range = r;
+        match m {
+            Msg::Range(r) => {
+                self.range = r;
+                self.live = match r {
+                    Range::Hours => HOURS.to_vec(),
+                    Range::Days => DAYS.to_vec(),
+                };
+            }
+            Msg::Tick => {
+                // Deterministic pseudo-random walk so runs are reproducible.
+                self.seed = self
+                    .seed
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223);
+                let step = ((self.seed >> 16) % 100) as f32 / 100.0 - 0.5;
+                let last = self.live.last().copied().unwrap_or(0.5);
+                self.live.remove(0);
+                self.live.push((last + step * 0.25).clamp(0.1, 0.95));
+            }
+        }
         Command::None
+    }
+
+    fn subscription(&self) -> Vec<Subscription<Msg>> {
+        vec![Subscription::every(1, Duration::from_secs(1), || Msg::Tick)]
     }
 
     fn view(&self) -> Element<Msg> {
         let ui = &self.ui;
         let t = ui.theme();
         let p = &t.palette;
-        let data = match self.range {
-            Range::Hours => HOURS,
-            Range::Days => DAYS,
-        };
+        let data = &self.live;
         let peak = data.iter().cloned().fold(0.0, f32::max);
         let seg = |text: &'static str, r: Range| -> Element<Msg> {
             let v = if self.range == r {
@@ -128,7 +155,7 @@ impl Application for Dashboard {
                 .role(TextRole::Caption)
                 .secondary()
                 .into_element(),
-            bars(data.to_vec(), p.accent, p.surface).into(),
+            bars(data.clone(), p.accent, p.surface).into(),
             Text::new(ui, "Recent jobs")
                 .role(TextRole::Subheading)
                 .into_element(),
@@ -155,7 +182,7 @@ impl Application for Dashboard {
 pub fn demo() -> Demo<Dashboard> {
     Demo {
         name: "dashboard",
-        app: Dashboard::new(Theme::light()),
+        app: Dashboard::new(&Ui::new(Theme::light())),
         size: (520.0, 460.0),
         steps: vec![Step::Click("12 days")],
     }

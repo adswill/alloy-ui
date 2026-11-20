@@ -3,12 +3,13 @@ use alloy_ui_core::Key;
 use alloy_ui_examples::apps::{counter, dashboard, settings, text_editor, todo};
 use alloy_ui_examples::run::{apply, click_text, render_demo, runtime, Step};
 
+fn ui() -> alloy_ui_widgets::Ui {
+    alloy_ui_widgets::Ui::new(alloy_ui_theme::Theme::light())
+}
+
 #[test]
 fn counter_click_path() {
-    let mut rt = runtime(
-        counter::Counter::new(alloy_ui_theme::Theme::light()),
-        (360.0, 180.0),
-    );
+    let mut rt = runtime(counter::Counter::new(&ui()), (360.0, 180.0));
     assert!(click_text(&mut rt, "Add"));
     assert!(click_text(&mut rt, "Add"));
     assert!(click_text(&mut rt, "Subtract"));
@@ -39,10 +40,7 @@ fn editor_types_breaks_lines_and_moves() {
 
 #[test]
 fn editor_backspace_joins_lines() {
-    let mut rt = runtime(
-        text_editor::TextEditor::new(alloy_ui_theme::Theme::light()),
-        (400.0, 200.0),
-    );
+    let mut rt = runtime(text_editor::TextEditor::new(&ui()), (400.0, 200.0));
     apply(&mut rt, &Step::Press(Key::Backspace));
     assert_eq!(rt.app().caret, (1, 20));
     assert_eq!(rt.app().lines.len(), 2);
@@ -66,10 +64,7 @@ fn dashboard_range_switch_and_render() {
 
 #[test]
 fn idle_events_do_not_redraw() {
-    let mut rt = runtime(
-        counter::Counter::new(alloy_ui_theme::Theme::light()),
-        (360.0, 180.0),
-    );
+    let mut rt = runtime(counter::Counter::new(&ui()), (360.0, 180.0));
     let o = rt.handle_event(&alloy_ui_core::Event::CursorMoved(
         alloy_ui_core::Point::new(1.0, 1.0),
     ));

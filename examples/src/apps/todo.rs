@@ -59,7 +59,7 @@ const LIST_ID: u64 = 2;
 
 impl Todo {
     /// A list with a few starter tasks.
-    pub fn new(theme: Theme) -> Self {
+    pub fn new(ui: &Ui) -> Self {
         let t = |s: &str, d| Task {
             title: s.into(),
             done: d,
@@ -72,7 +72,7 @@ impl Todo {
             ],
             draft: String::new(),
             filter: Filter::All,
-            ui: Ui::new(theme),
+            ui: ui.clone(),
         }
     }
 }
@@ -205,7 +205,7 @@ impl Application for Todo {
 pub fn demo() -> Demo<Todo> {
     Demo {
         name: "todo",
-        app: Todo::new(Theme::light()),
+        app: Todo::new(&Ui::new(Theme::light())),
         size: (420.0, 340.0),
         steps: vec![
             Step::Click("What needs doing?"),

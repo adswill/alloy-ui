@@ -8,33 +8,55 @@ pub use alloy_ui_layout as layout;
 pub use alloy_ui_platform as platform;
 pub use alloy_ui_render as render;
 pub use alloy_ui_theme as theme;
+pub use alloy_ui_widgets as widgets;
 
 use alloy_ui_ipc::TaskRunner;
 use alloy_ui_platform::{PlatformError, PlatformEvent, ShellContext, ShellHandler, WindowSettings};
 use alloy_ui_render::{Renderer, WindowRenderer};
+use std::collections::HashMap;
+use std::sync::mpsc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
 
-/// Run `app` in a native window until it exits.
+/// Resolve a view tree to layout by arranging the root over the whole window.
 ///
-/// `layouter` resolves a view tree to absolute layout (the widgets crate
-/// provides one). Must be called on the main thread.
-pub fn run<A>(
+/// Use as the layouter for widget-based apps.
+pub fn layout_root<M>(root: &Element<M>, size: Size) -> Layout {
+    root.0.arrange(Rectangle::new(Point::new(0.0, 0.0), size))
+}
+
+/// Run a widget-based app in a native window until it exits.
+///
+/// `build` receives the per-window [`widgets::Ui`], already wired to the real
+/// text metrics and the OS clipboard, and returns the application. Must be
+/// called on the main thread.
+pub fn run<A, B>(settings: WindowSettings, build: B) -> Result<(), PlatformError>
+where
+    A: Application + 'static,
+    B: FnOnce(&widgets::Ui) -> A + 'static,
+{
+    run_with(settings, build, layout_root::<A::Message>)
+}
+
+/// Like [`run`] but with a custom layouter.
+pub fn run_with<A, B>(
     settings: WindowSettings,
-    app: A,
+    build: B,
     layouter: Layouter<A::Message>,
 ) -> Result<(), PlatformError>
 where
     A: Application + 'static,
+    B: FnOnce(&widgets::Ui) -> A + 'static,
 {
     let size = settings.size;
     alloy_ui_platform::run(settings, move |proxy| {
         let task_proxy = proxy.clone();
+        let (sub_tx, sub_rx) = mpsc::channel();
         Host {
-            pending: Some((app, size, layouter)),
+            pending: Some((Box::new(build), size, layouter)),
             runtime: None,
             renderer: None,
             tasks: TaskRunner::new(move || {
@@ -44,11 +66,34 @@ where
             start: Instant::now(),
             tick_due: Arc::new(AtomicBool::new(false)),
             tick_pending: false,
+            subs: HashMap::new(),
+            sub_rx,
+            sub_tx,
         }
     })
 }
 
-type Pending<A> = (A, Size, Layouter<<A as Application>::Message>);
+struct MeasurerMetrics(render::TextMeasurer);
+
+impl widgets::TextMetrics for MeasurerMetrics {
+    fn width(&self, text: &str, size: f32) -> f32 {
+        self.0.measure(text, size, 400, None).width
+    }
+}
+
+struct OsClipboard(std::cell::RefCell<Box<dyn platform::Clipboard>>);
+
+impl widgets::Clipboard for OsClipboard {
+    fn get(&self) -> Option<String> {
+        self.0.borrow().read_text().ok().flatten()
+    }
+    fn set(&self, text: String) {
+        let _ = self.0.borrow_mut().write_text(&text);
+    }
+}
+
+type Build<A> = Box<dyn FnOnce(&widgets::Ui) -> A>;
+type Pending<A> = (Build<A>, Size, Layouter<<A as Application>::Message>);
 
 struct Host<A: Application> {
     pending: Option<Pending<A>>,
@@ -59,6 +104,9 @@ struct Host<A: Application> {
     start: Instant,
     tick_due: Arc<AtomicBool>,
     tick_pending: bool,
+    subs: HashMap<u64, Arc<AtomicBool>>,
+    sub_rx: mpsc::Receiver<A::Message>,
+    sub_tx: mpsc::Sender<A::Message>,
 }
 
 impl<A: Application + 'static> Host<A> {
@@ -86,12 +134,47 @@ impl<A: Application + 'static> Host<A> {
                 self.tasks.spawn(fut);
             }
         }
+        self.sync_subscriptions();
+    }
+
+    /// Start new timers and stop those no longer requested.
+    fn sync_subscriptions(&mut self) {
+        let Some(rt) = self.runtime.as_ref() else {
+            return;
+        };
+        let wanted = rt.subscriptions();
+        let ids: Vec<u64> = wanted.iter().map(|s| s.id).collect();
+        self.subs.retain(|id, stop| {
+            let keep = ids.contains(id);
+            if !keep {
+                stop.store(true, Ordering::Release);
+            }
+            keep
+        });
+        for sub in wanted {
+            if self.subs.contains_key(&sub.id) {
+                continue;
+            }
+            let stop = Arc::new(AtomicBool::new(false));
+            self.subs.insert(sub.id, stop.clone());
+            let SubscriptionKind::Every { interval_ms, make } = sub.kind;
+            let (tx, proxy) = (self.sub_tx.clone(), self.proxy.clone());
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                    if stop.load(Ordering::Acquire) || tx.send(make()).is_err() {
+                        break;
+                    }
+                    proxy.wake();
+                }
+            });
+        }
     }
 }
 
 impl<A: Application + 'static> ShellHandler for Host<A> {
     fn started(&mut self, ctx: &mut ShellContext) {
-        let (app, _, layouter) = self.pending.take().expect("started once");
+        let (build, _, layouter) = self.pending.take().expect("started once");
         let size = ctx.logical_size();
         let (w, h) = ctx.physical_size();
         match WindowRenderer::new(ctx.window().clone(), w, h) {
@@ -102,11 +185,25 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                 return;
             }
         }
+        let theme = if ctx.is_dark().unwrap_or(false) {
+            theme::Theme::dark()
+        } else {
+            theme::Theme::light()
+        };
+        let ui = widgets::Ui::new(theme);
+        if let Some(r) = self.renderer.as_ref() {
+            ui.set_metrics(std::rc::Rc::new(MeasurerMetrics(r.text_measurer())));
+        }
+        ui.set_clipboard(std::rc::Rc::new(OsClipboard(std::cell::RefCell::new(
+            platform::default_clipboard(),
+        ))));
+        let app = build(&ui);
         let mut rt = Runtime::new(app, size, layouter);
         for fut in rt.take_futures() {
             self.tasks.spawn(fut);
         }
         self.runtime = Some(rt);
+        self.sync_subscriptions();
         ctx.request_redraw();
     }
 
@@ -130,7 +227,8 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     let ms = self.start.elapsed().as_millis() as u64;
                     outcome = rt.handle_event(&Event::Tick(ms));
                 }
-                let msgs = self.tasks.drain();
+                let mut msgs = self.tasks.drain();
+                msgs.extend(self.sub_rx.try_iter());
                 if !msgs.is_empty() {
                     let o = rt.dispatch_all(msgs);
                     outcome = Outcome {

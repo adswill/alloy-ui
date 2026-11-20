@@ -25,10 +25,10 @@ pub enum Msg {
 
 impl Counter {
     /// A counter at zero.
-    pub fn new(theme: Theme) -> Self {
+    pub fn new(ui: &Ui) -> Self {
         Self {
             value: 0,
-            ui: Ui::new(theme),
+            ui: ui.clone(),
         }
     }
 }
@@ -91,7 +91,7 @@ impl Application for Counter {
 pub fn demo() -> Demo<Counter> {
     Demo {
         name: "counter",
-        app: Counter::new(Theme::light()),
+        app: Counter::new(&Ui::new(Theme::light())),
         size: (360.0, 180.0),
         steps: vec![
             Step::Click("Add"),

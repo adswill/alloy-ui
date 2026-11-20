@@ -14,5 +14,7 @@ pub mod widget;
 pub use draw::{Border, DrawCommand, DrawList, Shadow};
 pub use event::{Event, Key, Modifiers, MouseButton};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
-pub use runtime::{Application, Command, Layouter, Outcome, Runtime, Subscription};
+pub use runtime::{
+    Application, Command, Layouter, Outcome, Runtime, Subscription, SubscriptionKind,
+};
 pub use widget::{Element, Layout, Widget};

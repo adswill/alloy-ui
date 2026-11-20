@@ -48,21 +48,15 @@ pub enum Msg {
 
 impl Settings {
     /// Defaults.
-    pub fn new() -> Self {
+    pub fn new(ui: &Ui) -> Self {
         Self {
             section: Section::Appearance,
             mode: ThemeMode::default(),
             text_px: 14.0,
             launch_at_login: false,
             auto_update: true,
-            ui: Ui::new(Theme::light()),
+            ui: ui.clone(),
         }
-    }
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -214,7 +208,7 @@ impl Application for Settings {
 pub fn demo() -> Demo<Settings> {
     Demo {
         name: "settings",
-        app: Settings::new(),
+        app: Settings::new(&Ui::new(Theme::light())),
         size: (560.0, 300.0),
         steps: vec![
             Step::Click("Dark"),

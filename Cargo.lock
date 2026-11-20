@@ -47,6 +47,7 @@ dependencies = [
  "alloy-ui-platform",
  "alloy-ui-render",
  "alloy-ui-theme",
+ "alloy-ui-widgets",
  "log",
 ]
 
@@ -80,8 +81,10 @@ version = "0.0.1"
 name = "alloy-ui-examples"
 version = "0.0.1"
 dependencies = [
+ "alloy-ui",
  "alloy-ui-core",
  "alloy-ui-layout",
+ "alloy-ui-platform",
  "alloy-ui-render",
  "alloy-ui-theme",
  "alloy-ui-widgets",

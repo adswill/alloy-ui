@@ -88,12 +88,11 @@ pub fn render<A: Application>(rt: &Runtime<A>, size: (f32, f32)) -> Image {
 
 /// Entry point shared by the example binaries: run the demo, write
 /// `<name>.png` into the directory given as the first argument (default `.`).
-pub fn main_headless<A: Application>(demo: Demo<A>) {
+pub fn main_headless<A: Application>(demo: Demo<A>, dir: &str) {
     let name = demo.name;
     let t0 = std::time::Instant::now();
     let (_rt, img) = render_demo(demo);
-    let dir = std::env::args().nth(1).unwrap_or_else(|| ".".into());
-    let path = std::path::Path::new(&dir).join(format!("{name}.png"));
+    let path = std::path::Path::new(dir).join(format!("{name}.png"));
     let png = img.encode_png().expect("png encode");
     std::fs::write(&path, png).expect("write png");
     println!(
@@ -101,4 +100,31 @@ pub fn main_headless<A: Application>(demo: Demo<A>) {
         t0.elapsed().as_secs_f64() * 1e3,
         path.display()
     );
+}
+
+/// Shared `main` for the example binaries.
+///
+/// Default: open a native window through `alloy_ui::run`. With `--headless
+/// [dir]`: run the scripted demo and write a PNG instead (used by tests,
+/// CI and the benchmark harness, which have no display).
+pub fn main_app<A: Application + 'static>(
+    title: &str,
+    size: (f32, f32),
+    build: fn(&alloy_ui_widgets::Ui) -> A,
+    demo: fn() -> Demo<A>,
+) {
+    let mut args = std::env::args().skip(1);
+    if args.next().as_deref() == Some("--headless") {
+        let dir = args.next().unwrap_or_else(|| ".".into());
+        main_headless(demo(), &dir);
+        return;
+    }
+    let settings = alloy_ui_platform::WindowSettings {
+        title: title.into(),
+        size: Size::new(size.0, size.1),
+    };
+    if let Err(e) = alloy_ui::run(settings, build) {
+        eprintln!("{title}: {}", e.0);
+        std::process::exit(1);
+    }
 }

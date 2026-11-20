@@ -28,12 +28,12 @@ fn byte_at(s: &str, col: usize) -> usize {
 
 impl TextEditor {
     /// A buffer with starter text.
-    pub fn new(theme: Theme) -> Self {
+    pub fn new(ui: &Ui) -> Self {
         let text = "Alloy draws every pixel itself.\nNo webview, no HTML.\n";
         Self {
             lines: text.split('\n').map(String::from).collect(),
             caret: (2, 0),
-            ui: Ui::new(theme),
+            ui: ui.clone(),
         }
     }
 
@@ -146,7 +146,7 @@ impl Application for TextEditor {
 pub fn demo() -> Demo<TextEditor> {
     Demo {
         name: "text_editor",
-        app: TextEditor::new(Theme::light()),
+        app: TextEditor::new(&Ui::new(Theme::light())),
         size: (520.0, 260.0),
         steps: vec![
             Step::Type("Typed text lands at the caret."),
