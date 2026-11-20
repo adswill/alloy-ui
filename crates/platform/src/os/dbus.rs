@@ -114,6 +114,9 @@ impl<'a> Reader<'a> {
         self.align(4);
         Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
     }
+    pub fn i32(&mut self) -> Result<i32> {
+        Ok(self.u32()? as i32)
+    }
     pub fn string(&mut self) -> Result<String> {
         let n = self.u32()? as usize;
         let s = String::from_utf8_lossy(self.take(n)?).into_owned();
