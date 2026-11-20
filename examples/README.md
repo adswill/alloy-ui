@@ -1,9 +1,14 @@
 # Alloy examples
 
-`counter`, `todo`, `text_editor`, `settings`, `dashboard`. Run one with
-`cargo run -p alloy-ui-examples --bin counter -- <out-dir>`; it drives a scripted
-session through the real runtime and writes `<name>.png`.
+`counter`, `todo`, `text_editor`, `settings`, `dashboard`, each a few dozen lines against
+`alloy_ui::prelude` (closure-style `sketch`, no message enums).
 
-UI is built from `src/kit.rs`, a stand-in for `alloy-ui-widgets` (not landed
-yet). It has no hover states, slider dragging or shaped text measurement.
-Swap in the real widgets and the app logic stays the same.
+```sh
+cargo run -p alloy-ui-examples --bin dashboard                 # opens a native window
+cargo run -p alloy-ui-examples --bin dashboard -- --headless out.png --click "12 days"   # PNG, no window
+cargo test -p alloy-ui-examples                                # scripted input + golden images
+UPDATE_GOLDEN=1 cargo test -p alloy-ui-examples                # regenerate goldens after a visual change
+```
+
+The dashboard uses the widgets' `BarChart` and the facade's `table`; the editor is the real
+`TextEditor`. Goldens live in `tests/golden` and double as the visual review surface.

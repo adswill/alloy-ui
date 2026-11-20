@@ -1338,3 +1338,20 @@ fn bar_chart_scales_bars_and_labels_them() {
     assert!((hs[1] / hs[0] - 2.0).abs() < 1e-3);
     assert_eq!(h.texts(), ["a", "b"]);
 }
+
+#[test]
+fn empty_row_and_column_lay_out() {
+    // Regression: measuring a childless container recursed forever.
+    let ui = Ui::new(Theme::light());
+    let root = Root::new(
+        &ui,
+        Column::new(vec![
+            Row::new(Vec::<Element<()>>::new()).into_element(),
+            Column::new(Vec::<Element<()>>::new()).into_element(),
+        ])
+        .into_element(),
+    )
+    .into_element();
+    let l = layout(&root, Size::new(200.0, 100.0));
+    assert!(l.bounds.size.width <= 200.0);
+}

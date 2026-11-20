@@ -11,13 +11,8 @@ publish = false
 [lints]
 workspace = true
 
+
 [dependencies]
-alloy-ui-core.workspace = true
-alloy-ui-layout.workspace = true
-alloy-ui-render.workspace = true
-alloy-ui-theme.workspace = true
-alloy-ui-widgets.workspace = true
-alloy-ui-platform.workspace = true
 alloy-ui = { path = "../crates/alloy" }
 
 [[bin]]
@@ -35,3 +30,6 @@ path = "src/bin/settings.rs"
 [[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
+
+[dev-dependencies]
+alloy-ui-render.workspace = true

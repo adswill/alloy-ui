@@ -58,9 +58,8 @@ dependencies = [
 name = "alloy-ui-bench"
 version = "0.0.1"
 dependencies = [
- "alloy-ui-core",
+ "alloy-ui",
  "alloy-ui-examples",
- "alloy-ui-render",
 ]
 
 [[package]]
@@ -85,12 +84,7 @@ name = "alloy-ui-examples"
 version = "0.0.1"
 dependencies = [
  "alloy-ui",
- "alloy-ui-core",
- "alloy-ui-layout",
- "alloy-ui-platform",
  "alloy-ui-render",
- "alloy-ui-theme",
- "alloy-ui-widgets",
 ]
 
 [[package]]

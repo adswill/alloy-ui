@@ -5,62 +5,60 @@ machine: the Linux cloud development container (shared CPU, software rendering
 through Mesa llvmpipe under Xvfb). Treat it as indicative, not as a GPU result.
 macOS and Windows have not been run yet; run the harness there and add a section.
 
-## Headless harness
+## Headless harness (Linux, software rendering)
 
-`cargo run --release -p alloy-ui-bench`
+`cargo run --release -p alloy-ui-bench` (the five examples in `examples/`, driven through `alloy_ui::testing::Harness`).
 
-- **Frame build**: `update` + `view` + layout + draw-list construction through the real `Runtime`, with real shaped text metrics (cosmic-text), as in a window.
-- **CPU raster**: the software reference renderer at 2x scale.
-- **wgpu offscreen**: the GPU renderer path rendering offscreen at 2x including read-back. On this machine the adapter is llvmpipe, a CPU rasteriser, so this is not GPU speed.
-- **Frames/s possible**: 1000 / (frame build + wgpu offscreen). An upper bound for the pipeline on this adapter, not a measured on-screen frame rate.
-- **Per no-op event**: runtime cost of an input event that changes nothing. It re-runs layout, so it is dominated by text measurement.
+- **First frame**: build the runtime, view + layout + draw, rasterise at 2x on the CPU, encode PNG.
+- **Repeat frame**: the same again with warm font caches (median of 15). The CPU reference rasteriser is not the GPU path.
+- **Per no-op key event**: runtime cost of an input event that changes nothing (a bound on idle work, not process CPU%).
 - **Spawn to first frame**: wall time from spawning `counter --headless` to its PNG being written.
-- **Binary size**: the stripped release `counter` (opt-level z, fat LTO, windowed build).
+- **Binary size**: the stripped release `counter`.
 
-    Finished `release` profile [optimized] target(s) in 0.12s
-### linux / x86_64
+The earlier wgpu-offscreen column was dropped when the examples moved to the facade: `Harness` does not expose the draw list yet.
 
-Offscreen wgpu adapter: llvmpipe (LLVM 20.1.2, 256 bits) (Cpu, Vulkan)
+### linux / x86_64 (cloud container, shared CPU)
 
-| Example | Frame build | CPU raster 2x | wgpu offscreen 2x (with read-back) | Frames/s possible (wgpu) | Per no-op event |
-|---|---|---|---|---|---|
-| counter | 389 us | 16.6 ms | 3.0 ms | 293 | 251489 ns |
-| todo | 551 us | 26.8 ms | 8.2 ms | 114 | 444591 ns |
-| text_editor | 481 us | 34.5 ms | 8.4 ms | 112 | 307722 ns |
-| settings | 288 us | 33.7 ms | 8.7 ms | 111 | 272466 ns |
-| dashboard | 1035 us | 47.3 ms | 11.2 ms | 82 | 811323 ns |
+| Example | First frame | Repeat frame | Per no-op key event |
+|---|---|---|---|
+| counter | 26.0 ms | 17.9 ms | 5 us |
+| todo | 60.9 ms | 42.1 ms | 8 us |
+| text_editor | 84.7 ms | 69.6 ms | 27 us |
+| settings | 55.8 ms | 52.3 ms | 7 us |
+| dashboard | 86.6 ms | 78.5 ms | 32 us |
 
 | Metric | Value | Target |
 |---|---|---|
-| counter release binary (windowed build, also runs headless) | 5.74 MB | < 10 MB |
-| counter spawn to first frame written (--headless, median of 7) | 27 ms | < 200 ms |
-| on-screen fps, ProMotion 120 fps | not measured (the shell has no frame counter) | 60 fps |
+| counter release binary (windowed build, also runs headless) | 7.15 MB | < 10 MB |
+| counter spawn to first frame written (--headless, median of 7) | 25 ms | < 200 ms |
 
-Finding: since the examples use real text metrics, a no-op event costs 0.25 to 0.8 ms (it was about 2 to 10 us with approximate metrics). Caching text measurements in the widget layer would remove most of that; it matters for idle CPU only if something triggers frequent re-layout.
+## Windowed run (Linux, Xvfb, Mesa llvmpipe software rendering)
 
-## Windowed run (Linux, Xvfb, software GL)
+`crates/bench/windowed.py target/release counter todo text_editor settings dashboard`
+(needs `xvfb xdotool libxkbcommon-x11-0 mesa-vulkan-drivers libvulkan1` and `pip install python-xlib`).
+The shell's frame counter is read through `ALLOY_PERF=1` (`ctx.frame_stats()`), and the window is closed with `WM_DELETE_WINDOW` so the totals are printed.
 
-`crates/bench/windowed.sh target/release counter todo text_editor settings dashboard`
+**These are Linux, software-rendered numbers, not GPU numbers.** There is no GPU in the container, and nothing here was run on macOS or Windows (CI has never completed a three-OS run).
 
-- **Window mapped**: from process spawn until an X window exists. This is not time to first painted frame.
-- **Idle CPU**: CPU time over 5 s after 1.5 s of settling, window untouched. The dashboard has a 1 s subscription that redraws, so it is not fully idle.
-- **Resident memory** is dominated by Mesa llvmpipe and wgpu in this container; a machine with a real GPU driver will differ.
+- **First paint**: from entering the shell's `run` to the end of the first painted frame (the shell's own measure; excludes process start).
+- **Idle frames**: frames painted in a run of about 6.5 s with the window untouched. Idle apps should paint only a few at start; `dashboard` has a 1 s tick so it keeps painting.
+- **Idle CPU**: CPU time over 5 s after 1.5 s of settling.
+- **Frames/s, pointer moving**: a separate run in which `xdotool` moves the pointer across the window for 5 s. `xdotool` is spawned once per move (about 30 ms each), so a figure near 30 is input-limited, not render-limited.
 
-| Example | Window mapped | Idle CPU (5 s) | Resident memory |
-|---|---|---|---|
-| counter | 27 ms | 0.00% | 120 MB |
-| todo | 33 ms | 0.00% | 120 MB |
-| text_editor | 26 ms | 0.00% | 120 MB |
-| settings | 34 ms | 0.00% | 120 MB |
-| dashboard | 30 ms | 1.00% | 123 MB |
+| Example | First paint | Idle frames (≈6.5 s run) | Idle CPU (5 s) | Frames/s, pointer moving | Resident memory |
+|---|---|---|---|---|---|
+| counter | 87 ms | 1 | 0.00% | 36 | 122 MB |
+| todo | 91 ms | 7 | 0.00% | 49 | 125 MB |
+| text_editor | 106 ms | 7 | 0.00% | 4 | 131 MB |
+| settings | 95 ms | 1 | 0.00% | 34 | 123 MB |
+| dashboard | 92 ms | 14 | 1.40% | 82 | 127 MB |
 
-A screenshot of the running dashboard window under Xvfb confirmed that the native window paints and that the subscription updates the chart.
+Reading it: first paint is 90 to 110 ms and idle CPU is 0.00% for every example except the ticking dashboard (1.4%). The `text_editor` figure of 4 frames/s while the pointer moves over it is a real outlier and is render-limited: the CPU path pays for the whole text area on every hover redraw. Resident memory is dominated by Mesa llvmpipe and wgpu in this container.
 
 ## Not measured yet
 
-- On-screen frames per second (the shell has no frame counter; the 60 fps and 120 fps ProMotion targets are unverified). The headless table gives only an upper bound on llvmpipe.
-- Time to first painted frame in a window.
-- Anything on a real GPU, macOS or Windows.
+- 120 fps on ProMotion, and any frame rate on a real GPU: the container has none.
+- Everything on macOS and Windows.
 
 ## Developer experience: lines of code vs iced
 
