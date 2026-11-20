@@ -7,7 +7,12 @@
 
 use crate::{convert, PlatformError, WindowSettings};
 use alloy_ui_core::{Event, Point, Size};
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use winit::{
     application::ApplicationHandler,
     dpi::LogicalSize,
@@ -35,9 +40,14 @@ pub enum PlatformEvent {
     },
     /// The display scale factor changed (e.g. window moved between monitors).
     ScaleFactorChanged(f64),
-    /// The user asked to close the window. The default is to exit; call
-    /// [`ShellContext::cancel_close`] to keep the window open.
+    /// The user asked to close the window that [`ShellContext::window_key`]
+    /// names. The default closes it (the loop exits when the last window is
+    /// gone); call [`ShellContext::cancel_close`] to keep it open.
     CloseRequested,
+    /// A window is about to be destroyed. [`ShellContext::window_key`] still
+    /// names it and [`ShellContext::window`] is still valid, so per-window
+    /// state (surfaces, runtimes) can be dropped here.
+    WindowClosed,
     /// The user chose a menu item (menu bar or tray menu); carries its id.
     MenuAction(String),
     /// The tray icon was clicked (left button).
@@ -52,8 +62,8 @@ pub trait ShellHandler {
     fn started(&mut self, _ctx: &mut ShellContext) {}
     /// Called for every platform event.
     fn event(&mut self, ctx: &mut ShellContext, event: PlatformEvent);
-    /// Called when the window must be painted. Draw into the surface for
-    /// `ctx.window()` here.
+    /// Called when a window must be painted. Draw into the surface for
+    /// `ctx.window()` here; `ctx.window_key()` says which window it is.
     fn redraw(&mut self, ctx: &mut ShellContext);
 }
 
@@ -72,9 +82,64 @@ impl ShellProxy {
     }
 }
 
+/// Stable identifier of a window, valid for the life of the event loop.
+/// The window opened by [`run`] is [`WindowKey::MAIN`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WindowKey(pub u64);
+
+impl WindowKey {
+    /// The first window, created by [`run`].
+    pub const MAIN: WindowKey = WindowKey(0);
+}
+
+/// Live frame statistics, for benchmarks and perf overlays.
+///
+/// A frame is one return from [`ShellHandler::redraw`] (any window), i.e. the
+/// moment the application has submitted and presented its frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameStats {
+    /// Frames painted since the loop started, across all windows.
+    pub frames: u64,
+    /// Time from entering [`run`] to the end of the first paint. `None` until
+    /// the first frame has been painted.
+    pub first_paint: Option<Duration>,
+    /// Frames painted during the last completed one-second window.
+    pub fps: f32,
+    since_start: Duration,
+    window_start: Duration,
+    window_frames: u64,
+}
+
+impl FrameStats {
+    /// Time since [`run`] was entered, as of the last painted frame.
+    pub fn elapsed(&self) -> Duration {
+        self.since_start
+    }
+
+    fn record(&mut self, since_start: Duration) {
+        self.frames += 1;
+        self.since_start = since_start;
+        self.first_paint.get_or_insert(since_start);
+        self.window_frames += 1;
+        let span = since_start.saturating_sub(self.window_start);
+        if span >= Duration::from_secs(1) {
+            self.fps = self.window_frames as f32 / span.as_secs_f32();
+            self.window_start = since_start;
+            self.window_frames = 0;
+        }
+    }
+}
+
 /// Window access and control, passed to handler callbacks.
 pub struct ShellContext {
+    /// The window the current callback is about.
     window: Arc<Window>,
+    key: WindowKey,
+    windows: HashMap<WindowKey, Arc<Window>>,
+    next_key: u64,
+    open_queue: Vec<(WindowKey, WindowSettings)>,
+    close_queue: Vec<WindowKey>,
+    stats: FrameStats,
     exit: bool,
     redraw: bool,
     close_cancelled: bool,
@@ -84,10 +149,48 @@ pub struct ShellContext {
 }
 
 impl ShellContext {
-    /// The window. `Arc<Window>` implements `HasWindowHandle` and
-    /// `HasDisplayHandle`, which is what the wgpu surface needs.
+    /// The window this callback is about (the one that received the input or
+    /// needs painting; the main window for global events such as `Wake`).
+    /// `Arc<Window>` implements `HasWindowHandle` and `HasDisplayHandle`,
+    /// which is what the wgpu surface needs.
     pub fn window(&self) -> &Arc<Window> {
         &self.window
+    }
+    /// Key of the window this callback is about.
+    pub fn window_key(&self) -> WindowKey {
+        self.key
+    }
+    /// Look up any open window.
+    pub fn window_by_key(&self, key: WindowKey) -> Option<&Arc<Window>> {
+        self.windows.get(&key)
+    }
+    /// Keys of all open windows, in no particular order.
+    pub fn window_keys(&self) -> impl Iterator<Item = WindowKey> + '_ {
+        self.windows.keys().copied()
+    }
+    /// Open another window. It is created when this callback returns and gets
+    /// a first `redraw` call right after; build its surface there, keyed by
+    /// [`ShellContext::window_key`]. Returns the key it will have.
+    pub fn open_window(&mut self, settings: WindowSettings) -> WindowKey {
+        self.next_key += 1;
+        let key = WindowKey(self.next_key);
+        self.open_queue.push((key, settings));
+        key
+    }
+    /// Close a window after this callback, without a `CloseRequested`
+    /// round trip. The loop exits when the last window closes.
+    pub fn close_window(&mut self, key: WindowKey) {
+        self.close_queue.push(key);
+    }
+    /// Frame counter and first-paint time. See [`FrameStats`].
+    pub fn frame_stats(&self) -> FrameStats {
+        self.stats
+    }
+    /// Redraw one specific window on the next loop turn.
+    pub fn request_redraw_of(&self, key: WindowKey) {
+        if let Some(w) = self.windows.get(&key) {
+            w.request_redraw();
+        }
     }
     /// A proxy for waking the loop from other threads.
     pub fn proxy(&self) -> ShellProxy {
@@ -142,7 +245,7 @@ impl ShellContext {
     /// Install the application menu bar. Item activations arrive as
     /// [`PlatformEvent::MenuAction`]. Errors where the OS has no menu bar.
     pub fn set_menu(&mut self, menus: &[crate::menu::Menu]) -> Result<(), PlatformError> {
-        let result = crate::os::set_menu(&self.window, menus);
+        let result = crate::os::set_menu(self.main_window(), menus);
         // macOS menus handle their own key equivalents; elsewhere the shell
         // matches shortcuts itself and reports them as MenuAction.
         self.shortcuts = if cfg!(target_os = "macos") {
@@ -157,11 +260,14 @@ impl ShellContext {
     /// Show a tray icon. Activations arrive as [`PlatformEvent::TrayClicked`]
     /// and [`PlatformEvent::MenuAction`].
     pub fn set_tray(&self, tray: &crate::tray::TraySettings) -> Result<(), PlatformError> {
-        crate::os::set_tray(&self.window, tray)
+        crate::os::set_tray(self.main_window(), tray)
     }
     /// Remove the tray icon.
     pub fn clear_tray(&self) {
         crate::os::clear_tray();
+    }
+    fn main_window(&self) -> &Window {
+        self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)
     }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
@@ -174,13 +280,31 @@ struct App<H> {
     make: Option<Box<dyn FnOnce(ShellProxy) -> H>>,
     handler: Option<H>,
     ctx: Option<ShellContext>,
+    ids: HashMap<WindowId, WindowKey>,
     mods: ModifiersState,
     cursor: Point,
     error: Option<PlatformError>,
     proxy: ShellProxy,
+    t0: Instant,
+}
+
+fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
+    Window::default_attributes()
+        .with_title(s.title.clone())
+        .with_inner_size(LogicalSize::new(s.size.width as f64, s.size.height as f64))
 }
 
 impl<H: ShellHandler> App<H> {
+    /// Point the context at `key` (falling back to the main window).
+    fn focus_ctx(&mut self, key: WindowKey) {
+        if let Some(ctx) = self.ctx.as_mut() {
+            if let Some(w) = ctx.windows.get(&key) {
+                ctx.window = w.clone();
+                ctx.key = key;
+            }
+        }
+    }
+
     fn dispatch(&mut self, el: &ActiveEventLoop, ev: PlatformEvent) {
         let (Some(h), Some(ctx)) = (self.handler.as_mut(), self.ctx.as_mut()) else {
             return;
@@ -189,16 +313,70 @@ impl<H: ShellHandler> App<H> {
         ctx.close_cancelled = false;
         h.event(ctx, ev);
         if closing && !ctx.close_cancelled {
-            ctx.exit = true;
+            let key = ctx.key;
+            ctx.close_queue.push(key);
         }
         self.finish(el);
     }
 
+    /// Apply queued window opens/closes and the exit/redraw flags.
     fn finish(&mut self, el: &ActiveEventLoop) {
-        if let Some(ctx) = self.ctx.as_mut() {
+        loop {
+            let Some(ctx) = self.ctx.as_mut() else {
+                return;
+            };
             if ctx.exit {
                 el.exit();
-            } else if std::mem::take(&mut ctx.redraw) {
+                return;
+            }
+            let (opens, closes) = (
+                std::mem::take(&mut ctx.open_queue),
+                std::mem::take(&mut ctx.close_queue),
+            );
+            if opens.is_empty() && closes.is_empty() {
+                break;
+            }
+            for (key, settings) in opens {
+                match el.create_window(attributes(&settings)) {
+                    Ok(w) => {
+                        let w = Arc::new(w);
+                        self.ids.insert(w.id(), key);
+                        w.request_redraw();
+                        if let Some(ctx) = self.ctx.as_mut() {
+                            ctx.windows.insert(key, w);
+                        }
+                    }
+                    Err(e) => log::error!("open_window: {e}"),
+                }
+            }
+            for key in closes {
+                let known = self.ctx.as_ref().is_some_and(|c| c.windows.contains_key(&key));
+                if !known {
+                    continue;
+                }
+                // Tell the handler while the window is still alive, then drop it.
+                let prev = self.ctx.as_ref().map(|c| c.key);
+                self.focus_ctx(key);
+                if let (Some(h), Some(ctx)) = (self.handler.as_mut(), self.ctx.as_mut()) {
+                    h.event(ctx, PlatformEvent::WindowClosed);
+                }
+                if let Some(ctx) = self.ctx.as_mut() {
+                    if let Some(w) = ctx.windows.remove(&key) {
+                        self.ids.remove(&w.id());
+                    }
+                    if ctx.windows.is_empty() {
+                        ctx.exit = true;
+                    } else if prev != Some(key) {
+                        let back = prev.unwrap_or(WindowKey::MAIN);
+                        self.focus_ctx(back);
+                    } else if let Some(&next) = self.ctx.as_ref().and_then(|c| c.windows.keys().min()) {
+                        self.focus_ctx(next);
+                    }
+                }
+            }
+        }
+        if let Some(ctx) = self.ctx.as_mut() {
+            if std::mem::take(&mut ctx.redraw) {
                 ctx.window.request_redraw();
             }
         }
@@ -210,16 +388,18 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         if self.ctx.is_some() {
             return;
         }
-        let attrs = Window::default_attributes()
-            .with_title(self.settings.title.clone())
-            .with_inner_size(LogicalSize::new(
-                self.settings.size.width as f64,
-                self.settings.size.height as f64,
-            ));
-        match el.create_window(attrs) {
+        match el.create_window(attributes(&self.settings)) {
             Ok(w) => {
+                let w = Arc::new(w);
+                self.ids.insert(w.id(), WindowKey::MAIN);
                 let mut ctx = ShellContext {
-                    window: Arc::new(w),
+                    window: w.clone(),
+                    key: WindowKey::MAIN,
+                    windows: HashMap::from([(WindowKey::MAIN, w)]),
+                    next_key: 0,
+                    open_queue: Vec::new(),
+                    close_queue: Vec::new(),
+                    stats: FrameStats::default(),
                     exit: false,
                     redraw: true,
                     close_cancelled: false,
@@ -240,13 +420,33 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
     }
 
     fn user_event(&mut self, el: &ActiveEventLoop, _: Wake) {
+        // Global events are about the main window.
+        self.focus_ctx(WindowKey::MAIN);
         for e in crate::os::take_pending() {
             self.dispatch(el, e);
         }
         self.dispatch(el, PlatformEvent::Wake);
     }
 
-    fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, ev: WindowEvent) {
+    fn exiting(&mut self, _: &ActiveEventLoop) {
+        if let Some(ctx) = &self.ctx {
+            if perf_log() {
+                let s = ctx.stats;
+                eprintln!(
+                    "alloy-perf frames={} elapsed_ms={:.1} avg_fps={:.1}",
+                    s.frames,
+                    s.since_start.as_secs_f64() * 1e3,
+                    s.frames as f64 / s.since_start.as_secs_f64().max(1e-9),
+                );
+            }
+        }
+    }
+
+    fn window_event(&mut self, el: &ActiveEventLoop, id: WindowId, ev: WindowEvent) {
+        let Some(&key) = self.ids.get(&id) else {
+            return;
+        };
+        self.focus_ctx(key);
         let scale = self.ctx.as_ref().map_or(1.0, |c| c.scale_factor());
         use PlatformEvent::Input as I;
         let out = match ev {
@@ -254,6 +454,14 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             WindowEvent::RedrawRequested => {
                 if let (Some(h), Some(ctx)) = (self.handler.as_mut(), self.ctx.as_mut()) {
                     h.redraw(ctx);
+                    let was_first = ctx.stats.frames == 0;
+                    ctx.stats.record(self.t0.elapsed());
+                    if was_first && perf_log() {
+                        eprintln!(
+                            "alloy-perf first_paint_ms={:.1}",
+                            self.t0.elapsed().as_secs_f64() * 1e3
+                        );
+                    }
                     self.finish(el);
                 }
                 None
@@ -339,6 +547,13 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
     }
 }
 
+/// True when `ALLOY_PERF` is set: the shell then prints `alloy-perf` lines
+/// (first paint, frame totals at exit) to stderr for benchmark scripts.
+fn perf_log() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("ALLOY_PERF").is_some())
+}
+
 /// Create a window and run the event loop until the handler exits.
 /// `make` builds the handler once the window system is ready.
 ///
@@ -347,6 +562,7 @@ pub fn run<H: ShellHandler + 'static>(
     settings: WindowSettings,
     make: impl FnOnce(ShellProxy) -> H + 'static,
 ) -> Result<(), PlatformError> {
+    let t0 = Instant::now();
     let mut builder = EventLoop::<Wake>::with_user_event();
     #[cfg(windows)]
     {
@@ -362,6 +578,8 @@ pub fn run<H: ShellHandler + 'static>(
     #[cfg(target_os = "linux")]
     crate::os::watch_theme();
     let mut app = App {
+        t0,
+        ids: HashMap::new(),
         settings,
         make: Some(Box::new(make)),
         handler: None,
