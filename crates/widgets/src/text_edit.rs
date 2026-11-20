@@ -11,6 +11,8 @@ pub struct Edit {
     pub preedit: String,
     /// Horizontal scroll of the text inside the field.
     pub scroll_x: f32,
+    /// Time of the last edit or caret move; the caret blink restarts from it.
+    pub blink_epoch: u64,
 }
 
 impl Edit {

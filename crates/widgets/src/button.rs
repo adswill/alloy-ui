@@ -5,8 +5,8 @@ use crate::{
     util::{self, focus_ring, key_of},
 };
 use alloy_ui_core::{
-    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton,
-    Point, Size, Widget,
+    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point,
+    Size, Widget,
 };
 use alloy_ui_layout::Length;
 
@@ -129,14 +129,13 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let enabled = self.on_press.is_some();
         let hover = enabled && self.ui.hovered(&b);
         let down = enabled && self.ui.is_pressed(&b) && hover;
+        let h = self.ui.ease(Ui::anim_key(&b, 2), hover as u8 as f32);
         let (fill, border, text) = match (self.variant, enabled) {
             (Variant::Primary, true) => (
                 if down {
                     p.accent_pressed
-                } else if hover {
-                    p.accent_hover
                 } else {
-                    p.accent
+                    util::mix(p.accent, p.accent_hover, h)
                 },
                 None,
                 p.on_accent,
@@ -145,10 +144,8 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             (Variant::Secondary, e) => (
                 if down {
                     p.border
-                } else if hover {
-                    p.surface
                 } else {
-                    p.surface_raised
+                    util::mix(p.surface_raised, p.surface, h)
                 },
                 Some(Border {
                     color: if e { p.border_strong } else { p.border },
@@ -159,10 +156,8 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             (Variant::Ghost, e) => (
                 if down {
                     p.border
-                } else if hover {
-                    p.surface
                 } else {
-                    Color::TRANSPARENT
+                    util::mix(p.surface.with_alpha(0.0), p.surface, h)
                 },
                 None,
                 if e { p.text } else { p.text_disabled },

@@ -115,7 +115,7 @@ impl<M: 'static> Widget<M> for Toggle<M> {
         if self.ui.is_focused(self.id) {
             out.push(focus_ring(track, H / 2.0, p.focus_ring));
         }
-        let (fill, edge, knob) = match (self.on, enabled) {
+        let state = |on: bool| match (on, enabled) {
             (true, true) => (
                 if hover { p.accent_hover } else { p.accent },
                 p.accent,
@@ -125,6 +125,22 @@ impl<M: 'static> Widget<M> for Toggle<M> {
             (false, true) => (p.surface_raised, p.border_strong, p.text_secondary),
             (false, false) => (p.surface, p.border, p.text_disabled),
         };
+        // The slide is the one meaningful state change here, so it gets the
+        // slower token; everything else about the switch stays still.
+        let m = t.motion;
+        let k_t = self.ui.ease_with(
+            Ui::anim_key(&b, 3),
+            self.on as u8 as f32,
+            m.normal_ms as u64,
+            m.easing,
+        );
+        let (f0, e0, k0) = state(false);
+        let (f1, e1, k1) = state(true);
+        let (fill, edge, knob) = (
+            crate::util::mix(f0, f1, k_t),
+            crate::util::mix(e0, e1, k_t),
+            crate::util::mix(k0, k1, k_t),
+        );
         out.push(DrawCommand::Quad {
             bounds: track,
             fill,
@@ -136,11 +152,7 @@ impl<M: 'static> Widget<M> for Toggle<M> {
             shadow: None,
         });
         let k = H - 8.0;
-        let kx = if self.on {
-            track.origin.x + W - 4.0 - k
-        } else {
-            track.origin.x + 4.0
-        };
+        let kx = track.origin.x + 4.0 + (W - 8.0 - k) * k_t;
         out.push(DrawCommand::Quad {
             bounds: Rectangle::new(Point::new(kx, track.origin.y + 4.0), Size::new(k, k)),
             fill: knob,

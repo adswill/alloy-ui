@@ -10,9 +10,9 @@ use alloy_ui_core::{
 };
 use alloy_ui_layout::Length;
 
-/// Chooses one of several strings. The popup is drawn and hit-tested by the
-/// widget itself, outside its layout bounds, so it can be covered by later
-/// siblings; keep pick lists near the top of a column or in their own row.
+/// Chooses one of several strings. The popup is drawn on the overlay layer
+/// (above everything, never clipped by a scrollable) and clicks on it are
+/// routed to the list by [`Root`](crate::Root).
 pub struct PickList<M> {
     ui: Ui,
     id: u64,
@@ -116,6 +116,14 @@ impl<M: 'static> Widget<M> for PickList<M> {
         };
         match event {
             Event::MousePressed(MouseButton::Left) => {
+                // A press that landed on the popup, routed here by `Root`.
+                if let Some(p) = self.ui.take_hit(self.id) {
+                    self.ui.set_popup(None);
+                    if let Some(i) = self.option_at(&b, p) {
+                        out.push(on_select(i));
+                    }
+                    return true;
+                }
                 if self.is_open() {
                     self.ui.set_popup(None);
                     if let Some(i) = self.option_at(&b, cursor) {
@@ -228,7 +236,8 @@ impl<M: 'static> Widget<M> for PickList<M> {
 
         if self.is_open() {
             let pop = self.popup(&b);
-            out.push(DrawCommand::Quad {
+            let mut cmds = Vec::new();
+            cmds.push(DrawCommand::Quad {
                 bounds: pop,
                 fill: p.surface_raised,
                 radius: t.radii.medium,
@@ -248,7 +257,7 @@ impl<M: 'static> Widget<M> for PickList<M> {
                     Size::new(pop.size.width - 8.0, self.row_h()),
                 );
                 if hot == Some(i) || self.selected == Some(i) {
-                    out.push(DrawCommand::Quad {
+                    cmds.push(DrawCommand::Quad {
                         bounds: row,
                         fill: if hot == Some(i) {
                             p.surface
@@ -260,7 +269,7 @@ impl<M: 'static> Widget<M> for PickList<M> {
                         shadow: None,
                     });
                 }
-                out.push(DrawCommand::Text {
+                cmds.push(DrawCommand::Text {
                     weight: 400,
                     line_height: None,
                     origin: Point::new(
@@ -273,6 +282,8 @@ impl<M: 'static> Widget<M> for PickList<M> {
                     max_width: None,
                 });
             }
+            // Overlay layer: above later siblings and outside scroll clips.
+            self.ui.overlay(Some(self.id), Some(pop), cmds);
         }
     }
 }

@@ -1,8 +1,10 @@
 //! Persistent UI state shared by widgets, text metrics and the clipboard seam.
 
 use crate::{text_edit::Edit, util};
-use alloy_ui_core::{DrawList, Element, Event, Key, Layout, Point, Rectangle, Size, Widget};
-use alloy_ui_theme::Theme;
+use alloy_ui_core::{
+    DrawCommand, DrawList, Element, Event, Key, Layout, Point, Rectangle, Size, Widget,
+};
+use alloy_ui_theme::{Easing, Theme};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 /// Measures text. The renderer will provide real metrics; until then
@@ -68,6 +70,41 @@ struct Inner {
     scroll: HashMap<u64, f32>,
     edits: HashMap<u64, Edit>,
     popup: Option<u64>,
+    now: u64,
+    anims: HashMap<u64, Anim>,
+    overlay: Vec<DrawCommand>,
+    regions: Vec<(u64, Rectangle)>,
+    hit: Option<(u64, Point)>,
+}
+
+/// One value moving toward a target over time (hover fades, toggle knobs,
+/// smooth scroll). `start` is `None` until the next tick so a transition
+/// begun by an event always runs its full duration.
+struct Anim {
+    from: f32,
+    to: f32,
+    start: Option<u64>,
+    dur: u64,
+    easing: Easing,
+}
+
+impl Anim {
+    fn value(&self, now: u64) -> f32 {
+        let Some(start) = self.start else {
+            return self.from;
+        };
+        if self.dur == 0 || now >= start + self.dur {
+            return self.to;
+        }
+        let t = (now - start) as f32 / self.dur as f32;
+        self.from + (self.to - self.from) * self.easing.at(t)
+    }
+    fn running(&self, now: u64) -> bool {
+        match self.start {
+            None => self.from != self.to,
+            Some(s) => now < s + self.dur,
+        }
+    }
 }
 
 /// Cheaply clonable handle to per-window widget state.
@@ -89,6 +126,11 @@ impl Ui {
             scroll: HashMap::new(),
             edits: HashMap::new(),
             popup: None,
+            now: 0,
+            anims: HashMap::new(),
+            overlay: Vec::new(),
+            regions: Vec::new(),
+            hit: None,
         })))
     }
 
@@ -162,7 +204,105 @@ impl Ui {
         }
     }
     pub(crate) fn begin_frame(&self) {
-        self.0.borrow_mut().order.clear();
+        let mut s = self.0.borrow_mut();
+        s.order.clear();
+        s.overlay.clear();
+        s.regions.clear();
+    }
+
+    /// Monotonic milliseconds of the last `Event::Tick`.
+    pub fn now(&self) -> u64 {
+        self.0.borrow().now
+    }
+    /// Advance the animation clock (called by [`Root`] on `Event::Tick`).
+    pub(crate) fn tick(&self, now: u64) {
+        let mut s = self.0.borrow_mut();
+        s.now = now;
+        for a in s.anims.values_mut() {
+            if a.start.is_none() {
+                a.start = Some(now);
+            }
+        }
+    }
+    /// True while any transition is still running; the runtime then keeps ticking.
+    pub fn animating(&self) -> bool {
+        let s = self.0.borrow();
+        s.anims.values().any(|a| a.running(s.now))
+    }
+    /// Current value of the transition `key`, moving toward `target` over the
+    /// theme's fast motion duration. The first call returns `target` at once.
+    pub fn ease(&self, key: u64, target: f32) -> f32 {
+        let t = self.theme();
+        self.ease_with(key, target, t.motion.fast_ms as u64, t.motion.easing)
+    }
+    /// Like [`Ui::ease`] with an explicit duration and easing. A duration of
+    /// zero jumps straight to the target.
+    pub fn ease_with(&self, key: u64, target: f32, dur_ms: u64, easing: Easing) -> f32 {
+        let mut s = self.0.borrow_mut();
+        let now = s.now;
+        let a = s.anims.entry(key).or_insert(Anim {
+            from: target,
+            to: target,
+            start: Some(now),
+            dur: 0,
+            easing,
+        });
+        if a.to != target {
+            let cur = a.value(now);
+            *a = Anim {
+                from: cur,
+                to: target,
+                start: if dur_ms == 0 { Some(now) } else { None },
+                dur: dur_ms,
+                easing,
+            };
+        }
+        a.value(now)
+    }
+    /// A key for a per-widget transition, derived from where the widget is.
+    pub(crate) fn anim_key(bounds: &Rectangle, kind: u64) -> u64 {
+        let (x, y) = util::key_of(bounds);
+        ((x as u32 as u64) << 32 | y as u32 as u64) ^ kind.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+    }
+
+    /// Draw `cmds` above everything else this frame and make `region`
+    /// clickable for `owner` even where later siblings overlap it.
+    pub(crate) fn overlay(
+        &self,
+        owner: Option<u64>,
+        region: Option<Rectangle>,
+        cmds: Vec<DrawCommand>,
+    ) {
+        let mut s = self.0.borrow_mut();
+        s.overlay.extend(cmds);
+        if let (Some(o), Some(r)) = (owner, region) {
+            s.regions.push((o, r));
+        }
+    }
+    fn take_overlay(&self) -> Vec<DrawCommand> {
+        std::mem::take(&mut self.0.borrow_mut().overlay)
+    }
+    fn overlay_owner_at(&self, p: Point) -> Option<u64> {
+        let s = self.0.borrow();
+        s.regions
+            .iter()
+            .rev()
+            .find(|(_, r)| r.contains(p))
+            .map(|(o, _)| *o)
+    }
+    fn set_hit(&self, hit: Option<(u64, Point)>) {
+        self.0.borrow_mut().hit = hit;
+    }
+    /// The overlay press addressed to `owner`, if any (consumes it).
+    pub(crate) fn take_hit(&self, owner: u64) -> Option<Point> {
+        let mut s = self.0.borrow_mut();
+        match s.hit {
+            Some((o, p)) if o == owner => {
+                s.hit = None;
+                Some(p)
+            }
+            _ => None,
+        }
     }
 
     /// Last known cursor position (used for hover styling).
@@ -253,6 +393,22 @@ impl<M: 'static> Widget<M> for Root<M> {
         cursor: Point,
         out: &mut Vec<M>,
     ) -> bool {
+        if let Event::Tick(ms) = event {
+            self.ui.tick(*ms);
+        }
+        // A press on an overlay (open pick list) goes to its owner even if
+        // later siblings cover the spot: deliver it with the pointer parked
+        // off-screen so nothing else claims it.
+        if let Event::MousePressed(_) = event {
+            if let Some(owner) = self.ui.overlay_owner_at(cursor) {
+                self.ui.set_cursor(cursor);
+                self.ui.set_hit(Some((owner, cursor)));
+                let off = Point::new(-1.0e6, -1.0e6);
+                util::dispatch(&mut self.child, event, layout, off, out);
+                self.ui.set_hit(None);
+                return true;
+            }
+        }
         match event {
             Event::CursorMoved(p) => self.ui.set_cursor(*p),
             Event::CursorLeft => self.ui.set_cursor(Point::new(-1.0e6, -1.0e6)),
@@ -277,8 +433,14 @@ impl<M: 'static> Widget<M> for Root<M> {
         }
         consumed
     }
+    fn animating(&self) -> bool {
+        self.ui.animating() || util::any_animating(&self.child)
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         self.ui.begin_frame();
         util::draw_children(&self.child, layout, out);
+        for c in self.ui.take_overlay() {
+            out.push(c);
+        }
     }
 }

@@ -54,6 +54,12 @@ impl Harness {
     fn key(&mut self, k: Key) -> Vec<Msg> {
         self.send(Event::KeyPressed(k, Modifiers::default()))
     }
+    fn tick(&mut self, ms: u64) {
+        self.send(Event::Tick(ms));
+    }
+    fn animating(&self) -> bool {
+        self.root.0.animating()
+    }
     fn draw(&self) -> DrawList {
         let mut l = DrawList::default();
         self.root.0.draw(&self.layout, &mut l);
@@ -498,7 +504,16 @@ fn scrollable_offsets_child_content() {
     assert_eq!(first_y(&h), Some(0.0));
     h.mv(10.0, 10.0);
     h.send(Event::Scrolled { dx: 0.0, dy: -30.0 });
+    // Smooth scrolling: the offset target moved, the view eases toward it.
+    assert_eq!(ui.scroll_offset(9), 30.0);
+    assert_eq!(first_y(&h), Some(0.0));
+    assert!(h.animating());
+    h.tick(1000);
+    let mid = first_y(&h).unwrap();
+    assert!(mid <= 0.0 && mid >= -30.0);
+    h.tick(1000 + 1000);
     assert_eq!(first_y(&h), Some(-30.0));
+    assert!(!h.animating(), "idle once settled");
 }
 
 #[test]
@@ -636,7 +651,7 @@ fn progress_bar_fraction_and_bad_input() {
 }
 
 #[test]
-fn tooltip_only_while_hovered() {
+fn tooltip_waits_for_dwell_then_shows_and_hides_at_once() {
     let ui = ui();
     let tip = Tooltip::new(
         &ui,
@@ -644,11 +659,17 @@ fn tooltip_only_while_hovered() {
         "Help",
     );
     let mut h = Harness::new(&ui, tip.into_element(), 200.0, 100.0);
-    assert!(!h.texts().contains(&"Help".to_string()));
+    let shown = |h: &Harness| h.texts().contains(&"Help".to_string());
+    assert!(!shown(&h));
     h.mv(5.0, 5.0);
-    assert!(h.texts().contains(&"Help".to_string()));
+    h.draw();
+    h.tick(1000);
+    assert!(!shown(&h), "not yet: the pointer has only just arrived");
+    assert!(h.animating(), "the dwell timer needs ticks");
+    h.tick(1600);
+    assert!(shown(&h));
     h.mv(190.0, 90.0);
-    assert!(!h.texts().contains(&"Help".to_string()));
+    assert!(!shown(&h), "hides immediately");
 }
 
 #[test]
@@ -673,4 +694,149 @@ fn layout_fn_matches_runtime_layouter_signature() {
     let f: Layouter<Msg> = alloy_ui_widgets::layout::<Msg>;
     let l = f(&root, Size::new(300.0, 200.0));
     assert_eq!(l.bounds.size, Size::new(300.0, 200.0));
+}
+
+#[test]
+fn idle_ui_does_not_animate() {
+    let ui = ui();
+    let col = Column::new(vec![
+        Button::new(&ui, "A").on_press(Msg::Clicked).into_element(),
+        Checkbox::new(&ui, "B", true)
+            .on_toggle(Msg::Toggled)
+            .into_element(),
+        TextInput::new(&ui, 1, "x")
+            .on_input(Msg::Text)
+            .into_element(),
+    ]);
+    let mut h = Harness::new(&ui, col.into_element(), 300.0, 200.0);
+    h.draw();
+    h.tick(10);
+    assert!(
+        !h.animating(),
+        "nothing focused or moving: zero ticks needed"
+    );
+}
+
+#[test]
+fn button_hover_fades_over_the_fast_duration() {
+    let ui = ui();
+    let mk = |ui: &Ui| {
+        Harness::new(
+            ui,
+            Button::new(ui, "A")
+                .variant(Variant::Primary)
+                .on_press(Msg::Clicked)
+                .into_element(),
+            200.0,
+            80.0,
+        )
+    };
+    let mut h = mk(&ui);
+    let fill = |h: &Harness| match &h.draw().0[0] {
+        DrawCommand::Quad { fill, .. } => fill.r,
+        c => panic!("{c:?}"),
+    };
+    let rest = fill(&h);
+    h.mv(5.0, 5.0);
+    assert_eq!(fill(&h), rest, "transition starts on the next tick");
+    h.tick(100);
+    let fast = ui.theme().motion.fast_ms as u64;
+    h.tick(100 + fast / 2);
+    let mid = fill(&h);
+    h.tick(100 + fast);
+    let end = fill(&h);
+    assert_eq!(end, ui.theme().palette.accent_hover.r);
+    assert!(
+        (mid - rest).abs() > 0.0 && (end - mid).abs() > 0.0 || rest == end,
+        "mid {mid} rest {rest} end {end}"
+    );
+    assert!(!h.animating());
+}
+
+#[test]
+fn text_caret_blinks_only_while_focused() {
+    let ui = ui();
+    let mk = |ui: &Ui| {
+        Harness::new(
+            ui,
+            TextInput::new(ui, 7, "ab")
+                .on_input(Msg::Text)
+                .into_element(),
+            300.0,
+            40.0,
+        )
+    };
+    let mut h = mk(&ui);
+    assert!(!h.animating());
+    h.click(290.0, 20.0);
+    assert!(h.animating(), "focused field needs ticks");
+    let carets = |h: &Harness| {
+        h.draw()
+            .0
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Quad { bounds, .. } if bounds.size.width == 1.5))
+            .count()
+    };
+    h.tick(0);
+    assert_eq!(carets(&h), 1);
+    h.tick(600);
+    assert_eq!(carets(&h), 0, "off phase");
+    h.tick(1100);
+    assert_eq!(carets(&h), 1);
+}
+
+#[test]
+fn overlay_click_reaches_pick_list_through_a_covering_sibling() {
+    let ui = ui();
+    let mk = |ui: &Ui| {
+        Column::new(vec![
+            PickList::new(ui, 12, vec!["a".into(), "b".into(), "c".into()], Some(0))
+                .on_select(Msg::Picked)
+                .into_element(),
+            // A later sibling that would normally take clicks beneath the popup.
+            Button::new(ui, "Underneath")
+                .width(Length::Fill(1))
+                .on_press(Msg::Clicked)
+                .into_element(),
+        ])
+        .spacing(4.0)
+        .into_element()
+    };
+    let mut h = Harness::new(&ui, mk(&ui), 300.0, 300.0);
+    h.click(5.0, 5.0); // open
+    h.draw(); // overlay regions are recorded while drawing
+    let field_h = h.layout.children[0].children[0].bounds.size.height;
+    let row_h = ui.theme().typography.body.line_height + 2.0 * ui.theme().spacing.xs;
+    let y = field_h + 4.0 + 4.0 + row_h * 1.5;
+    let msgs = h.click(5.0, y);
+    assert_eq!(
+        msgs,
+        vec![Msg::Picked(1)],
+        "button underneath must not fire"
+    );
+}
+
+#[test]
+fn popup_is_drawn_last() {
+    let ui = ui();
+    let col = Column::new(vec![
+        PickList::new(&ui, 12, vec!["a".into(), "b".into()], Some(0))
+            .on_select(Msg::Picked)
+            .into_element(),
+        Button::new(&ui, "Below")
+            .on_press(Msg::Clicked)
+            .into_element(),
+    ]);
+    let h = Harness::new(&ui, col.into_element(), 300.0, 300.0);
+    ui.set_popup(Some(12));
+    let list = h.draw().0;
+    let last_text = list.iter().rev().find_map(|c| match c {
+        DrawCommand::Text { content, .. } => Some(content.clone()),
+        _ => None,
+    });
+    assert_eq!(
+        last_text.as_deref(),
+        Some("b"),
+        "popup text comes after the sibling button"
+    );
 }
