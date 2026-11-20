@@ -1,10 +1,12 @@
 name: CI
 on:
   push:
+    branches: [main, claude/project-thread-6n01vk]
   pull_request:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Runner start-up can lag by many minutes; never cancel runs of the integration branch.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/claude/project-thread-6n01vk' }}
 env:
   CARGO_TERM_COLOR: always
 jobs:
