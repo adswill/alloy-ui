@@ -1,7 +1,7 @@
 //! macOS backend using the stock `pbcopy`/`pbpaste`/`osascript`/`defaults` tools.
 //! Compiled by CI on macOS; not run on a Mac by the author.
 
-use super::{capture, feed};
+use super::capture;
 use crate::{
     menu::{Menu, MenuItem},
     theme,
@@ -12,17 +12,25 @@ use objc2::runtime::AnyObject;
 use objc2::{
     define_class, msg_send, rc::Retained, sel, AllocAnyThread, MainThreadMarker, MainThreadOnly,
 };
-use objc2_app_kit::{NSApplication, NSImage, NSMenu, NSMenuItem, NSStatusBar, NSStatusItem};
+use objc2_app_kit::{
+    NSApplication, NSImage, NSMenu, NSMenuItem, NSPasteboard, NSPasteboardTypeString, NSStatusBar,
+    NSStatusItem,
+};
 use objc2_foundation::{NSData, NSObject, NSObjectProtocol, NSString};
 use std::path::PathBuf;
 use std::{cell::RefCell, sync::Mutex};
 
 pub fn clipboard_read() -> Option<String> {
-    capture("pbpaste", &[])
+    // SAFETY: NSPasteboardTypeString is a valid constant exported by AppKit.
+    let pb = NSPasteboard::generalPasteboard();
+    unsafe { pb.stringForType(NSPasteboardTypeString) }.map(|s| s.to_string())
 }
 
 pub fn clipboard_write(text: &str) -> bool {
-    feed("pbcopy", &[], text)
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    // SAFETY: as above.
+    unsafe { pb.setString_forType(&NSString::from_str(text), NSPasteboardTypeString) }
 }
 
 /// Escape a string for use inside an AppleScript double-quoted literal.

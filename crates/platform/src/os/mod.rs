@@ -2,10 +2,7 @@
 //! Backends shell out to each OS's own stock tools (no extra crates, no `unsafe`).
 
 use crate::{Clipboard, Dialogs, PlatformError, SystemTheme};
-use std::{
-    io::Write,
-    process::{Command, Stdio},
-};
+use std::process::{Command, Stdio};
 
 #[cfg(target_os = "linux")]
 mod linux;
@@ -36,8 +33,10 @@ pub(crate) fn capture(prog: &str, args: &[&str]) -> Option<String> {
         .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
+#[cfg(target_os = "linux")]
 /// Run a program feeding `input` to stdin. Returns true on success.
 pub(crate) fn feed(prog: &str, args: &[&str], input: &str) -> bool {
+    use std::io::Write;
     let Ok(mut child) = Command::new(prog)
         .args(args)
         .stdin(Stdio::piped())

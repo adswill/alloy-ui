@@ -1,7 +1,7 @@
 //! Windows backend using PowerShell and `reg.exe`, both present on every
 //! supported Windows. Compiled by CI on Windows; not run by the author.
 
-use super::{capture, feed};
+use super::capture;
 use crate::{
     menu::{Menu, MenuItem},
     theme,
@@ -27,12 +27,69 @@ fn ps(script: &str) -> Option<String> {
     )
 }
 
+/// CF_UNICODETEXT clipboard format id.
+const CF_UNICODETEXT: u32 = 13;
+
 pub fn clipboard_read() -> Option<String> {
-    ps("Get-Clipboard -Raw").map(|s| s.trim_end_matches(['\r', '\n']).to_owned())
+    use windows_sys::Win32::System::{
+        DataExchange::{CloseClipboard, GetClipboardData, OpenClipboard},
+        Memory::{GlobalLock, GlobalUnlock},
+    };
+    // SAFETY: the clipboard is opened for the duration of the block and always
+    // closed; the HGLOBAL is locked before reading and the NUL-terminated UTF-16
+    // buffer is only read up to its terminator.
+    unsafe {
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return None;
+        }
+        let mut out = None;
+        let h = GetClipboardData(CF_UNICODETEXT);
+        if !h.is_null() {
+            let p = GlobalLock(h) as *const u16;
+            if !p.is_null() {
+                let mut len = 0;
+                while *p.add(len) != 0 {
+                    len += 1;
+                }
+                out = Some(String::from_utf16_lossy(std::slice::from_raw_parts(p, len)));
+                GlobalUnlock(h);
+            }
+        }
+        CloseClipboard();
+        out
+    }
 }
 
 pub fn clipboard_write(text: &str) -> bool {
-    feed("clip", &[], text)
+    use windows_sys::Win32::System::{
+        DataExchange::{CloseClipboard, EmptyClipboard, OpenClipboard, SetClipboardData},
+        Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE},
+    };
+    let w = wide(text);
+    // SAFETY: allocates a movable global block of exactly the buffer size, copies
+    // into it while locked, and hands ownership to the clipboard on success
+    // (freed ourselves on failure).
+    unsafe {
+        if OpenClipboard(std::ptr::null_mut()) == 0 {
+            return false;
+        }
+        EmptyClipboard();
+        let h = GlobalAlloc(GMEM_MOVEABLE, w.len() * 2);
+        let mut ok = false;
+        if !h.is_null() {
+            let p = GlobalLock(h) as *mut u16;
+            if !p.is_null() {
+                std::ptr::copy_nonoverlapping(w.as_ptr(), p, w.len());
+                GlobalUnlock(h);
+                ok = !SetClipboardData(CF_UNICODETEXT, h).is_null();
+            }
+            if !ok {
+                windows_sys::Win32::Foundation::GlobalFree(h);
+            }
+        }
+        CloseClipboard();
+        ok
+    }
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
