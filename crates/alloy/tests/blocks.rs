@@ -95,3 +95,76 @@ fn pages_keep_state_per_page_and_switch() {
         "form opens after selecting, state survived the page switch"
     );
 }
+
+choices! { enum Kind2 { A, B } }
+
+#[derive(Clone, Default, serde::Serialize, serde::Deserialize)]
+struct Doc {
+    body: String,
+    pinned: bool,
+}
+
+fn docs() -> Local<Vec<Doc>> {
+    store(|| {
+        vec![
+            Doc {
+                body: "Alpha\nfirst".into(),
+                pinned: false,
+            },
+            Doc {
+                body: "Beta\nsecond".into(),
+                pinned: true,
+            },
+        ]
+    })
+}
+
+#[test]
+fn browse_pins_searches_adds_and_confirms_delete() {
+    let app = sketch((), |_| {
+        let d = docs();
+        browse(&d)
+            .doc(|n| &n.body)
+            .pin(|n| n.pinned)
+            .new(Doc::default)
+            .detail(move |n| {
+                col![
+                    text(format!("editing {}", n.index())),
+                    button("Delete").act(move |_| n.remove()).confirm("Really?")
+                ]
+            })
+    });
+    let mut h = Harness::new(app, 900.0, 500.0);
+    assert!(
+        h.position("★ Beta").unwrap().y < h.position("Alpha").unwrap().y,
+        "pinned first"
+    );
+    assert!(h.has_text("editing 0"));
+    h.click("New");
+    assert!(h.has_text("editing 2"), "new row is selected");
+    assert!(h.has_text("Untitled"));
+    h.click("Delete");
+    assert!(h.has_text("Really?"));
+    h.click("Cancel");
+    assert!(!h.has_text("Really?"));
+    h.click("Delete");
+    h.click("Delete");
+    assert!(!h.has_text("Untitled"), "second click deletes");
+}
+
+#[test]
+fn filter_and_table_detail() {
+    let app = sketch((), |_| {
+        let f = local(None::<Kind2>);
+        let rows = f.apply(&[(1, Kind2::A), (2, Kind2::B)], |r| r.1);
+        col![
+            filter_by(&f),
+            tally(&rows, |r| r.1),
+            text(format!("{} rows", rows.len()))
+        ]
+    });
+    let mut h = Harness::new(app, 600.0, 300.0);
+    assert!(h.has_text("2 rows"));
+    h.click("B");
+    assert!(h.has_text("1 rows"));
+}

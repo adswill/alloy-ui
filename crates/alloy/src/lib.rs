@@ -29,6 +29,7 @@
 mod app;
 mod blocks;
 mod chart;
+mod collections;
 mod cx;
 mod dsl;
 mod persist;
@@ -42,6 +43,9 @@ pub use blocks::{
     app, field, local, shell, store, store_as, table, theme_switch, Local, Pages, Table,
 };
 pub use chart::bars;
+pub use collections::{
+    browse, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item, Prop, TextCell,
+};
 pub use cx::{palette, set_dark, theme, ui};
 pub use dsl::{
     button, caption, check, choose, custom, editor, gap, heading, input, list, nav, options, pick,
@@ -58,11 +62,12 @@ pub use {serde, serde_json};
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::{
-        app, bars, button, caption, check, choose, crud, crud_app, custom, editor, every, field,
-        gap, heading, input, list, local, nav, options, palette, pick, progress, radio, records,
-        records_in, resource, rule, scroll, secs, section, set_dark, shell, sketch, sleep, slider,
-        space, store, store_as, table, table_of, tabs, text, theme_switch, toggle, vspace, Act,
-        App, Choice, Cmd, Local, Node, Record, Records, Resource, View,
+        app, bars, browse, button, caption, check, choose, crud, crud_app, custom, editor, every,
+        field, filter_by, gap, heading, input, list, local, nav, options, palette, pick, progress,
+        radio, records, records_in, resource, rule, scroll, secs, section, set_dark, shell, sketch,
+        sleep, slider, space, stat, stats, store, store_as, table, table_of, tabs, tally, text,
+        theme_switch, toggle, vspace, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item,
+        Local, Node, Record, Records, Resource, TextCell, View,
     };
     pub use crate::{choices, col, row, vals};
     pub use alloy_ui_core::Color;

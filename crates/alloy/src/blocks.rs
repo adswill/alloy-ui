@@ -91,6 +91,7 @@ struct GCol<T> {
 type RowFn<S> = Arc<dyn Fn(&mut S, usize) + Send + Sync>;
 
 /// A sortable, filterable table over a slice. See [`table`].
+#[allow(clippy::type_complexity)]
 pub struct Table<'a, T, S> {
     rows: &'a [T],
     cols: Vec<GCol<T>>,
@@ -99,6 +100,8 @@ pub struct Table<'a, T, S> {
     on_select: Option<RowFn<S>>,
     actions: Vec<(String, RowFn<S>)>,
     sort: Local<Option<(usize, bool)>>,
+    detail: Option<Box<dyn Fn(&T) -> Node<Act<S>>>>,
+    open: Local<Option<usize>>,
     id: u64,
 }
 
@@ -119,6 +122,8 @@ pub fn table<T, S>(rows: &[T]) -> Table<'_, T, S> {
         on_select: None,
         actions: Vec::new(),
         sort: local(None),
+        detail: None,
+        open: local(None),
         id: auto_id(21),
     }
 }
@@ -156,6 +161,19 @@ impl<'a, T, S: 'static> Table<'a, T, S> {
     pub fn on_select(mut self, f: impl Fn(&mut S, usize) + Send + Sync + 'static) -> Self {
         self.on_select = Some(Arc::new(f));
         self
+    }
+    /// A card to the right of the table showing the picked row (a row stays picked until another
+    /// is; indices refer to `rows` as given). Picking is handled for you.
+    pub fn detail<N: Into<Node<Act<S>>>>(mut self, f: impl Fn(&T) -> N + 'static) -> Self {
+        let open = self.open;
+        self.detail = Some(Box::new(move |r| f(r).into()));
+        self.selected(open.get())
+            .on_select(move |_, i| open.set(Some(i)))
+    }
+    /// Bind the selected row to a [`local`] (`None` = nothing selected).
+    pub fn pick(self, cell: &Local<Option<usize>>) -> Self {
+        let c = *cell;
+        self.selected(c.get()).on_select(move |_, i| c.set(Some(i)))
     }
     /// A button at the end of every row.
     pub fn action(
@@ -287,7 +305,26 @@ impl<T, S: 'static> From<Table<'_, T, S>> for Node<Act<S>> {
             }
             grid = grid.row(row);
         }
-        Node(grid.into_element())
+        let table = Node(grid.into_element());
+        match t
+            .detail
+            .as_ref()
+            .zip(t.open.get())
+            .and_then(|(f, i)| t.rows.get(i).map(f))
+        {
+            Some(card) => crate::row([
+                table,
+                crate::view::node::<Act<S>, _>(card)
+                    .card()
+                    .pad(20.0)
+                    .w(300.0)
+                    .into(),
+            ])
+            .gap(16.0)
+            .fill()
+            .into(),
+            None => table,
+        }
     }
 }
 
@@ -363,6 +400,19 @@ pub fn app(title: &str) -> Pages {
 }
 
 impl Pages {
+    /// A "Settings" page: your controls (a [`section`](crate::section) each, say) under the
+    /// built-in heading, above the Light / Dark switch every app wants.
+    pub fn settings<N: Into<Node<Act<()>>>>(self, body: impl Fn() -> N + 'static) -> Self {
+        self.page("Settings", move || {
+            col([
+                Node::from(crate::heading("Settings")),
+                body().into(),
+                crate::section("Theme", theme_switch()).into(),
+            ])
+            .gap(16.0)
+            .pad(24.0)
+        })
+    }
     /// Add a sidebar entry. `view` builds the page while it is showing.
     pub fn page<N: Into<Node<Act<()>>>>(
         mut self,

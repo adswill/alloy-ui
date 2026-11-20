@@ -159,3 +159,17 @@ Honest reading:
   (`sleep`, plain futures); a tokio-based client would need its own runtime inside the fetch.
   `list` has no empty-state or search integration, and `editor` has no font option (the iced
   notes app had a monospace toggle that was removed for parity).
+
+### Pass 4: list-detail, cells, confirm, stat cards (status and notes)
+
+New facade features, all general (`crates/alloy/src/collections.rs`): `Cell` handles (`Local` or one field of one list row) with `.input()`, `.editor()`, `.check()`, `.switch()`, `.options()`; `browse(&items)` list-detail with search, pinning, ordering, New and a per-row detail pane; `Button::confirm`; `stat`/`stats`/`tally`/`filter_by` plus `Local::apply`; `Table::detail`; `Resource::auto`/`header`/`page`; `Pages::settings`.
+
+| App | iced | Alloy before | Alloy now | whole app | UI only* |
+|---|---|---|---|---|---|
+| `status.rs` | 332 | 110 (3.0x) | 64 | **5.2x** | 304 vs 21 lines of `main` = 14x |
+| `notes.rs` | 377 | 159 (2.4x) | 72 | **5.2x** | n/a (see below) |
+
+*Status UI-only compares iced minus its 28-line fake backend against the Alloy `main` (the remaining 43 Alloy lines are the data struct and backend, identical in kind in both).
+Notes: 27 lines are the `Note` type and its helper (same logic in both); `main` is 45 lines vs about 330 for the iced UI and update code, roughly 7x.
+
+Honest reading: 10x on the whole app was not reached for these two. What is left is app logic (the data type, fake backend, sort rule) plus imports and the `main` shell; the UI is now a few lines per screen. Not done: multi-window in the facade (needs per-window `Ui` in `Host`; left for a core-aware thread), keyboard shortcut declarations, toasts, chart helpers beyond `bars`.
