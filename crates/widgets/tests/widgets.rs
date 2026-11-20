@@ -510,7 +510,7 @@ fn scrollable_offsets_child_content() {
     assert!(h.animating());
     h.tick(1000);
     let mid = first_y(&h).unwrap();
-    assert!(mid <= 0.0 && mid >= -30.0);
+    assert!((-30.0..=0.0).contains(&mid));
     h.tick(1000 + 1000);
     assert_eq!(first_y(&h), Some(-30.0));
     assert!(!h.animating(), "idle once settled");
