@@ -157,6 +157,7 @@ define_class!(
         }
     }
 
+    // SAFETY: `Target` is an `NSObject` subclass with no extra invariants.
     unsafe impl NSObjectProtocol for Target {}
 );
 
@@ -178,6 +179,7 @@ fn target(mtm: MainThreadMarker) -> Retained<Target> {
         if let Some((t, _)) = &*k.borrow() {
             return t.clone();
         }
+        // SAFETY: `Target::alloc` returns a fresh allocation, and `init` is the NSObject initialiser.
         let t: Retained<Target> = unsafe { msg_send![Target::alloc(mtm), init] };
         *k.borrow_mut() = Some((t.clone(), None));
         t
@@ -221,6 +223,7 @@ fn build(
                 };
                 mi.setTag(ids.len() as isize);
                 mi.setEnabled(*enabled);
+                // SAFETY: `tgt` responds to `menuAction:` and is kept alive by `KEEP`.
                 unsafe { mi.setTarget(Some(tgt)) };
                 menu.addItem(&mi);
             }

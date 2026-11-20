@@ -6,8 +6,8 @@ use crate::{
     util::{self, focus_ring, key_of},
 };
 use alloy_ui_core::{
-    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton,
-    Point, Rectangle, Size, Widget,
+    style::Style, Border, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point,
+    Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
 
@@ -195,6 +195,5 @@ impl<M: 'static> Widget<M> for Slider<M> {
             }),
             shadow: None,
         });
-        let _ = Color::TRANSPARENT;
     }
 }

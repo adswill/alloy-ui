@@ -5,6 +5,7 @@
 //! helper here fails with a readable message for paths outside the granted `fs_read` /
 //! `fs_write` scopes, instead of touching the disk.
 
+use crate::cx::LockExt;
 use alloy_ui_ipc::CapabilitySet;
 use std::{
     collections::HashMap,
@@ -19,11 +20,11 @@ static LISTINGS: Mutex<Option<HashMap<PathBuf, Cached>>> = Mutex::new(None);
 
 /// Restrict the helpers in this module to `caps`.
 pub fn grant(caps: CapabilitySet) {
-    *GRANT.lock().unwrap() = Some(caps);
+    *GRANT.lock_ok() = Some(caps);
 }
 
 fn allowed(path: &Path, write: bool) -> Result<(), String> {
-    match &*GRANT.lock().unwrap() {
+    match &*GRANT.lock_ok() {
         None => Ok(()),
         Some(c) if write => c.check_fs_write(path).map_err(|e| e.to_string()),
         Some(c) => c.check_fs_read(path).map_err(|e| e.to_string()),
@@ -73,7 +74,7 @@ pub fn list(dir: &Path) -> Result<Arc<Vec<Entry>>, String> {
     let stamp = std::fs::metadata(dir)
         .and_then(|m| m.modified())
         .map_err(|e| e.to_string())?;
-    let mut cache = LISTINGS.lock().unwrap();
+    let mut cache = LISTINGS.lock_ok();
     let cache = cache.get_or_insert_with(HashMap::new);
     if let Some((_, rows)) = cache.get(dir).filter(|(at, _)| *at == stamp) {
         return Ok(rows.clone());

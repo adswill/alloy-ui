@@ -1,6 +1,6 @@
 //! Caret and selection editing, independent of drawing so it can be tested.
 
-use crate::ui::Clipboard;
+use crate::ui::{Clipboard, Ui};
 use alloy_ui_core::{Key, Modifiers};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -448,6 +448,48 @@ pub(crate) fn nearest_boundary(s: &str, x: f32, width: impl Fn(&str) -> f32) -> 
         lo -= 1;
     }
     cuts[lo].0
+}
+
+/// A field's message hook: turns the new text into the app's message.
+pub(crate) type OnInput<M> = Option<Box<dyn Fn(String) -> M>>;
+
+/// Emit `new` as an edit of the field `id` (currently showing `old`), remembering `old` for undo.
+pub(crate) fn commit_edit<M>(
+    ui: &Ui,
+    id: u64,
+    old: &str,
+    new: String,
+    caret_before: usize,
+    on_input: &OnInput<M>,
+    out: &mut Vec<M>,
+) {
+    let now = ui.now();
+    ui.with_history(id, |h| h.record(old, caret_before, &new, now));
+    if let Some(f) = on_input {
+        out.push(f(new));
+    }
+}
+
+/// Undo/redo shortcut for the field `id`; true when `k` was one and the field is editable.
+pub(crate) fn history_edit<M>(
+    ui: &Ui,
+    id: u64,
+    value: &str,
+    e: &mut Edit,
+    (k, m): (&Key, &Modifiers),
+    on_input: &OnInput<M>,
+    out: &mut Vec<M>,
+) -> bool {
+    let Some(f) = on_input else {
+        return false;
+    };
+    match ui.with_history(id, |h| history_key(e, h, value, k, m)) {
+        Some(v) => {
+            out.push(f(v));
+            true
+        }
+        None => false,
+    }
 }
 
 #[cfg(test)]

@@ -1,7 +1,9 @@
 //! Layout and event helpers shared by the widgets.
 
+use crate::ui::Ui;
 use alloy_ui_core::{
-    style::Style, DrawCommand, DrawList, Element, Event, Layout, Point, Rectangle, Size, Widget,
+    style::Style, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point,
+    Rectangle, Size, Widget,
 };
 use alloy_ui_layout::{compute, Length, Node};
 
@@ -137,5 +139,67 @@ pub(crate) fn over(base: alloy_ui_core::Color, top: alloy_ui_core::Color) -> all
         g: c(top.g, base.g),
         b: c(top.b, base.b),
         a,
+    }
+}
+
+/// Shared press/release/Space handling of the click-to-activate controls (checkbox, switch, radio).
+///
+/// Returns `(consumed, activated)`: whether the widget took the event, and whether it
+/// completed an activation (a click released over it, or Space while focused).
+pub(crate) fn activation(
+    ui: &Ui,
+    id: Option<u64>,
+    enabled: bool,
+    event: &Event,
+    b: &Rectangle,
+    cursor: Point,
+) -> (bool, bool) {
+    match event {
+        Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
+            if enabled {
+                ui.set_pressed(Some(key_of(b)));
+                if id.is_some() {
+                    ui.set_focus(id);
+                }
+            }
+            (true, false)
+        }
+        Event::MouseReleased(MouseButton::Left) => {
+            let was = ui.pressed() == Some(key_of(b));
+            (was, was && b.contains(cursor))
+        }
+        Event::KeyPressed(Key::Character(c), _) if enabled && c == " " && ui.is_focused(id) => {
+            (true, true)
+        }
+        _ => (false, false),
+    }
+}
+
+/// The body-text label of a control, vertically centred in `b` and starting `indent` from its left.
+pub(crate) fn control_label(
+    ui: &Ui,
+    label: &str,
+    b: &Rectangle,
+    indent: f32,
+    enabled: bool,
+) -> DrawCommand {
+    let t = ui.theme();
+    let s = t.typography.body;
+    DrawCommand::Text {
+        family: alloy_ui_core::FontFamily::Sans,
+        weight: 400,
+        line_height: None,
+        origin: Point::new(
+            b.origin.x + indent + t.spacing.sm,
+            b.origin.y + (b.size.height - s.line_height) / 2.0,
+        ),
+        content: label.to_owned(),
+        size: s.size,
+        color: if enabled {
+            t.palette.text
+        } else {
+            t.palette.text_disabled
+        },
+        max_width: None,
     }
 }
