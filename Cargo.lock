@@ -123,6 +123,7 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-wlr",
  "windows",
+ "windows-core",
  "windows-sys 0.59.0",
  "winit",
  "x11rb",

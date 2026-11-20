@@ -9,6 +9,7 @@
 #![warn(missing_docs)]
 #![deny(unsafe_code)]
 
+pub mod access;
 pub mod convert;
 pub mod dialog;
 pub mod fonts;

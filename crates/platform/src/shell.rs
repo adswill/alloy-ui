@@ -54,6 +54,15 @@ pub enum PlatformEvent {
     TrayClicked,
     /// A [`ShellProxy::wake`] arrived from another thread.
     Wake,
+    /// Assistive technology (a screen reader) asked a control to do something.
+    /// `window` is the window whose [`ShellContext::set_accessibility`] tree
+    /// holds the target.
+    Accessibility {
+        /// The window the request is for.
+        window: WindowKey,
+        /// What to do to which node.
+        request: crate::access::AccessRequest,
+    },
 }
 
 /// Application-side hooks driven by the shell.
@@ -145,6 +154,7 @@ pub struct ShellContext {
     proxy: ShellProxy,
     /// Shortcuts the shell resolves itself (menus on OSes without native accelerators).
     shortcuts: Vec<(crate::shortcut::Shortcut, String)>,
+    access: HashMap<WindowKey, Option<Box<dyn crate::access::AccessAdapter>>>,
 }
 
 impl ShellContext {
@@ -243,6 +253,27 @@ impl ShellContext {
             LogicalSize::new(size.width, size.height),
         );
     }
+    /// Publish what a screen reader should see in the current window. Call it
+    /// after each frame; only differences reach the OS. The first call connects
+    /// the window to the platform's accessibility service (AT-SPI2 on Linux,
+    /// NSAccessibility on macOS, UI Automation on Windows). Requests from
+    /// assistive technology arrive as [`PlatformEvent::Accessibility`].
+    pub fn set_accessibility(&mut self, tree: &crate::access::AccessTree) {
+        let key = self.key;
+        if !self.access.contains_key(&key) {
+            let sink: crate::access::ActionSink = Arc::new(move |request| {
+                crate::os::push_pending(PlatformEvent::Accessibility {
+                    window: key,
+                    request,
+                });
+            });
+            let adapter = crate::os::new_access_adapter(&self.window, key, sink);
+            self.access.insert(key, adapter);
+        }
+        if let Some(Some(a)) = self.access.get_mut(&key) {
+            a.update(tree);
+        }
+    }
     /// Install the application menu bar. Item activations arrive as
     /// [`PlatformEvent::MenuAction`]. Errors where the OS has no menu bar.
     pub fn set_menu(&mut self, menus: &[crate::menu::Menu]) -> Result<(), PlatformError> {
@@ -287,6 +318,8 @@ struct App<H> {
     error: Option<PlatformError>,
     proxy: ShellProxy,
     t0: Instant,
+    /// True while an IME preedit string is showing; key events are dropped.
+    composing: bool,
 }
 
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
@@ -365,6 +398,7 @@ impl<H: ShellHandler> App<H> {
                     h.event(ctx, PlatformEvent::WindowClosed);
                 }
                 if let Some(ctx) = self.ctx.as_mut() {
+                    ctx.access.remove(&key);
                     if let Some(w) = ctx.windows.remove(&key) {
                         self.ids.remove(&w.id());
                     }
@@ -410,6 +444,7 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                     close_cancelled: false,
                     proxy: self.proxy.clone(),
                     shortcuts: Vec::new(),
+                    access: HashMap::new(),
                 };
                 let mut h = (self.make.take().expect("resumed once"))(self.proxy.clone());
                 h.started(&mut ctx);
@@ -428,6 +463,10 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         // Global events are about the main window.
         self.focus_ctx(WindowKey::MAIN);
         for e in crate::os::take_pending() {
+            match &e {
+                PlatformEvent::Accessibility { window, .. } => self.focus_ctx(*window),
+                _ => self.focus_ctx(WindowKey::MAIN),
+            }
             self.dispatch(el, e);
         }
         self.dispatch(el, PlatformEvent::Wake);
@@ -503,6 +542,11 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                 let (dx, dy) = convert::scroll(delta, scale);
                 Some(I(Event::Scrolled { dx, dy }))
             }
+            // While the IME shows a preedit string it owns the keyboard. winit
+            // may still deliver the raw key events on some backends (Wayland
+            // without a text-input grab, Windows/X11 for keys the IME passes
+            // through), so drop them: the commit arrives as `TextInput`.
+            WindowEvent::KeyboardInput { .. } if self.composing => None,
             WindowEvent::KeyboardInput { event, .. } => {
                 let m = convert::modifiers(self.mods);
                 let pressed = event.state == ElementState::Pressed;
@@ -538,9 +582,18 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                 }
                 text.map(|t| I(Event::TextInput(t.to_string())))
             }
-            WindowEvent::Ime(Ime::Preedit(s, _)) => Some(I(Event::ImePreedit(s))),
-            WindowEvent::Ime(Ime::Commit(s)) => Some(I(Event::TextInput(s))),
-            WindowEvent::Ime(_) => None,
+            WindowEvent::Ime(Ime::Preedit(s, _)) => {
+                self.composing = !s.is_empty();
+                Some(I(Event::ImePreedit(s)))
+            }
+            WindowEvent::Ime(Ime::Commit(s)) => {
+                self.composing = false;
+                Some(I(Event::TextInput(s)))
+            }
+            WindowEvent::Ime(_) => {
+                self.composing = false;
+                None
+            }
             WindowEvent::HoveredFile(p) => Some(PlatformEvent::FileHovered(p)),
             WindowEvent::HoveredFileCancelled => Some(PlatformEvent::FileHoverCancelled),
             WindowEvent::DroppedFile(p) => Some(PlatformEvent::FileDropped(p)),
@@ -593,6 +646,7 @@ pub fn run<H: ShellHandler + 'static>(
         cursor: Point::default(),
         error: None,
         proxy,
+        composing: false,
     };
     el.run_app(&mut app)
         .map_err(|e| PlatformError(format!("run: {e}")))?;
