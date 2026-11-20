@@ -1,0 +1,14 @@
+[package]
+name = "alloy-ui-platform"
+description = "Alloy platform shell traits (window, menu, tray, dialogs, clipboard)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+alloy-ui-core.workspace = true

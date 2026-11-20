@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/adswill/alloy-ui"
+rust-version = "1.80"
+
+[workspace.dependencies]
+alloy-ui-core = { path = "crates/core", version = "0.0.1" }
+alloy-ui-layout = { path = "crates/layout", version = "0.0.1" }
+alloy-ui-render = { path = "crates/render", version = "0.0.1" }
+alloy-ui-theme = { path = "crates/theme", version = "0.0.1" }
+alloy-ui-widgets = { path = "crates/widgets", version = "0.0.1" }
+alloy-ui-platform = { path = "crates/platform", version = "0.0.1" }
+alloy-ui-ipc = { path = "crates/ipc", version = "0.0.1" }
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "warn"
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
