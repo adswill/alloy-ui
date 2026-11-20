@@ -12,6 +12,8 @@ pub use alloy_ui_theme as theme;
 use alloy_ui_ipc::TaskRunner;
 use alloy_ui_platform::{PlatformError, PlatformEvent, ShellContext, ShellHandler, WindowSettings};
 use alloy_ui_render::{Renderer, WindowRenderer};
+use std::collections::HashMap;
+use std::sync::mpsc;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -33,6 +35,7 @@ where
     let size = settings.size;
     alloy_ui_platform::run(settings, move |proxy| {
         let task_proxy = proxy.clone();
+        let (sub_tx, sub_rx) = mpsc::channel();
         Host {
             pending: Some((app, size, layouter)),
             runtime: None,
@@ -44,6 +47,9 @@ where
             start: Instant::now(),
             tick_due: Arc::new(AtomicBool::new(false)),
             tick_pending: false,
+            subs: HashMap::new(),
+            sub_rx,
+            sub_tx,
         }
     })
 }
@@ -59,6 +65,9 @@ struct Host<A: Application> {
     start: Instant,
     tick_due: Arc<AtomicBool>,
     tick_pending: bool,
+    subs: HashMap<u64, Arc<AtomicBool>>,
+    sub_rx: mpsc::Receiver<A::Message>,
+    sub_tx: mpsc::Sender<A::Message>,
 }
 
 impl<A: Application + 'static> Host<A> {
@@ -86,6 +95,41 @@ impl<A: Application + 'static> Host<A> {
                 self.tasks.spawn(fut);
             }
         }
+        self.sync_subscriptions();
+    }
+
+    /// Start new timers and stop those no longer requested.
+    fn sync_subscriptions(&mut self) {
+        let Some(rt) = self.runtime.as_ref() else {
+            return;
+        };
+        let wanted = rt.subscriptions();
+        let ids: Vec<u64> = wanted.iter().map(|s| s.id).collect();
+        self.subs.retain(|id, stop| {
+            let keep = ids.contains(id);
+            if !keep {
+                stop.store(true, Ordering::Release);
+            }
+            keep
+        });
+        for sub in wanted {
+            if self.subs.contains_key(&sub.id) {
+                continue;
+            }
+            let stop = Arc::new(AtomicBool::new(false));
+            self.subs.insert(sub.id, stop.clone());
+            let SubscriptionKind::Every { interval_ms, make } = sub.kind;
+            let (tx, proxy) = (self.sub_tx.clone(), self.proxy.clone());
+            std::thread::spawn(move || {
+                while !stop.load(Ordering::Acquire) {
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                    if stop.load(Ordering::Acquire) || tx.send(make()).is_err() {
+                        break;
+                    }
+                    proxy.wake();
+                }
+            });
+        }
     }
 }
 
@@ -107,6 +151,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             self.tasks.spawn(fut);
         }
         self.runtime = Some(rt);
+        self.sync_subscriptions();
         ctx.request_redraw();
     }
 
@@ -130,7 +175,8 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     let ms = self.start.elapsed().as_millis() as u64;
                     outcome = rt.handle_event(&Event::Tick(ms));
                 }
-                let msgs = self.tasks.drain();
+                let mut msgs = self.tasks.drain();
+                msgs.extend(self.sub_rx.try_iter());
                 if !msgs.is_empty() {
                     let o = rt.dispatch_all(msgs);
                     outcome = Outcome {

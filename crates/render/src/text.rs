@@ -192,7 +192,14 @@ impl TextSystem {
         if size_px <= 0.0 || content.is_empty() || inner.fonts.db().faces().count() == 0 {
             return Vec::new();
         }
-        let buffer = shaped(inner, content, size_px, weight, line_height_px, max_width_px);
+        let buffer = shaped(
+            inner,
+            content,
+            size_px,
+            weight,
+            line_height_px,
+            max_width_px,
+        );
         let ox = origin.0.round() as i32;
         let oy = origin.1.round() as i32;
         let mut out = Vec::new();
@@ -275,7 +282,9 @@ fn shaped(
     line_height: Option<f32>,
     max_width: Option<f32>,
 ) -> Buffer {
-    let lh = line_height.filter(|l| *l > 0.0).unwrap_or(size * LINE_HEIGHT);
+    let lh = line_height
+        .filter(|l| *l > 0.0)
+        .unwrap_or(size * LINE_HEIGHT);
     let mut buffer = Buffer::new(&mut inner.fonts, Metrics::new(size, lh));
     buffer.set_size(&mut inner.fonts, max_width, None);
     let attrs = Attrs::new().weight(Weight(weight.clamp(1, 1000)));
