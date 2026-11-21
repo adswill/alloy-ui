@@ -9,7 +9,7 @@ Renders: `gallery/modules/*.png` in the project files; try them with
 | KPI card | `kpi("Revenue", "$48.2k").delta(12.4).hint("vs last week").trend(series(24))` |
 | Gauge, radial | `gauge(0.78).label("Memory").bands()`, `radial(0.64).label("Uploaded")` |
 | Avatars | `avatar("Mira Okafor").presence(Presence::Online)`, `avatar_group(names).max(4)` |
-| Timeline | `timeline([moment("12:04", "Deploy finished").detail("Live").success()])` |
+| Timeline | `moments([moment("12:04", "Deploy finished").detail("Live").success()])` |
 | Changelog | `changelog([release("0.4.0", "Nov 21").latest().added([..]).fixed([..])])` |
 | Activity feed | `activity_feed([activity("Mira", "merged", "Add gauges", "4 min")])` |
 | Notification centre | `notification_center(items).on_read(\|s, id\| ..).on_read_all(\|s\| ..)` |

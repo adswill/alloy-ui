@@ -3,7 +3,7 @@
 //! ```ignore
 //! kpi("Revenue", "$48.2k").delta(12.4).trend(series(24))
 //! gauge(0.68).label("CPU").bands()
-//! timeline([moment("2 min ago", "Deploy finished").success()])
+//! moments([moment("2 min ago", "Deploy finished").success()])
 //! empty_state(Art::Inbox, "You are all caught up", "New mail shows up here.")
 //! ```
 //!

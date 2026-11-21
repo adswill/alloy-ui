@@ -118,12 +118,36 @@ struct GpuImage {
 enum Binding {
     Atlas,
     Image(u64),
+    /// Copy of the target taken for a backdrop blur.
+    Snap,
+    /// Horizontally blurred scratch of a backdrop blur.
+    Tmp,
+}
+
+/// Batches that need a pass of their own (backdrop blur).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Special {
+    /// Blur the target copy horizontally into the scratch texture.
+    BlurH,
+    /// Blur the scratch vertically back into the target, under the tint.
+    BlurV,
 }
 
 struct Batch {
     clip: [i32; 4],
     binding: Binding,
     range: std::ops::Range<u32>,
+    special: Option<Special>,
+}
+
+/// Full-size textures a backdrop blur works through.
+struct Scratch {
+    w: u32,
+    h: u32,
+    snap: wgpu::Texture,
+    tmp: wgpu::Texture,
+    snap_bg: wgpu::BindGroup,
+    tmp_bg: wgpu::BindGroup,
 }
 
 /// Encodes draw lists into render passes against any colour target.
@@ -137,6 +161,8 @@ pub(crate) struct Painter {
     sampler: wgpu::Sampler,
     instances: wgpu::Buffer,
     instance_cap: u64,
+    format: wgpu::TextureFormat,
+    scratch: Option<Scratch>,
     atlas: Atlas,
     images: HashMap<u64, GpuImage>,
     next_id: u64,
@@ -284,6 +310,8 @@ impl Painter {
             sampler,
             instances,
             instance_cap,
+            format,
+            scratch: None,
             atlas,
             images: HashMap::new(),
             next_id: 1,
@@ -360,13 +388,55 @@ impl Painter {
         self.atlas.row_h = 0;
     }
 
-    fn build(&mut self, prims: &[Prim]) -> (Vec<Instance>, Vec<Batch>, bool) {
+    fn build(&mut self, prims: &[Prim], can_copy: bool) -> (Vec<Instance>, Vec<Batch>, bool) {
         let mut inst = Vec::with_capacity(prims.len());
         let mut batches: Vec<Batch> = Vec::new();
         let mut overflow = false;
         for p in prims {
+            if p.kind == Kind::Backdrop && can_copy && p.blur > 0.05 {
+                // Two passes through scratch textures: see `paint`.
+                let r = (p.blur * 3.0).ceil().clamp(1.0, 120.0);
+                let grown = [p.rect[0], p.rect[1] - r, p.rect[2], p.rect[3] + 2.0 * r];
+                let hclip = [
+                    p.clip[0].max(grown[0].floor() as i32),
+                    p.clip[1].max(grown[1].floor() as i32),
+                    p.clip[2].min((grown[0] + grown[2]).ceil() as i32),
+                    p.clip[3].min((grown[1] + grown[3]).ceil() as i32),
+                ];
+                for (kind, rect, clip, binding, special) in [
+                    (11.0, grown, hclip, Binding::Snap, Special::BlurH),
+                    (12.0, p.rect, p.clip, Binding::Tmp, Special::BlurV),
+                ] {
+                    if clip[2] <= clip[0] || clip[3] <= clip[1] {
+                        continue;
+                    }
+                    let index = inst.len() as u32;
+                    inst.push(Instance {
+                        rect,
+                        color: p.color,
+                        border_color: [0.0; 4],
+                        uv: [0.0, 0.0, 1.0, 1.0],
+                        params: [p.radius, 0.0, p.blur, 0.0],
+                        meta: [if kind < 11.5 { 0.0 } else { 1.0 }, kind, 0.0, 0.0],
+                    });
+                    batches.push(Batch {
+                        clip,
+                        binding,
+                        range: index..index + 1,
+                        special: Some(special),
+                    });
+                }
+                continue;
+            }
             let (binding, uv) = match p.source {
-                Source::None if matches!(p.kind, Kind::Gradient | Kind::Tri) => (None, p.color2),
+                Source::None
+                    if matches!(
+                        p.kind,
+                        Kind::Gradient | Kind::Tri | Kind::Radial | Kind::Sheen
+                    ) =>
+                {
+                    (None, p.color2)
+                }
                 Source::None => (None, [0.0, 0.0, 1.0, 1.0]),
                 Source::Image(id) => {
                     if !self.images.contains_key(&id) {
@@ -390,7 +460,7 @@ impl Painter {
                 color: p.color,
                 border_color: p.border_color,
                 uv,
-                params: [p.radius, p.border_w, p.blur, 0.0],
+                params: [p.radius, p.border_w, p.blur, p.aux],
                 meta: [
                     p.pad,
                     match p.kind {
@@ -400,30 +470,83 @@ impl Painter {
                         Kind::Texture => 3.0,
                         Kind::Gradient => 4.0,
                         Kind::Tri => 5.0,
+                        Kind::Radial => 6.0,
+                        Kind::Sheen => 7.0,
+                        Kind::Inner => 8.0,
+                        Kind::Grain => 9.0,
+                        Kind::Backdrop => 10.0,
                     },
                     p.dir[0],
                     p.dir[1],
                 ],
             });
             match batches.last_mut() {
-                Some(b) if b.clip == p.clip && binding.map_or(true, |nb| nb == b.binding) => {
+                Some(b)
+                    if b.special.is_none()
+                        && b.clip == p.clip
+                        && binding.map_or(true, |nb| nb == b.binding) =>
+                {
                     b.range.end = index + 1;
                 }
                 _ => batches.push(Batch {
                     clip: p.clip,
                     binding: binding.unwrap_or(Binding::Atlas),
                     range: index..index + 1,
+                    special: None,
                 }),
             }
         }
         (inst, batches, overflow)
     }
 
+    /// Scratch textures for a `w`x`h` target, created on first use.
+    fn scratch(&mut self, w: u32, h: u32) -> &Scratch {
+        if !self.scratch.as_ref().is_some_and(|s| s.w == w && s.h == h) {
+            let mk = |label: &str, usage: wgpu::TextureUsages| {
+                self.device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some(label),
+                    size: wgpu::Extent3d {
+                        width: w,
+                        height: h,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: self.format,
+                    usage,
+                    view_formats: &[],
+                })
+            };
+            let snap = mk(
+                "backdrop snapshot",
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            );
+            let tmp = mk(
+                "backdrop scratch",
+                wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            );
+            self.scratch = Some(Scratch {
+                w,
+                h,
+                snap_bg: make_bind_group(&self.device, &self.tex_layout, &snap, &self.sampler),
+                tmp_bg: make_bind_group(&self.device, &self.tex_layout, &tmp, &self.sampler),
+                snap,
+                tmp,
+            });
+        }
+        self.scratch.as_ref().expect("scratch just created")
+    }
+
     /// Draw `list` into `view` (size `width`x`height`), clearing to `clear`
-    /// (straight RGBA), and submit.
+    /// (straight RGBA), and submit. Pass `target` (the texture behind `view`,
+    /// created with `COPY_SRC`) to enable real backdrop blur; without it a
+    /// blur falls back to its tint.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn paint(
         &mut self,
         view: &wgpu::TextureView,
+        target: Option<&wgpu::Texture>,
         width: u32,
         height: u32,
         list: &DrawList,
@@ -431,11 +554,12 @@ impl Painter {
         clear: Color,
     ) {
         let prims = flatten(list, scale, width, height, &mut self.text);
-        let (mut inst, mut batches, overflow) = self.build(&prims);
+        let can_copy = target.is_some();
+        let (mut inst, mut batches, overflow) = self.build(&prims, can_copy);
         if overflow {
             log::debug!("glyph atlas full; resetting");
             self.reset_atlas();
-            let r = self.build(&prims);
+            let r = self.build(&prims, can_copy);
             inst = r.0;
             batches = r.1;
         }
@@ -455,53 +579,129 @@ impl Painter {
             self.queue
                 .write_buffer(&self.instances, 0, bytemuck::cast_slice(&inst));
         }
+        if let (true, Some(_)) = (batches.iter().any(|b| b.special.is_some()), target) {
+            self.scratch(width, height);
+        }
         let mut enc = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("alloy-ui frame"),
             });
-        {
-            let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
+        let clear_op = wgpu::LoadOp::Clear(wgpu::Color {
+            r: (clear.r * clear.a) as f64,
+            g: (clear.g * clear.a) as f64,
+            b: (clear.b * clear.a) as f64,
+            a: clear.a as f64,
+        });
+        let mut at = 0;
+        let mut load = clear_op;
+        loop {
+            // Everything up to the next backdrop blur goes in one pass.
+            {
+                let mut pass = self.begin(&mut enc, view, load);
+                while at < batches.len() && batches[at].special.is_none() {
+                    self.draw_batch(&mut pass, &batches[at]);
+                    at += 1;
+                }
+            }
+            load = wgpu::LoadOp::Load;
+            if at >= batches.len() {
+                break;
+            }
+            let (Some(target), Some(sc)) = (target, self.scratch.as_ref()) else {
+                break;
+            };
+            // Snapshot what is drawn so far, blur it across, then back under the tint.
+            enc.copy_texture_to_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: target,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::TexelCopyTextureInfo {
+                    texture: &sc.snap,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let tmp_view = sc.tmp.create_view(&wgpu::TextureViewDescriptor::default());
+            {
+                let mut pass = self.begin(
+                    &mut enc,
+                    &tmp_view,
+                    wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
+                );
+                self.draw_batch(&mut pass, &batches[at]);
+            }
+            at += 1;
+            if at < batches.len() && batches[at].special == Some(Special::BlurV) {
+                let mut pass = self.begin(&mut enc, view, wgpu::LoadOp::Load);
+                self.draw_batch(&mut pass, &batches[at]);
+                at += 1;
+            }
+        }
+        self.queue.submit([enc.finish()]);
+    }
+
+    fn begin(
+        &self,
+        enc: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        load: wgpu::LoadOp<wgpu::Color>,
+    ) -> wgpu::RenderPass<'static> {
+        let mut pass = enc
+            .begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("alloy-ui pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: (clear.r * clear.a) as f64,
-                            g: (clear.g * clear.a) as f64,
-                            b: (clear.b * clear.a) as f64,
-                            a: clear.a as f64,
-                        }),
+                        load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
                 timestamp_writes: None,
                 occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.globals_bg, &[]);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            for b in &batches {
-                let bg = match b.binding {
-                    Binding::Atlas => &self.atlas.bind_group,
-                    Binding::Image(id) => match self.images.get(&id) {
-                        Some(i) => &i.bind_group,
-                        None => continue,
-                    },
-                };
-                pass.set_bind_group(1, bg, &[]);
-                pass.set_scissor_rect(
-                    b.clip[0] as u32,
-                    b.clip[1] as u32,
-                    (b.clip[2] - b.clip[0]) as u32,
-                    (b.clip[3] - b.clip[1]) as u32,
-                );
-                pass.draw(0..4, b.range.clone());
-            }
-        }
-        self.queue.submit([enc.finish()]);
+            })
+            .forget_lifetime();
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.globals_bg, &[]);
+        pass.set_vertex_buffer(0, self.instances.slice(..));
+        pass
+    }
+
+    fn draw_batch(&self, pass: &mut wgpu::RenderPass<'_>, b: &Batch) {
+        let bg = match b.binding {
+            Binding::Atlas => &self.atlas.bind_group,
+            Binding::Image(id) => match self.images.get(&id) {
+                Some(i) => &i.bind_group,
+                None => return,
+            },
+            Binding::Snap => match &self.scratch {
+                Some(s) => &s.snap_bg,
+                None => return,
+            },
+            Binding::Tmp => match &self.scratch {
+                Some(s) => &s.tmp_bg,
+                None => return,
+            },
+        };
+        pass.set_bind_group(1, bg, &[]);
+        pass.set_scissor_rect(
+            b.clip[0] as u32,
+            b.clip[1] as u32,
+            (b.clip[2] - b.clip[0]) as u32,
+            (b.clip[3] - b.clip[1]) as u32,
+        );
+        pass.draw(0..4, b.range.clone());
     }
 }
 

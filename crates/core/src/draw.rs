@@ -95,6 +95,85 @@ pub enum DrawCommand {
         /// Optional shadow.
         shadow: Option<Shadow>,
     },
+    /// A rounded rectangle filled with a radial gradient: `from` at `center`,
+    /// `to` at distance `radius` and beyond. Border and shadow as for
+    /// [`DrawCommand::Quad`]. Ripples, spotlights and soft highlights.
+    RadialGradient {
+        /// Bounds of the painted (rounded) shape; the gradient is clipped to it.
+        bounds: Rectangle,
+        /// Gradient centre, absolute logical pixels (may lie outside `bounds`).
+        center: Point,
+        /// Distance at which the gradient reaches `to`.
+        gradient_radius: f32,
+        /// Colour at the centre.
+        from: Color,
+        /// Colour at `gradient_radius` and beyond.
+        to: Color,
+        /// Corner radius of the shape.
+        radius: f32,
+    },
+    /// A rounded rectangle with one soft highlight band travelling across a
+    /// base colour: the primitive behind shimmer and sheen. The band is a
+    /// smooth bump, so there is never a hard edge.
+    Sheen {
+        /// Bounds.
+        bounds: Rectangle,
+        /// Colour outside the band.
+        base: Color,
+        /// Colour at the band's centre.
+        highlight: Color,
+        /// Direction in degrees as for [`DrawCommand::GradientQuad`].
+        angle_deg: f32,
+        /// Band centre along the gradient line: 0 is the start, 1 the end;
+        /// values outside 0..=1 place it off the shape.
+        position: f32,
+        /// Half the band's width as a fraction of the gradient line.
+        half_width: f32,
+        /// Corner radius.
+        radius: f32,
+    },
+    /// A shadow cast *inside* a rounded rectangle, for wells and pressed
+    /// states. Transparent in the middle, `color` at the edge shifted by
+    /// `offset`, softened over `blur`.
+    InnerShadow {
+        /// Bounds of the shape the shadow stays inside.
+        bounds: Rectangle,
+        /// Corner radius of the shape.
+        radius: f32,
+        /// Shadow colour.
+        color: Color,
+        /// Where the light comes from: the shadow is thickest on the opposite edge.
+        offset: Point,
+        /// Softness in logical pixels.
+        blur: f32,
+    },
+    /// Fine monochrome film grain over a rounded rectangle, each pixel
+    /// lightened or darkened by a hash of its position and `seed`. Static for
+    /// a given seed, so it never shimmers.
+    Grain {
+        /// Bounds.
+        bounds: Rectangle,
+        /// Corner radius.
+        radius: f32,
+        /// Peak strength, 0 to 1; 0.02 to 0.05 is the usable range.
+        amount: f32,
+        /// Selects the pattern.
+        seed: u32,
+    },
+    /// Replace the pixels already drawn inside a rounded rectangle with a
+    /// gaussian-blurred copy of themselves, then lay `tint` over them:
+    /// frosted glass. Only content drawn *before* this command is blurred.
+    BackdropBlur {
+        /// Bounds.
+        bounds: Rectangle,
+        /// Corner radius.
+        radius: f32,
+        /// Gaussian sigma in logical pixels.
+        blur: f32,
+        /// Colour laid over the blurred pixels (usually the surface colour at
+        /// 55 to 75% alpha).
+        tint: Color,
+    },
     /// A run of text; shaping happens in the renderer.
     Text {
         /// Top-left of the text box.

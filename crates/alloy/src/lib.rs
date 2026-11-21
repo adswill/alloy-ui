@@ -106,6 +106,7 @@ mod desktop;
 mod dsl;
 mod editors;
 pub mod fs;
+mod fx;
 pub mod i18n;
 mod icons;
 mod inputs;
@@ -163,6 +164,12 @@ pub use editors::{
     code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
     GridRows, Lang, Mark, Marks, RichText, RichView, Run, Selection,
 };
+pub use fx::{
+    animated_with, counter, dots, enter, enter_after, glide, grow, keyframes, loading_bar,
+    progress_ring, route, route_with, shared, skeleton, skeleton_bar, skeleton_circle,
+    skeleton_text, spinner, spinner_sized, stack, stagger, timeline, Anchor, Layer, Rolling,
+    RouteKind,
+};
 pub use icons::{icon, set_icon_pack, Ico, Icon, IconPack};
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
@@ -200,34 +207,38 @@ pub mod prelude {
     pub use crate::{
         activity, activity_feed, avatar, avatar_group, breadcrumb, changelog, chat, command_bar,
         composer, empty_state, file, file_browser, folder, gallery_grid, gauge, hit, kpi, kpi_row,
-        login, message, moment, notice, notification_center, page_header, plan, plan_picker,
-        radial, release, reply, setting, settings_page, tile, timeline, tour, tracker, Art,
+        login, message, moment, moments, notice, notification_center, page_header, plan,
+        plan_picker, radial, release, reply, setting, settings_page, tile, tour, tracker, Art,
         Presence,
     };
     pub use crate::{
-        animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
-        choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
-        field_after, filter_by, gap, heading, icon, input, line_chart, list, local, markdown,
-        menu_item, menu_rule, nav, number, options, palette, pick, popover, progress, radio,
-        radio_list, radio_list_with, radios, records, records_in, resource, resource_for, reveal,
-        router, rule, scroll, secs, section, series, set_accent, set_dark, set_icon_pack, set_look,
-        shell, sketch, sleep, slider, space, sparkline, split, spring, stat, stats, stepper, store,
-        store_as, swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree,
-        vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack,
-        Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router, Stamp, TextCell,
-        TreeItem, View, Wizard,
+        animated, animated_with, app, attempt, badge, bar_chart, bars, browse, browse_of, button,
+        caption, check, choose, color_picker, context_menu, crud, crud_app, custom, editor, every,
+        fade, field, field_after, filter_by, gap, heading, icon, input, line_chart, list, local,
+        markdown, menu_item, menu_rule, nav, number, options, palette, pick, popover, progress,
+        radio, radio_list, radio_list_with, radios, records, records_in, resource, resource_for,
+        reveal, router, rule, scroll, secs, section, series, set_accent, set_dark, set_icon_pack,
+        set_look, shell, sketch, sleep, slider, space, sparkline, split, spring, stat, stats,
+        stepper, store, store_as, swatch, tab_bar, table, table_of, tabs, tally, text,
+        theme_switch, toggle, tree, vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
+        FlagCell, Icon, IconPack, Item, Live, Local, Look, Node, Place, Record, Records, Resource,
+        Router, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
         at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,
         state, system, t, toast, undo, vals, Hotkey, Shortcuts, WindowEffect,
     };
     pub use crate::{
-        calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph,
-        object, pie, pt, stream, viewport3d,
+        calendar, candle, candles, canvas, card, counter, dots, enter, enter_after, entry, glide,
+        grow, kanban, keyframes, lane, loading_bar, media, node, node_graph, object, pie,
+        progress_ring, pt, route, route_with, shared, skeleton, skeleton_bar, skeleton_circle,
+        skeleton_text, spinner, spinner_sized, stack, stagger, stream, timeline, viewport3d,
+        Anchor, Layer, RouteKind,
     };
     pub use crate::{code_editor, data_grid, rich_editor, GridCell, Lang, RichText, Tone};
     pub use alloy_ui_core::Color;
-    pub use alloy_ui_theme::{Density, Preset};
+    pub use alloy_ui_theme::{Density, Easing, Preset};
+    pub use alloy_ui_widgets::{Keyframes, Timeline};
     pub use std::time::Duration;
 }
 

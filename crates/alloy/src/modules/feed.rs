@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 // ------------------------------------------------------------- timeline
 
-/// One entry of a [`timeline`].
+/// One entry of a [`moments`].
 pub struct Moment {
     when: String,
     title: String,
@@ -60,7 +60,7 @@ impl Moment {
 }
 
 /// A vertical timeline: a marker and a hairline rail on the left, the story on the right.
-pub fn timeline<M: 'static>(items: impl IntoIterator<Item = Moment>) -> Node<M> {
+pub fn moments<M: 'static>(items: impl IntoIterator<Item = Moment>) -> Node<M> {
     let items: Vec<Moment> = items.into_iter().collect();
     let last = items.len().saturating_sub(1);
     col(items.into_iter().enumerate().map(|(i, m)| {

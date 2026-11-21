@@ -28,6 +28,17 @@ pub(crate) enum Kind {
     /// `radius` carries the edge flags (bit i set = edge i is a shape
     /// boundary and is anti-aliased; clear = interior seam, bled by 1 px).
     Tri = 5,
+    /// Rounded rect with a radial gradient; `dir` is the centre, `blur` the radius (5).
+    Radial = 6,
+    /// Rounded rect with one highlight band; `blur` is the band position, `aux` its half width (6).
+    Sheen = 7,
+    /// Shadow inside a rounded rect; `dir` is the offset (7).
+    Inner = 8,
+    /// Film grain; `aux` is the seed (8).
+    Grain = 9,
+    /// Blur of what is already drawn under the rect, then a tint (9). Needs the
+    /// framebuffer, so back ends handle it specially.
+    Backdrop = 10,
 }
 
 /// Where a primitive's texels come from.
@@ -56,6 +67,8 @@ pub(crate) struct Prim {
     /// Unit gradient direction in physical pixels (y down); gradients only.
     pub dir: [f32; 2],
     pub blur: f32,
+    /// Kind-specific extra (sheen half width, grain seed).
+    pub aux: f32,
     pub source: Source,
     pub clip: IRect,
 }
@@ -117,6 +130,7 @@ fn push_box(
             dir: [0.0; 2],
             blur,
             source: Source::None,
+            aux: 0.0,
             clip,
         });
     }
@@ -143,6 +157,7 @@ fn push_box(
         dir,
         blur: 0.0,
         source: Source::None,
+        aux: 0.0,
         clip,
     });
 }
@@ -219,6 +234,34 @@ pub(crate) fn triangulate(pts: &[[f32; 2]]) -> Vec<([usize; 3], u8)> {
     out
 }
 
+/// A primitive with every field defaulted except the ones given.
+fn blank(kind: Kind, rect: [f32; 4], clip: IRect) -> Prim {
+    Prim {
+        kind,
+        rect,
+        pad: 1.0,
+        radius: 0.0,
+        border_w: 0.0,
+        color: [0.0; 4],
+        border_color: [0.0; 4],
+        color2: [0.0; 4],
+        dir: [0.0; 2],
+        blur: 0.0,
+        aux: 0.0,
+        source: Source::None,
+        clip,
+    }
+}
+
+fn phys(b: Rectangle, s: f32) -> [f32; 4] {
+    [
+        b.origin.x * s,
+        b.origin.y * s,
+        b.size.width * s,
+        b.size.height * s,
+    ]
+}
+
 /// Flatten `list` for a `width`x`height` target at `scale`.
 pub(crate) fn flatten(
     list: &DrawList,
@@ -287,11 +330,82 @@ pub(crate) fn flatten(
                         color2: [c[0], c[1], 0.0, 0.0],
                         dir: [0.0; 2],
                         blur: 0.0,
+                        aux: 0.0,
                         source: Source::None,
                         clip,
                     });
                 }
             }
+            DrawCommand::RadialGradient {
+                bounds,
+                center,
+                gradient_radius,
+                from,
+                to,
+                radius,
+            } => out.push(Prim {
+                radius: radius.max(0.0) * scale,
+                color: rgba(*from),
+                color2: rgba(*to),
+                dir: [center.x * scale, center.y * scale],
+                blur: gradient_radius.max(0.01) * scale,
+                ..blank(Kind::Radial, phys(*bounds, scale), clip)
+            }),
+            DrawCommand::Sheen {
+                bounds,
+                base,
+                highlight,
+                angle_deg,
+                position,
+                half_width,
+                radius,
+            } => {
+                let a = angle_deg.to_radians();
+                out.push(Prim {
+                    radius: radius.max(0.0) * scale,
+                    color: rgba(*base),
+                    color2: rgba(*highlight),
+                    dir: [a.sin(), a.cos()],
+                    blur: *position,
+                    aux: half_width.max(0.001),
+                    ..blank(Kind::Sheen, phys(*bounds, scale), clip)
+                });
+            }
+            DrawCommand::InnerShadow {
+                bounds,
+                radius,
+                color,
+                offset,
+                blur,
+            } => out.push(Prim {
+                radius: radius.max(0.0) * scale,
+                color: rgba(*color),
+                dir: [offset.x * scale, offset.y * scale],
+                blur: blur.max(0.0) * scale,
+                ..blank(Kind::Inner, phys(*bounds, scale), clip)
+            }),
+            DrawCommand::Grain {
+                bounds,
+                radius,
+                amount,
+                seed,
+            } => out.push(Prim {
+                radius: radius.max(0.0) * scale,
+                color: [1.0, 1.0, 1.0, amount.clamp(0.0, 1.0)],
+                aux: (*seed & 0x00FF_FFFF) as f32,
+                ..blank(Kind::Grain, phys(*bounds, scale), clip)
+            }),
+            DrawCommand::BackdropBlur {
+                bounds,
+                radius,
+                blur,
+                tint,
+            } => out.push(Prim {
+                radius: radius.max(0.0) * scale,
+                color: rgba(*tint),
+                blur: (blur.max(0.0) * scale).min(40.0),
+                ..blank(Kind::Backdrop, phys(*bounds, scale), clip)
+            }),
             DrawCommand::Image { bounds, id } => out.push(Prim {
                 kind: Kind::Texture,
                 rect: [
@@ -309,6 +423,7 @@ pub(crate) fn flatten(
                 color2: [0.0; 4],
                 dir: [0.0; 2],
                 source: Source::Image(*id),
+                aux: 0.0,
                 clip,
             }),
             DrawCommand::Line {
@@ -341,6 +456,7 @@ pub(crate) fn flatten(
                         color2: [0.0; 4],
                         dir: [0.0; 2],
                         source: Source::None,
+                        aux: 0.0,
                         clip,
                     });
                 }
@@ -385,6 +501,7 @@ pub(crate) fn flatten(
                         color2: [0.0; 4],
                         dir: [0.0; 2],
                         source: Source::Glyph(g.key),
+                        aux: 0.0,
                         clip,
                     });
                 }

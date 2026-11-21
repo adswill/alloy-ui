@@ -96,28 +96,28 @@ pub fn view(s: &Studio) -> N {
             acts
         ),
         row![
-            kpi(
+            kpi_card(
                 "Revenue",
                 &format!("${:.1}k", last(&revenue)),
                 change(&revenue),
                 true,
                 revenue.clone()
             ),
-            kpi(
+            kpi_card(
                 "Visitors",
                 &format!("{:.0}", last(&visitors)),
                 change(&visitors),
                 true,
                 visitors.clone()
             ),
-            kpi(
+            kpi_card(
                 "Conversion",
                 &format!("{:.1}%", last(&conv)),
                 change(&conv),
                 true,
                 conv.clone()
             ),
-            kpi(
+            kpi_card(
                 "p95 latency",
                 &format!("{:.0} ms", last(&latency)),
                 change(&latency),

@@ -187,7 +187,7 @@ fn feeds(s: &Gallery) -> impl View<Act<Gallery>> {
     row![
         col![
             text("Timeline").label(),
-            timeline([
+            moments([
                 moment("12:04", "Deploy finished")
                     .detail("v0.4.2 is live in 3 of 3 regions.")
                     .success(),

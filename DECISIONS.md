@@ -132,3 +132,10 @@ Shaping with cosmic-text cost about 150 us per string, paid on every layout pass
 - **Start-up: prewarm, not a different first-frame renderer.** Painting a CPU frame first and switching to wgpu would hide the GPU init but mixes two presenters on one window, which we cannot verify on Wayland, Windows and macOS from here. `prewarm()` overlaps instance creation and the font scan with window creation instead.
 - **Fixed-height virtualisation only, with `f64` offsets.** The widget already built only visible rows; `f32` offsets broke past 16.7 M pixels. Variable-height rows need a height index (prefix sums) and are not done.
 - **Plugins are crates, not dynamic libraries.** No stable Rust ABI, and a compiled-in crate keeps type checking and zero cost. The stable surface is `alloy_ui::ext` plus the `Widget` trait; `Plugin::install` registers translations only for now (theme and shortcut registration stay with the app). A plugin must depend on `alloy-ui` with `default-features = false` so the app's renderer choice holds.
+
+## Motion II (2026-11-21)
+- **Clocks start on the first tick after creation**, like tween starts. An idle app's `now` is stale, so a clock stamped at creation would finish instantly. `Ui::clock` returns `(0, running)` until then, and `Ui::animating` stays true so the runtime delivers that tick.
+- **Custom `arrange` is not called for nested widgets** (the engine lays out from styles). Wrappers (`Fx`, `Enter`, `Route`, `Glide`) therefore pass only width and height through, never padding; `Stack` presents itself as a leaf and arranges its layers inside `draw` and `on_event`, as popover does.
+- **Page transitions replay a recorded frame** rather than asking the app to keep the old view alive.
+- **Backdrop blur composites by replacing coverage** (`dst = lerp(dst, glass, coverage)`); on an opaque target this equals source-over of the tint on the blurred copy.
+- **No bounce or elastic easing presets** (DESIGN bans them); `Spring::LIVELY` stays the only opt-in overshoot.

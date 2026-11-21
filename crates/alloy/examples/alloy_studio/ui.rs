@@ -26,7 +26,7 @@ pub fn panel(title: impl Into<String>, body: impl Into<N>) -> N {
 }
 
 /// One key figure: label, value, a coloured change badge and a sparkline.
-pub fn kpi(label: &str, value: &str, delta: f32, good_up: bool, spark: Vec<f32>) -> N {
+pub fn kpi_card(label: &str, value: &str, delta: f32, good_up: bool, spark: Vec<f32>) -> N {
     let up = delta >= 0.0;
     let good = up == good_up;
     let b = badge(format!("{}{:.1}%", if up { "+" } else { "" }, delta));

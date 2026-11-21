@@ -102,7 +102,7 @@ fn dashboard_modules_render() {
 
 fn feeds_view(_: &()) -> impl View<Act<()>> {
     col![
-        timeline([
+        moments([
             moment("12:04", "Deploy finished")
                 .detail("Live in 3 regions.")
                 .success(),

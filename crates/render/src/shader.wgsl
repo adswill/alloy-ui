@@ -79,6 +79,42 @@ fn bayer4(p: vec2<f32>) -> f32 {
     return f32(((y & 1u) << 3u) | ((xy & 1u) << 2u) | (((y >> 1u) & 1u) << 1u) | ((xy >> 1u) & 1u));
 }
 
+// Per-pixel noise in [-1, 1); identical to `grain_noise` in cpu.rs.
+fn grain_noise(px: vec2<u32>, seed: u32) -> f32 {
+    var h = (px.x * 0x9E3779B1u) ^ (px.y * 0x85EBCA6Bu) ^ (seed * 0xC2B2AE35u);
+    h = h ^ (h >> 15u);
+    h = h * 0x2C1B3C6Du;
+    h = h ^ (h >> 12u);
+    h = h * 0x297A2D39u;
+    h = h ^ (h >> 15u);
+    return f32(h >> 8u) / 8388608.0 - 1.0;
+}
+
+fn dither_g(g: vec4<f32>, p: vec2<f32>) -> vec4<f32> {
+    let dither = ((bayer4(p) + 0.5) / 16.0 - 0.5) / 255.0;
+    return vec4<f32>(max(g.rgb + vec3<f32>(dither * g.a), vec3<f32>(0.0)), g.a);
+}
+
+fn smooth01(t: f32) -> f32 {
+    return t * t * (3.0 - 2.0 * t);
+}
+
+// One-dimensional gaussian blur of `tex` around integer pixel `px` along `axis`,
+// edge-clamped; weights match `gaussian` in cpu.rs.
+fn blur_axis(px: vec2<i32>, axis: vec2<i32>, sigma: f32) -> vec4<f32> {
+    let dims = vec2<i32>(textureDimensions(tex));
+    let r = i32(clamp(ceil(sigma * 3.0), 1.0, 120.0));
+    var acc = vec4<f32>(0.0);
+    var wsum = 0.0;
+    for (var i = -r; i <= r; i = i + 1) {
+        let w = exp(-f32(i * i) / (2.0 * sigma * sigma));
+        let q = clamp(px + axis * i, vec2<i32>(0), dims - vec2<i32>(1));
+        acc = acc + textureLoad(tex, q, 0) * w;
+        wsum = wsum + w;
+    }
+    return acc / wsum;
+}
+
 @fragment
 fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     // Sample unconditionally to stay in uniform control flow.
@@ -91,7 +127,7 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let fill = premul(in.color);
     let border = premul(in.border_color);
 
-    if (in.kind > 4.5) {
+    if (in.kind > 4.5 && in.kind < 5.5) {
         // Triangle: vertices in border_color (a, b) and uv.xy (c); radius holds
         // the edge flags. A flagged edge is part of the polygon outline and is
         // anti-aliased. An unflagged edge is an interior seam shared with a
@@ -138,6 +174,50 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
             inner = cover(sd_rrect(in.p, r, max(radius - bw, 0.0)));
         }
         return outer * mix(border, fill, inner);
+    } else if (in.kind > 10.5) {
+        // Backdrop blur passes: 11 horizontal into scratch, 12 vertical + tint.
+        let px = vec2<i32>(floor(in.p));
+        if (in.kind < 11.5) {
+            return blur_axis(px, vec2<i32>(1, 0), blur);
+        }
+        let blurred = blur_axis(px, vec2<i32>(0, 1), blur);
+        let cov = cover(sd_rrect(in.p, in.rect, radius));
+        return (fill + blurred * (1.0 - fill.a)) * cov;
+    } else if (in.kind > 9.5) {
+        // Backdrop without a framebuffer copy available: tint only.
+        return fill * cover(sd_rrect(in.p, in.rect, radius));
+    } else if (in.kind > 8.5) {
+        // Grain
+        let cov = cover(sd_rrect(in.p, in.rect, radius));
+        let n = grain_noise(vec2<u32>(floor(in.p)), u32(in.params.w));
+        let a = abs(n) * in.color.a * cov;
+        if (n >= 0.0) {
+            return vec4<f32>(a, a, a, a);
+        }
+        return vec4<f32>(0.0, 0.0, 0.0, a);
+    } else if (in.kind > 7.5) {
+        // Inner shadow
+        let cov = cover(sd_rrect(in.p, in.rect, radius));
+        let shifted = sd_rrect(in.p - in.dir, in.rect, radius);
+        var a = cover(shifted);
+        if (blur > 0.0) {
+            a = smooth01(clamp((shifted + blur * 0.5) / blur, 0.0, 1.0));
+        }
+        return fill * (a * cov);
+    } else if (in.kind > 6.5) {
+        // Sheen: one highlight band across a base colour
+        let cov = cover(sd_rrect(in.p, in.rect, radius));
+        let len = max(abs(in.dir.x) * in.rect.z + abs(in.dir.y) * in.rect.w, 1e-4);
+        let gt = clamp(0.5 + dot(in.p - (in.rect.xy + in.rect.zw * 0.5), in.dir) / len, 0.0, 1.0);
+        let d = clamp(abs(gt - blur) / in.params.w, 0.0, 1.0);
+        let g = dither_g(mix(fill, premul(in.uv), 1.0 - smooth01(d)), in.p);
+        return g * cov;
+    } else if (in.kind > 5.5) {
+        // Radial gradient
+        let cov = cover(sd_rrect(in.p, in.rect, radius));
+        let d = length(in.p - in.dir);
+        let g = dither_g(mix(fill, premul(in.uv), clamp(d / blur, 0.0, 1.0)), in.p);
+        return g * cov;
     } else if (in.kind > 3.5) {
         // Gradient quad (end colour travels in `uv`)
         let outer = cover(sd_rrect(in.p, in.rect, radius));

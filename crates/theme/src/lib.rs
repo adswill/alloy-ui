@@ -411,6 +411,63 @@ impl Easing {
     /// Linear, for progress indicators.
     pub const LINEAR: Self = Self(0.0, 0.0, 1.0, 1.0);
 
+    // Presets. The `*_OUT` family decelerates (use for things entering or
+    // responding to input), `*_IN_OUT` is symmetric (things travelling across
+    // the screen), and the `*_IN` curves accelerate (things leaving). None of
+    // them overshoots: bounce and elastic curves are deliberately absent.
+
+    /// Sine, gentlest ease-out.
+    pub const SINE_OUT: Self = Self(0.61, 1.0, 0.88, 1.0);
+    /// Sine in and out.
+    pub const SINE_IN_OUT: Self = Self(0.37, 0.0, 0.63, 1.0);
+    /// Quadratic ease-out.
+    pub const QUAD_OUT: Self = Self(0.5, 1.0, 0.89, 1.0);
+    /// Quadratic in and out.
+    pub const QUAD_IN_OUT: Self = Self(0.45, 0.0, 0.55, 1.0);
+    /// Cubic ease-in, for exits.
+    pub const CUBIC_IN: Self = Self(0.32, 0.0, 0.67, 0.0);
+    /// Cubic ease-out.
+    pub const CUBIC_OUT: Self = Self(0.33, 1.0, 0.68, 1.0);
+    /// Cubic in and out.
+    pub const CUBIC_IN_OUT: Self = Self(0.65, 0.0, 0.35, 1.0);
+    /// Quartic ease-out: confident, a little quicker than cubic.
+    pub const QUART_OUT: Self = Self(0.25, 1.0, 0.5, 1.0);
+    /// Quartic in and out.
+    pub const QUART_IN_OUT: Self = Self(0.76, 0.0, 0.24, 1.0);
+    /// Quintic ease-out: very fast start, long settle.
+    pub const QUINT_OUT: Self = Self(0.22, 1.0, 0.36, 1.0);
+    /// Exponential ease-out (same curve as [`Easing::EASE_OUT`]).
+    pub const EXPO_OUT: Self = Self(0.16, 1.0, 0.3, 1.0);
+    /// Exponential in and out: slow, fast, slow. For full-width movement.
+    pub const EXPO_IN_OUT: Self = Self(0.87, 0.0, 0.13, 1.0);
+    /// Circular ease-out.
+    pub const CIRC_OUT: Self = Self(0.0, 0.55, 0.45, 1.0);
+    /// Material "standard": brisk start, soft landing. For moving things that stay on screen.
+    pub const STANDARD: Self = Self(0.2, 0.0, 0.0, 1.0);
+    /// Material "emphasised decelerate": for large surfaces entering.
+    pub const EMPHASIZED: Self = Self(0.05, 0.7, 0.1, 1.0);
+
+    /// Every preset with its name, for pickers and the easing gallery.
+    pub const PRESETS: [(&'static str, Self); 17] = [
+        ("linear", Self::LINEAR),
+        ("sine out", Self::SINE_OUT),
+        ("sine in-out", Self::SINE_IN_OUT),
+        ("quad out", Self::QUAD_OUT),
+        ("quad in-out", Self::QUAD_IN_OUT),
+        ("cubic in", Self::CUBIC_IN),
+        ("cubic out", Self::CUBIC_OUT),
+        ("cubic in-out", Self::CUBIC_IN_OUT),
+        ("quart out", Self::QUART_OUT),
+        ("quart in-out", Self::QUART_IN_OUT),
+        ("quint out", Self::QUINT_OUT),
+        ("expo out", Self::EXPO_OUT),
+        ("expo in-out", Self::EXPO_IN_OUT),
+        ("circ out", Self::CIRC_OUT),
+        ("standard", Self::STANDARD),
+        ("emphasized", Self::EMPHASIZED),
+        ("ease out", Self::EASE_OUT),
+    ];
+
     /// Evaluate the curve at progress `t` in 0..=1 (clamped).
     pub fn at(self, t: f32) -> f32 {
         let t = t.clamp(0.0, 1.0);
