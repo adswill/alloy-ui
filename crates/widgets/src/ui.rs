@@ -133,6 +133,11 @@ struct Inner {
     popup: Option<u64>,
     now: u64,
     anims: HashMap<u64, Anim>,
+    clocks: HashMap<u64, Clock>,
+    memo: HashMap<u64, [f32; 4]>,
+    frame: u64,
+    snaps: HashMap<u64, Snapshot>,
+    outgoing: HashMap<u64, Snapshot>,
     reduced_motion: bool,
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
@@ -211,6 +216,21 @@ impl Anim {
     }
 }
 
+/// A page's recorded draw commands, kept so it can be drawn on its way out.
+#[derive(Clone)]
+pub(crate) struct Snapshot {
+    pub page: u64,
+    pub cmds: Rc<Vec<DrawCommand>>,
+}
+
+/// A one-shot timer started the first time its key is seen.
+#[derive(Clone, Copy)]
+struct Clock {
+    /// Set by the first tick after the clock is created, like tween starts.
+    start: Option<u64>,
+    dur: u64,
+}
+
 /// Cheaply clonable handle to per-window widget state.
 #[derive(Clone)]
 pub struct Ui(Rc<RefCell<Inner>>);
@@ -233,6 +253,11 @@ impl Ui {
             popup: None,
             now: 0,
             anims: HashMap::new(),
+            clocks: HashMap::new(),
+            memo: HashMap::new(),
+            frame: 0,
+            snaps: HashMap::new(),
+            outgoing: HashMap::new(),
             reduced_motion: std::env::var("ALLOY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
             overlay: Vec::new(),
             regions: Vec::new(),
@@ -344,6 +369,7 @@ impl Ui {
     }
     pub(crate) fn begin_frame(&self) {
         let mut s = self.0.borrow_mut();
+        s.frame += 1;
         s.order.clear();
         s.order_seen.clear();
         s.overlay.clear();
@@ -380,11 +406,17 @@ impl Ui {
         for a in s.anims.values_mut() {
             a.advance(now);
         }
+        for c in s.clocks.values_mut() {
+            c.start.get_or_insert(now);
+        }
     }
     /// True while any transition is still running; the runtime then keeps ticking.
     pub fn animating(&self) -> bool {
         let s = self.0.borrow();
         s.anims.values().any(|a| a.running(s.now))
+            || s.clocks
+                .values()
+                .any(|c| c.start.map_or(true, |st| s.now < st + c.dur))
     }
     /// Current value of the transition `key`, moving toward `target` over the
     /// theme's fast motion duration. The first call returns `target` at once.
@@ -451,6 +483,99 @@ impl Ui {
             mounted: present || progress > 0.002,
         }
     }
+    /// Frames drawn so far. A widget that notices it was not drawn last frame
+    /// knows it has just appeared.
+    pub fn frame(&self) -> u64 {
+        self.0.borrow().frame
+    }
+    /// Store `snap` as the latest snapshot for `key`, returning the previous one.
+    pub(crate) fn swap_snapshot(&self, key: u64, snap: Snapshot) -> Option<Snapshot> {
+        self.0.borrow_mut().snaps.insert(key, snap)
+    }
+    /// The page on its way out for `key`, if a transition is running.
+    pub(crate) fn outgoing(&self, key: u64) -> Option<Snapshot> {
+        self.0.borrow().outgoing.get(&key).cloned()
+    }
+    /// Set or clear (with `None`) the outgoing page for `key`.
+    pub(crate) fn set_outgoing(&self, key: u64, snap: Option<Snapshot>) {
+        let mut s = self.0.borrow_mut();
+        match snap {
+            Some(v) => s.outgoing.insert(key, v),
+            None => s.outgoing.remove(&key),
+        };
+    }
+
+    /// A choreographed sequence of `total_ms` that starts the first time it is
+    /// seen and starts over whenever `trigger` changes (pass anything that
+    /// identifies the state, e.g. the selected page).
+    pub fn timeline(&self, key: u64, trigger: u64, total_ms: u32) -> crate::motion::Timeline {
+        let packed = crate::motion::pack(trigger);
+        let mk = key ^ 0x7131;
+        if self.memo(mk) != packed {
+            self.set_memo(mk, packed);
+            self.restart_clock(key);
+        }
+        let (el, _) = self.clock(key, total_ms as u64);
+        crate::motion::Timeline {
+            elapsed_ms: el as f32,
+            total_ms: total_ms as f32,
+        }
+    }
+    /// A value travelling through `frames` over `ms`, replaying whenever
+    /// `trigger` changes (and once when first seen).
+    pub fn keyframes<T: Animatable>(
+        &self,
+        key: u64,
+        trigger: u64,
+        ms: u32,
+        frames: &crate::motion::Keyframes<T>,
+    ) -> T {
+        let tl = self.timeline(key, trigger, ms);
+        frames.sample(tl.progress())
+    }
+
+    /// A one-shot clock: milliseconds since `key` was first seen (or since
+    /// [`Ui::restart_clock`]), capped at `dur_ms`, plus whether it is still
+    /// running. Drives timelines, keyframes and staggered entrances. Under
+    /// reduced motion it is already finished.
+    pub fn clock(&self, key: u64, dur_ms: u64) -> (u64, bool) {
+        let mut s = self.0.borrow_mut();
+        if s.reduced_motion {
+            return (dur_ms, false);
+        }
+        let now = s.now;
+        let c = s.clocks.entry(key).or_insert(Clock {
+            start: None,
+            dur: dur_ms,
+        });
+        c.dur = c.dur.max(dur_ms);
+        match c.start {
+            // Not ticked yet: it starts at zero on the next tick.
+            None => (0, true),
+            Some(st) => (now.saturating_sub(st).min(dur_ms), now < st + dur_ms),
+        }
+    }
+    /// Start the clock `key` again from zero.
+    pub fn restart_clock(&self, key: u64) {
+        let mut s = self.0.borrow_mut();
+        s.clocks.insert(
+            key,
+            Clock {
+                start: None,
+                dur: 0,
+            },
+        );
+    }
+    /// Remembered four numbers for `key` (zeros if never set): per-widget
+    /// scratch such as the point a ripple started from.
+    pub fn memo(&self, key: u64) -> [f32; 4] {
+        self.0.borrow().memo.get(&key).copied().unwrap_or([0.0; 4])
+    }
+    /// Remember four numbers for `key`.
+    pub fn set_memo(&self, key: u64, v: [f32; 4]) {
+        self.0.borrow_mut().memo.insert(key, v);
+    }
+
     /// True when the user (or the app) asked for less motion: every
     /// transition then jumps to its end state, and nothing keeps ticking.
     pub fn reduced_motion(&self) -> bool {

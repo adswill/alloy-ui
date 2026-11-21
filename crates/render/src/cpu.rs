@@ -109,7 +109,11 @@ impl HeadlessRenderer for CpuRenderer {
         let clear = [bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a];
         let mut buf = vec![clear; width as usize * height as usize];
         for p in &prims {
-            self.raster(p, &mut buf, width, height);
+            if p.kind == Kind::Backdrop {
+                backdrop(p, &mut buf, width, height);
+            } else {
+                self.raster(p, &mut buf, width, height);
+            }
         }
         let mut rgba = Vec::with_capacity(buf.len() * 4);
         for px in buf {
@@ -208,6 +212,117 @@ fn sample(rgba: &[u8], w: u32, h: u32, u: f32, v: f32) -> [f32; 4] {
     o
 }
 
+/// Per-pixel noise in `[-1, 1)` from integer pixel coordinates and a seed.
+/// The WGSL shader computes the same value with `u32` arithmetic.
+fn grain_noise(x: u32, y: u32, seed: u32) -> f32 {
+    let mut h =
+        x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA6B) ^ seed.wrapping_mul(0xC2B2_AE35);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    h = h.wrapping_mul(0x297A_2D39);
+    h ^= h >> 15;
+    (h >> 8) as f32 / 8_388_608.0 - 1.0
+}
+
+/// Normalised gaussian weights for `sigma` pixels, `2 * radius + 1` taps.
+fn gaussian(sigma: f32) -> Vec<f32> {
+    let radius = (sigma * 3.0).ceil().max(1.0) as i32;
+    let mut w: Vec<f32> = (-radius..=radius)
+        .map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let sum: f32 = w.iter().sum();
+    w.iter_mut().for_each(|v| *v /= sum);
+    w
+}
+
+/// Frosted glass: blur the framebuffer inside `p.rect` (edge-clamped, so the
+/// result never darkens at the border), then lay the tint over it.
+fn backdrop(p: &Prim, buf: &mut [[f32; 4]], width: u32, height: u32) {
+    let [rx, ry, rw, rh] = p.rect;
+    let (w, h) = (width as i32, height as i32);
+    let x0 = (rx.floor() as i32).max(p.clip[0]).max(0);
+    let y0 = (ry.floor() as i32).max(p.clip[1]).max(0);
+    let x1 = ((rx + rw).ceil() as i32).min(p.clip[2]).min(w);
+    let y1 = ((ry + rh).ceil() as i32).min(p.clip[3]).min(h);
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let tint = premul(p.color);
+    let kernel = if p.blur > 0.05 {
+        gaussian(p.blur)
+    } else {
+        vec![1.0]
+    };
+    let rad = (kernel.len() as i32 - 1) / 2;
+    // Source window: the region grown by the kernel, clamped to the target.
+    let (sx0, sy0) = ((x0 - rad).max(0), (y0 - rad).max(0));
+    let (sx1, sy1) = ((x1 + rad).min(w), (y1 + rad).min(h));
+    let sw = (sx1 - sx0) as usize;
+    let at = |x: i32, y: i32| -> [f32; 4] { buf[y as usize * width as usize + x as usize] };
+    // Horizontal pass over the grown rows, edge-clamped to the target.
+    let mut tmp = vec![[0.0f32; 4]; sw * (sy1 - sy0) as usize];
+    for y in sy0..sy1 {
+        for x in x0..x1 {
+            let mut acc = [0.0f32; 4];
+            for (i, k) in kernel.iter().enumerate() {
+                let sx = (x + i as i32 - rad).clamp(0, w - 1);
+                let px = at(sx, y);
+                for c in 0..4 {
+                    acc[c] += px[c] * k;
+                }
+            }
+            tmp[(y - sy0) as usize * sw + (x - sx0) as usize] = acc;
+        }
+    }
+    // Vertical pass, then composite through the rounded-rect coverage.
+    let mut out = Vec::with_capacity(((x1 - x0) * (y1 - y0)) as usize);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let mut acc = [0.0f32; 4];
+            for (i, k) in kernel.iter().enumerate() {
+                let sy = (y + i as i32 - rad).clamp(0, h - 1).clamp(sy0, sy1 - 1);
+                let px = tmp[(sy - sy0) as usize * sw + (x - sx0) as usize];
+                for c in 0..4 {
+                    acc[c] += px[c] * k;
+                }
+            }
+            out.push(acc);
+        }
+    }
+    let mut it = out.into_iter();
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let blurred = it.next().unwrap_or([0.0; 4]);
+            let cov = cover(sd_rrect((x as f32 + 0.5, y as f32 + 0.5), p.rect, p.radius));
+            let dst = &mut buf[y as usize * width as usize + x as usize];
+            let ia = 1.0 - tint[3];
+            for c in 0..4 {
+                let glass = tint[c] + blurred[c] * ia;
+                dst[c] += (glass - dst[c]) * cov;
+            }
+        }
+    }
+}
+
+/// Dithered premultiplied blend `a -> b` at `t`.
+fn lerp4(a: [f32; 4], b: [f32; 4], t: f32) -> [f32; 4] {
+    let mut g = [0.0; 4];
+    for k in 0..4 {
+        g[k] = a[k] + (b[k] - a[k]) * t;
+    }
+    g
+}
+
+fn dithered(mut g: [f32; 4], x: i32, y: i32) -> [f32; 4] {
+    let dither = ((bayer4(x, y) + 0.5) / 16.0 - 0.5) / 255.0;
+    let ga = g[3];
+    for c in &mut g[..3] {
+        *c = (*c + dither * ga).max(0.0);
+    }
+    g
+}
+
 impl CpuRenderer {
     fn raster(&mut self, p: &Prim, buf: &mut [[f32; 4]], width: u32, height: u32) {
         // Resolve texel source up front.
@@ -303,6 +418,42 @@ impl CpuRenderer {
                         }
                         o
                     }
+                    Kind::Radial => {
+                        let cov = cover(sd_rrect(pt, p.rect, p.radius));
+                        let d = ((pt.0 - p.dir[0]).powi(2) + (pt.1 - p.dir[1]).powi(2)).sqrt();
+                        let g = dithered(lerp4(fill, fill2, (d / p.blur).clamp(0.0, 1.0)), x, y);
+                        g.map(|c| c * cov)
+                    }
+                    Kind::Sheen => {
+                        let cov = cover(sd_rrect(pt, p.rect, p.radius));
+                        let gt = gradient_t(pt, p.rect, p.dir);
+                        let d = ((gt - p.blur).abs() / p.aux).clamp(0.0, 1.0);
+                        let g = dithered(lerp4(fill, fill2, 1.0 - smooth(d)), x, y);
+                        g.map(|c| c * cov)
+                    }
+                    Kind::Inner => {
+                        let cov = cover(sd_rrect(pt, p.rect, p.radius));
+                        let shifted =
+                            sd_rrect((pt.0 - p.dir[0], pt.1 - p.dir[1]), p.rect, p.radius);
+                        let a = if p.blur > 0.0 {
+                            smooth(((shifted + p.blur * 0.5) / p.blur).clamp(0.0, 1.0))
+                        } else {
+                            cover(shifted)
+                        };
+                        fill.map(|c| c * a * cov)
+                    }
+                    Kind::Grain => {
+                        let cov = cover(sd_rrect(pt, p.rect, p.radius));
+                        let n = grain_noise(x as u32, y as u32, p.aux as u32);
+                        let a = n.abs() * p.color[3] * cov;
+                        // Lighten above zero, darken below; premultiplied.
+                        if n >= 0.0 {
+                            [a, a, a, a]
+                        } else {
+                            [0.0, 0.0, 0.0, a]
+                        }
+                    }
+                    Kind::Backdrop => continue,
                     Kind::Mask => {
                         let Some((d, w, h)) = tex else { continue };
                         let u = (pt.0 - rx) / rw;

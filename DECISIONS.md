@@ -84,3 +84,10 @@ Shaping with cosmic-text cost about 150 us per string, paid on every layout pass
 
 ## Gradients and elevation
 - `DrawCommand::GradientQuad` (two stops, angle, radius, border, shadow) is implemented identically on the CPU and WGSL paths: CSS-style gradient line, interpolation in premultiplied space, 4x4 Bayer dither to avoid banding. Facade: `.gradient(from, to, angle)` and `.elevated()` on any view; `Container::gradient`. Use gentle tonal gradients only.
+
+## Motion II (2026-11-21)
+- **Clocks start on the first tick after creation**, like tween starts. An idle app's `now` is stale, so a clock stamped at creation would finish instantly. `Ui::clock` returns `(0, running)` until then, and `Ui::animating` stays true so the runtime delivers that tick.
+- **Custom `arrange` is not called for nested widgets** (the engine lays out from styles). Wrappers (`Fx`, `Enter`, `Route`, `Glide`) therefore pass only width and height through, never padding; `Stack` presents itself as a leaf and arranges its layers inside `draw` and `on_event`, as popover does.
+- **Page transitions replay a recorded frame** rather than asking the app to keep the old view alive.
+- **Backdrop blur composites by replacing coverage** (`dst = lerp(dst, glass, coverage)`); on an opaque target this equals source-over of the tint on the blurred copy.
+- **No bounce or elastic easing presets** (DESIGN bans them); `Spring::LIVELY` stays the only opt-in overshoot.
