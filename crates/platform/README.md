@@ -11,6 +11,9 @@ Window/event shell and OS services. `unsafe` is denied crate-wide and allowed on
 - **Wayland clipboard**: data-control (`ext_data_control_v1`, falling back to `zwlr_data_control_v1`) rather than core `wl_data_device`, because `wl_data_device` only delivers the selection to the focused client and needs an input serial to set it, neither of which a clipboard connection separate from winit's has. Works on wlroots compositors, KDE, COSMIC, niri. GNOME/Mutter offers neither protocol, so there the XWayland path (or the in-process buffer) applies. Owned selections die with the process unless a clipboard manager keeps them, as with X11.
 - Idle: `ControlFlow::Wait`, redraw only on request; background threads wake the loop via `ShellProxy`.
 
+## Mobile (prototype)
+winit's NativeActivity (Android) and UIKit (iOS) backends supply the window. This crate adds `touch.rs` (gesture recognizer, pointer emulation, momentum), `safe_area.rs` (insets), `os/mobile.rs` (no dialogs, menu or tray), `os/android.rs` (the `AndroidApp` handle, content rect) and `os/ios.rs` (UIPasteboard, `safeAreaInsets`). `PlatformEvent` gains `Touch`, `Gesture`, `Suspended`, `Resumed` and `SafeAreaChanged`. Verified by unit tests, clippy on both targets and a built iOS static library and linked Android library; never run on a device. See `docs/guide/14-mobile.md`.
+
 ## Accessibility
 
 `ctx.set_accessibility(&AccessTree)` publishes the frame's accessible nodes to the OS (see `src/access.rs`); `PlatformEvent::Accessibility` carries requests back. Node ids must be stable between frames (use the widget's focus id where it has one). The Linux adapter connects on a background thread, so a missing accessibility bus costs nothing and the app simply is not exposed.

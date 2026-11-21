@@ -15,15 +15,24 @@ pub mod dialog;
 pub mod fonts;
 pub mod menu;
 mod os;
+pub mod safe_area;
 pub mod shell;
 pub mod shortcut;
 pub mod theme;
+pub mod touch;
 pub mod tray;
+
+/// Android entry points (`android_main` hands its `AndroidApp` to [`android::init`]).
+#[cfg(target_os = "android")]
+pub mod android {
+    pub use crate::os::android::init;
+    pub use winit::platform::android::activity::AndroidApp;
+}
 
 use alloy_ui_core::Size;
 use std::path::PathBuf;
 
-pub use os::{default_clipboard, default_dialogs, default_system_theme};
+pub use os::{app_data_dir, default_clipboard, default_dialogs, default_system_theme};
 pub use shell::{run, PlatformEvent, ShellContext, ShellHandler};
 
 /// Error type for platform operations.

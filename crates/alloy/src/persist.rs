@@ -8,9 +8,11 @@ pub(crate) fn path(name: &str) -> PathBuf {
     let home = env("HOME")
         .or_else(|| env("USERPROFILE"))
         .unwrap_or_default();
-    let base = if cfg!(windows) {
+    let base = if let Some(dir) = alloy_ui_platform::app_data_dir() {
+        dir
+    } else if cfg!(windows) {
         env("APPDATA").unwrap_or(home)
-    } else if cfg!(target_os = "macos") {
+    } else if cfg!(any(target_os = "macos", target_os = "ios")) {
         home.join("Library/Application Support")
     } else {
         env("XDG_CONFIG_HOME").unwrap_or_else(|| home.join(".config"))

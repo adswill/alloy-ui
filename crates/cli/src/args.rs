@@ -25,7 +25,9 @@ OPTIONS:
     --manifest-path <PATH>   Cargo.toml of the app (default: current directory)
     -p, --package <NAME>     Package to use in a workspace
     --bin <NAME>             Binary target to bundle
-    --target <TRIPLE>        Cross-compile for this target
+    --target <TRIPLE>        Cross-compile for this target; `android` and `ios` (or
+                             `ios-sim`) build the mobile library and write the native
+                             project (Gradle / XcodeGen) next to it
     --format <LIST>          Comma list of: app, dmg, deb, rpm, appimage, exe, nsis, msi
     --out <DIR>              Output directory (default: <target>/alloy-bundle)
     --binary <PATH>          Bundle this prebuilt binary instead of building

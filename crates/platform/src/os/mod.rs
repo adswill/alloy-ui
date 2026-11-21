@@ -2,11 +2,16 @@
 //! Backends shell out to each OS's own stock tools (no extra crates, no `unsafe`).
 
 use crate::{Clipboard, Dialogs, PlatformError, SystemTheme};
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 use std::process::{Command, Stdio};
 
+#[cfg(target_os = "android")]
+pub mod android;
 #[cfg(target_os = "linux")]
 mod dbus;
+#[cfg(target_os = "ios")]
+#[allow(unsafe_code)]
+mod ios;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
@@ -19,6 +24,8 @@ mod macos;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos_access;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod mobile;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
@@ -34,10 +41,12 @@ mod x11_clip;
 use linux as backend;
 #[cfg(target_os = "macos")]
 use macos as backend;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use mobile as backend;
 #[cfg(target_os = "windows")]
 use windows as backend;
 
-#[cfg(unix)]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 /// Run a program and capture stdout when it succeeds. `None` if it is missing or fails.
 pub(crate) fn capture(prog: &str, args: &[&str]) -> Option<String> {
     let out = Command::new(prog)
@@ -137,6 +146,8 @@ pub(crate) fn unavailable(what: &str) -> PlatformError {
     PlatformError(format!("{what}: no supported helper found on this system"))
 }
 
+#[cfg(target_os = "android")]
+pub(crate) use android::app as android_app;
 /// Native menu bar / tray entry points; each backend implements these.
 pub(crate) use backend::{clear_tray, set_menu, set_tray};
 #[cfg(target_os = "linux")]
@@ -193,8 +204,46 @@ pub(crate) fn new_access_adapter(
             key.0, origin, sink,
         )))
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(any(target_os = "macos", windows))]
     {
         backend::new_access_adapter(window, key, sink)
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        // TalkBack/VoiceOver bridges are not written yet (see docs/MOBILE.md).
+        let _ = (window, key, sink);
+        None
+    }
+}
+
+/// Insets the system chrome covers in `window`, in logical pixels. Zero on
+/// desktop, where the window manager already keeps content clear of it.
+pub(crate) fn safe_area(window: &winit::window::Window) -> crate::safe_area::Insets {
+    #[cfg(target_os = "android")]
+    {
+        android::safe_area(window)
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios::safe_area(window)
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        let _ = window;
+        crate::safe_area::Insets::ZERO
+    }
+}
+
+/// A directory the app may write to that is not under `HOME`, where the OS
+/// has no home directory (Android's internal storage). `None` elsewhere,
+/// where the usual per-user config directories apply.
+pub fn app_data_dir() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "android")]
+    {
+        android::app()?.internal_data_path()
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        None
     }
 }
