@@ -32,7 +32,7 @@
     <p class="lede">An Alloy app is a state struct and a view function. Every pixel is drawn by Alloy's own renderer, and the app shell is as small and quiet as Tauri's. <b>No HTML, CSS or JavaScript anywhere.</b></p>
     <div class="cta">
       <a class="btn primary" href="docs/guide/01-getting-started.html">Get started</a>
-      <a class="btn" href="docs/cookbook/index.html">Browse 30 recipes</a>
+      <a class="btn" href="docs/cookbook/index.html">Browse 50 recipes</a>
     </div>
     <div class="install" role="group" aria-label="Install command"><span class="p">$</span><code>cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli</code><button class="copy" type="button" data-copy="cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli">Copy</button></div>
   </div>
@@ -67,6 +67,16 @@
   <figure class="stage panel" id="p3" role="tabpanel" aria-labelledby="t3" hidden><img src="assets/shots/settings.webp" width="1600" height="1067" alt="Preferences window with accent swatches, density and language settings." loading="lazy"><figcaption><span>Preferences: accent, density, language, storage.</span><code>comparison/alloy-rich</code></figcaption></figure>
   <figure class="stage panel" id="p4" role="tabpanel" aria-labelledby="t4" hidden><img src="assets/shots/workbench.webp" width="1600" height="1045" alt="A builds list of 100,000 rows next to a tabbed rich-text notes pane." loading="lazy"><figcaption><span>A virtualised list of 100,000 builds beside tabs and formatted text.</span><code>crates/alloy/examples/workbench.rs</code></figcaption></figure>
   <figure class="stage panel" id="p5" role="tabpanel" aria-labelledby="t5" hidden><img src="assets/shots/showcase-dark.webp" width="1280" height="1090" alt="Component showcase in dark mode: accent swatches, badges, sparklines and an area chart." loading="lazy"><figcaption><span>Badges, sparklines, charts with axes, accent presets, density.</span><code>crates/alloy/examples/showcase.rs</code></figcaption></figure>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <h2>Six looks, one editor</h2>
+  <p class="sub">The theme editor example switches presets, light or dark, accent, density and icon pack with a live preview and a WCAG contrast report, then copies the Rust (or a <code>.alloy</code> theme line) that reproduces the look.</p>
+  <div class="cmp">
+    <figure><img src="assets/shots/theme-alloy_dark.webp" width="1400" height="1025" alt="Theme editor with the Alloy preset in dark mode" loading="lazy"><figcaption><b>Alloy</b>dark</figcaption></figure>
+    <figure><img src="assets/shots/theme-ember_dark.webp" width="1400" height="1025" alt="Theme editor with the Ember preset in dark mode" loading="lazy"><figcaption><b>Ember</b>dark</figcaption></figure>
+    <figure><img src="assets/shots/theme-glacier_light.webp" width="1400" height="1025" alt="Theme editor with the Glacier preset in light mode" loading="lazy"><figcaption><b>Glacier</b>light</figcaption></figure>
+  </div>
 </div></section>
 
 <section class="block"><div class="wrap">
@@ -142,11 +152,11 @@
     <thead><tr><th>Platform</th><th>Status</th><th>Detail</th></tr></thead>
     <tbody>
       <tr><td>Linux (X11, Wayland)</td><td><span class="tag ok">run locally</span></td><td>Tests, headless rendering, bundling (.deb, .rpm) and AT-SPI accessibility were run on Linux.</td></tr>
-      <tr><td>Windows</td><td><span class="tag mid">CI passed once</span></td><td>fmt, build, clippy and tests passed in CI. The app has not yet been run on a real Windows desktop.</td></tr>
-      <tr><td>macOS</td><td><span class="tag no">compiles</span></td><td>The code builds, but CI has not run it. Treat it as unverified.</td></tr>
+      <tr><td>Windows</td><td><span class="tag ok">CI on every PR</span></td><td>fmt, build, clippy and tests run on a Windows runner for every pull request. Nobody has used a full desktop session on real Windows hardware yet.</td></tr>
+      <tr><td>macOS</td><td><span class="tag ok">CI on every PR</span></td><td>The same checks run on a macOS runner, and the author develops on a Mac. Notarised bundles are not published yet.</td></tr>
     </tbody>
   </table>
-  <p class="note" style="margin-top:16px">GitHub Actions is currently held up by an account billing limit, so the full matrix has not completed. Performance numbers are software-rendered Linux numbers, not GPU results. See <a href="https://github.com/adswill/alloy-ui/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
+  <p class="note" style="margin-top:16px">The repository is public, so the full Ubuntu, Windows and macOS matrix runs for every pull request: <a href="https://github.com/adswill/alloy-ui/actions">see the runs</a>. Performance numbers are software-rendered Linux numbers, not GPU results. See <a href="https://github.com/adswill/alloy-ui/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
 </div></section>
 
 <section class="block" style="border-bottom:0"><div class="wrap">

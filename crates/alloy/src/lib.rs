@@ -88,6 +88,14 @@ mod cookbook {
     struct C4;
     #[doc = include_str!("../../../docs/cookbook/06-shell-and-testing.md")]
     struct C5;
+    #[doc = include_str!("../../../docs/cookbook/07-interaction.md")]
+    struct C6;
+    #[doc = include_str!("../../../docs/cookbook/08-motion-and-loading.md")]
+    struct C7;
+    #[doc = include_str!("../../../docs/cookbook/09-structure-and-data.md")]
+    struct C8;
+    #[doc = include_str!("../../../docs/cookbook/10-editors-and-media.md")]
+    struct C9;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.

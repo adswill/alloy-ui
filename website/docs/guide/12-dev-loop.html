@@ -22,7 +22,7 @@
 <a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
 </div></header>
 <main class="wrap docs">
-<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html" aria-current="page">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html" aria-current="page">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
 <article class="prose">
 <h1>The dev loop: <code>alloy dev</code> and the inspector</h1>
 <h2>Rebuild and restart on save</h2>
@@ -61,8 +61,70 @@ col page gap=14
 </code></pre></div>
 
 <p>Under <code>alloy dev</code> the file is re-read on every save (a 250 ms check that only exists in dev) and the window changes in place: the counter, focus, scroll positions and open page are untouched, because nothing restarted. Try it: <code>cargo run -p alloy-ui --example live</code>, then edit <code>crates/alloy/ui/counter.alloy</code>. In a release build the file is compiled into the binary and never read from disk, so there is no file to ship and no cost.</p>
-<p>A mistake does not close the window. The last good screen stays and a red line names the problem, for example <code>home.alloy: line 4: unknown element</code>bttn<code>`. Elements are</code>col<code>,</code>row<code>(</code>gap=<code>,</code>pad=<code>,</code>w=<code>,</code>h=<code>; flags</code>page<code>,</code>fill<code>,</code>center<code>),</code>text<code>,</code>heading<code>,</code>caption<code>(flags</code>dim<code>,</code>danger<code>,</code>success<code>,</code>accent<code>),</code>button<code>(</code>primary<code>,</code>ghost<code>,</code>fill<code>),</code>rule<code>,</code>space<code>,</code>vspace<code>and</code>gap<code>. Text goes in</code>"quotes"<code>and may contain</code>{var}<code>;</code>@name<code>binds a button to</code>.on("name", ..)<code>; a</code>button<code>with no matching</code>.on<code>is disabled so a typo is visible. A first</code>theme<code>line sets</code>dark<code>,</code>accent=#rrggbb<code>,</code>density=compact|spacious<code>and</code>contrast=high`.</p>
-<p>Live views are deliberately not a second UI language: no loops, conditions or expressions. Anything dynamic (a list from state, a widget that needs a handler with data) stays in Rust, next to live parts: <code>col![live!("ui/header.alloy").var(..), my_table(s)]</code>.</p>
+<p>A mistake does not close the window. The last good screen stays and a red line names the problem, for example <code>home.alloy: line 4: unknown element</code>bttn``. Elements:</p>
+<table>
+<thead>
+<tr>
+<th>Element</th>
+<th>Settings and flags</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>col</code>, <code>row</code></td>
+<td><code>gap=</code>, <code>pad=</code>, <code>w=</code>, <code>h=</code>, <code>round=</code>; flags <code>page</code>, <code>fill</code>, <code>center</code>, <code>card</code>, <code>surface</code>, <code>outline</code>, <code>elevated</code></td>
+</tr>
+<tr>
+<td><code>scroll</code></td>
+<td>a scrolling column (<code>gap=</code>, <code>pad=</code>) that keeps its offset across reloads</td>
+</tr>
+<tr>
+<td><code>text</code>, <code>heading</code>, <code>caption</code></td>
+<td><code>dim</code>, <code>danger</code>, <code>success</code>, <code>accent</code></td>
+</tr>
+<tr>
+<td><code>button</code></td>
+<td><code>primary</code>, <code>ghost</code>, <code>fill</code>; <code>@name</code> wires it to <code>.on("name", ..)</code></td>
+</tr>
+<tr>
+<td><code>badge "Live"</code></td>
+<td><code>success</code>, <code>warning</code>, <code>danger</code>, <code>accent</code>, <code>auto</code>, <code>dot</code>, <code>outline</code></td>
+</tr>
+<tr>
+<td><code>avatar "Ada Lovelace"</code></td>
+<td>initials on a colour taken from the name</td>
+</tr>
+<tr>
+<td><code>progress</code></td>
+<td><code>value=</code>, <code>min=</code>, <code>max=</code>; any of them may be <code>{var}</code></td>
+</tr>
+<tr>
+<td><code>if name</code> / <code>unless name</code></td>
+<td>show the children when the yes/no value <code>name</code> is true / false</td>
+</tr>
+<tr>
+<td><code>rule</code>, <code>space</code>, <code>vspace</code>, <code>gap</code></td>
+<td>dividers and spacing (<code>gap</code> takes <code>w=</code>, <code>h=</code>)</td>
+</tr>
+</tbody>
+</table>
+<p>Text goes in <code>"quotes"</code> and may contain <code>{var}</code>. A <code>button</code> with no matching <code>.on</code> is disabled so a typo is visible. Pass yes/no values with <code>.when("signed_in", s.user.is_some())</code>. A first <code>theme</code> line sets <code>dark</code>, <code>accent=#rrggbb</code>, <code>density=compact|spacious</code> and <code>contrast=high</code>; the theme editor example prints that line for you under "Copy .alloy line".</p>
+<div class="hl"><pre><span></span><code>col page gap=14
+  row gap=10 center
+    avatar "{name}"
+    heading "{name}"
+    badge "Pro" accent
+    space
+  if busy
+    progress value={done} max=100
+  col card gap=6
+    caption "Storage" dim
+    progress value=62
+  scroll gap=4
+    text "Changelog"
+</code></pre></div>
+
+<p><code>alloy dev</code> also reopens the window where it was (position and size), so a restart after a Rust change looks like a reload. Combine it with <code>.persist("my-app")</code> and the state comes back too.</p>
 <h2>Why not hot-patch Rust?</h2>
 <p>Reloading compiled view code in-process means loading the app as a dynamic library and swapping it while the window runs. We looked at it and chose not to ship it:</p>
 <ul>

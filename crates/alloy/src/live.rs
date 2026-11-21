@@ -29,7 +29,13 @@
 //!
 //! Elements: `col`, `row` (`gap=`, `pad=`, `w=`, `h=`, flags `page`, `fill`, `center`),
 //! `text`, `heading`, `caption` (flags `dim`, `danger`, `success`, `accent`), `button`
-//! (flags `primary`, `ghost`, `fill`), `rule`, `space`, `vspace`, `gap` (`w=`, `h=`).
+//! (flags `primary`, `ghost`, `fill`), `badge` (flags `success`, `warning`, `danger`, `accent`,
+//! `auto`, `dot`, `outline`), `avatar "Ada Lovelace"`, `progress` (`value=`, `min=`, `max=`;
+//! numbers may be `{var}`), `rule`, `space`, `vspace`, `gap` (`w=`, `h=`).
+//!
+//! Containers (`col`, `row`) also take the flags `card`, `surface`, `outline`, `elevated` and
+//! `round=`. `scroll` is a scrolling column. `if name` and `unless name` show their children
+//! depending on a yes/no value you pass with `.when("name", bool)` or `.var`.
 //! `"quoted text"` may contain `{var}`. Comment lines start with `#`. Children are indented.
 //! A first `theme` line sets `dark`/`light`, `accent=#rrggbb`, `density=compact|spacious`
 //! and `contrast=high`.
@@ -37,7 +43,7 @@
 use crate::{
     cx::LockExt,
     dsl::{button, caption, heading, text, Act, Txt},
-    view::{col, row, Node},
+    view::{col, row, Node, View},
     Look,
 };
 use std::{
@@ -69,13 +75,18 @@ impl Item {
 }
 
 const KINDS: &[&str] = &[
-    "col", "row", "text", "heading", "caption", "button", "rule", "space", "vspace", "gap", "theme",
+    "col", "row", "scroll", "text", "heading", "caption", "button", "badge", "avatar", "progress",
+    "rule", "space", "vspace", "gap", "theme", "if", "unless",
 ];
-const ATTRS: &[&str] = &["gap", "pad", "w", "h", "accent", "density", "contrast"];
+const ATTRS: &[&str] = &[
+    "gap", "pad", "w", "h", "round", "value", "min", "max", "accent", "density", "contrast",
+];
 const FLAGS: &[&str] = &[
-    "page", "fill", "center", "dim", "danger", "success", "accent", "primary", "ghost", "dark",
-    "light",
+    "page", "fill", "center", "dim", "danger", "success", "warning", "accent", "primary", "ghost",
+    "dark", "light", "card", "surface", "elevated", "outline", "auto", "dot",
 ];
+/// Elements that hold children.
+const CONTAINERS: &[&str] = &["col", "row", "scroll", "if", "unless"];
 
 fn tokens(s: &str) -> Result<Vec<(String, bool)>, String> {
     let mut out = Vec::new();
@@ -145,8 +156,10 @@ fn parse(src: &str) -> Result<Item, String> {
             kind: kind.clone(),
             ..Item::default()
         };
-        for (t, quoted) in &toks[1..] {
-            if *quoted {
+        for (n, (t, quoted)) in toks[1..].iter().enumerate() {
+            // `if name`: the first bare word is the variable, and quoted text is text.
+            let condition = n == 0 && matches!(kind.as_str(), "if" | "unless") && !*quoted;
+            if condition || *quoted {
                 item.text = Some(t.clone());
             } else if let Some(a) = t.strip_prefix('@') {
                 item.action = Some(a.to_string());
@@ -170,7 +183,7 @@ fn parse(src: &str) -> Result<Item, String> {
             stack.last_mut().expect("root").1.kids.push(done);
         }
         let parent = &stack.last().expect("root").1;
-        if !matches!(parent.kind.as_str(), "col" | "row") {
+        if !CONTAINERS.contains(&parent.kind.as_str()) {
             return Err(at(format!("`{}` cannot have children", parent.kind)));
         }
         stack.push((indent, item));
@@ -302,6 +315,33 @@ impl<S: 'static> Live<S> {
         self
     }
 
+    /// A number attribute, with `{var}` filled in first: `progress value={done}`.
+    fn num(&self, it: &Item, k: &str) -> Option<f32> {
+        let (_, v) = it.attrs.iter().find(|(n, _)| n == k)?;
+        self.fill(v).trim().parse().ok()
+    }
+
+    /// Whether the variable `name` holds something true: set, and not `0`, `false`, `no` or empty.
+    fn truthy(&self, name: &str) -> bool {
+        self.vars
+            .get(name)
+            .is_some_and(|v| !matches!(v.trim(), "" | "0" | "false" | "no" | "off"))
+    }
+
+    fn scroll_id(&self, it: &Item) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.path.hash(&mut h);
+        // Address of nothing stable would break on reload; the text of the subtree is stable.
+        format!("{it:?}").hash(&mut h);
+        h.finish() | (1 << 62)
+    }
+
+    /// Show the `if name` / `unless name` blocks for a yes/no value from your state.
+    pub fn when(self, name: &str, on: bool) -> Self {
+        self.var(name, if on { "true" } else { "false" })
+    }
+
     fn fill(&self, s: &str) -> String {
         let mut out = s.to_string();
         for (k, v) in &self.vars {
@@ -326,6 +366,59 @@ impl<S: 'static> Live<S> {
     fn node(&self, it: &Item) -> Option<Node<Act<S>>> {
         let label = self.fill(it.text.as_deref().unwrap_or(""));
         Some(match it.kind.as_str() {
+            "if" | "unless" => {
+                let on = self.truthy(it.text.as_deref().unwrap_or(""));
+                if on != (it.kind == "if") {
+                    return None;
+                }
+                let kids: Vec<Node<Act<S>>> = it.kids.iter().filter_map(|k| self.node(k)).collect();
+                col(kids).into()
+            }
+            "scroll" => {
+                let kids: Vec<Node<Act<S>>> = it.kids.iter().filter_map(|k| self.node(k)).collect();
+                let mut inner = col(kids);
+                if let Some(g) = it.attr("gap") {
+                    inner = inner.gap(g);
+                }
+                if let Some(p) = it.attr("pad") {
+                    inner = inner.pad(p);
+                }
+                // The id comes from the file and the item's place in it, so two scroll areas
+                // keep separate offsets and a reload keeps each where it was.
+                let id = self.scroll_id(it);
+                alloy_ui_widgets::Scrollable::new(
+                    &crate::cx::ui(),
+                    id,
+                    Node::from(inner).into_element(),
+                )
+                .width(crate::view::Length::Fill(1))
+                .height(crate::view::Length::Fill(1))
+                .into_element()
+                .into()
+            }
+            "badge" => {
+                let mut b = crate::badge(label);
+                for f in &it.flags {
+                    b = match f.as_str() {
+                        "success" => b.success(),
+                        "warning" => b.warning(),
+                        "danger" => b.danger(),
+                        "accent" => b.accent(),
+                        "auto" => b.auto(),
+                        "dot" => b.dot(),
+                        "outline" => b.outline(),
+                        _ => b,
+                    };
+                }
+                b.into()
+            }
+            "avatar" => crate::modules::avatar(label).into(),
+            "progress" => {
+                let lo = self.num(it, "min").unwrap_or(0.0);
+                let hi = self.num(it, "max").unwrap_or(100.0);
+                let v = self.num(it, "value").unwrap_or(0.0);
+                crate::dsl::progress(lo..=hi, v)
+            }
             "col" | "row" => {
                 let kids: Vec<Node<Act<S>>> = it.kids.iter().filter_map(|k| self.node(k)).collect();
                 let mut f = if it.kind == "col" {
@@ -353,6 +446,29 @@ impl<S: 'static> Live<S> {
                 }
                 if it.flag("fill") {
                     f = f.fill();
+                }
+                let deco = ["card", "surface", "outline", "elevated"]
+                    .iter()
+                    .any(|k| it.flag(k))
+                    || it.attr("round").is_some();
+                if deco {
+                    let mut b = View::boxed(Node::from(f));
+                    if it.flag("card") {
+                        b = b.card();
+                    }
+                    if it.flag("surface") {
+                        b = b.surface();
+                    }
+                    if it.flag("outline") {
+                        b = b.outline();
+                    }
+                    if it.flag("elevated") {
+                        b = b.elevated();
+                    }
+                    if let Some(r) = it.attr("round") {
+                        b = b.round(r);
+                    }
+                    return Some(b.into());
                 }
                 f.into()
             }
@@ -466,6 +582,51 @@ mod tests {
         assert_eq!(t.kids.len(), 2);
         assert!(t.kids[0].flag("dim") && t.kids[0].text.as_deref() == Some("a b"));
         assert_eq!(t.kids[1].kids[0].action.as_deref(), Some("go"));
+    }
+
+    #[test]
+    fn parses_cards_conditions_badges_and_progress() {
+        let t = parse(
+            "col card round=12\n  badge \"Live\" success dot\n  if signed_in\n    progress value={done} max=10\n  scroll gap=4\n    text \"x\"\n",
+        )
+        .unwrap();
+        assert!(t.flag("card") && t.attr("round") == Some(12.0));
+        assert_eq!(t.kids[0].kind, "badge");
+        assert_eq!(t.kids[1].kind, "if");
+        assert_eq!(t.kids[1].text.as_deref(), Some("signed_in"));
+        assert_eq!(t.kids[1].kids[0].kind, "progress");
+        assert_eq!(t.kids[2].kind, "scroll");
+        assert!(parse("badge \"x\"\n  text \"y\"").is_err());
+    }
+
+    #[test]
+    fn renders_the_new_elements_in_a_real_screen() {
+        use crate::testing::Harness;
+        const SRC: &str = "col page gap=8\n  badge \"Live\" success dot\n  col card\n    text \"Inside card\"\n    progress value={done} max=10\n  if on\n    text \"Shown\"\n  unless on\n    text \"Hidden\"\n  scroll\n    text \"Scrolled\"\n  button \"Flip\" @flip\n";
+        let app = crate::sketch(false, |on: &bool| {
+            live_file::<bool>("render-test.alloy", SRC)
+                .when("on", *on)
+                .var("done", 4)
+                .on("flip", |s| *s = !*s)
+        });
+        let mut ui = Harness::new(app, 320.0, 360.0);
+        ui.expect("Live")
+            .expect("Inside card")
+            .expect("Hidden")
+            .expect("Scrolled");
+        assert!(!ui.has_text("Shown"));
+        ui.click("Flip").expect("Shown");
+        assert!(!ui.has_text("Hidden"));
+    }
+
+    #[test]
+    fn conditions_follow_variables() {
+        let l: Live<()> = live_file("x.alloy", "col")
+            .when("on", true)
+            .var("zero", "0");
+        assert!(l.truthy("on"));
+        assert!(!l.truthy("zero") && !l.truthy("missing"));
+        assert!(l.num(&parse("progress value={zero}").unwrap(), "value") == Some(0.0));
     }
 
     #[test]

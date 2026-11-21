@@ -26,6 +26,6 @@ The docs pages are built from `docs/guide/*.md` and `docs/cookbook/*.md`, the sa
 python3 -m http.server -d website 8000
 ```
 
-## Publish (not done yet)
+## Publish
 
-`.github/workflows/pages.yml` can deploy this folder to GitHub Pages. It runs only when started by hand (`workflow_dispatch`), and Pages must first be enabled in the repository settings (Settings, Pages, Source: GitHub Actions). Nothing is published until someone does both.
+`.github/workflows/pages.yml` rebuilds the site and pushes it to the `gh-pages` branch whenever `website/`, `docs/` or the comparison notes change on `main`. On its first run it also tries to switch Pages on for that branch. If the repository does not let the workflow do that, set it once under Settings, Pages, Source: Deploy from a branch, `gh-pages`, `/ (root)`.
