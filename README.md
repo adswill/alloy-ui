@@ -176,13 +176,16 @@ Read this as: **about 2.9x fewer lines on everyday apps, 9 to 14x when the app i
 
 ## Platform status
 
-| platform | status |
-|---|---|
-| Linux (X11, Wayland) | built, tested and run locally: tests, headless rendering, bundling, AT-SPI |
-| Windows | CI passed fmt, build, clippy and tests once; not yet run as an app |
-| macOS | code compiles; CI has not run it yet, so treat it as unverified |
+Verified by the [Verify workflow](.github/workflows/verify.yml) on GitHub-hosted runners (PR #64, run 44865118445). Screenshots are uploaded as run artifacts.
 
-GitHub Actions is currently blocked by an account billing issue, so the Ubuntu and macOS matrix jobs have not completed. We only call something verified when a run has actually passed.
+| platform | goldens | window opened | GPU path | accessibility tree | not yet verified |
+|---|---|---|---|---|---|
+| Linux X11 | pass | locally under Xvfb | lavapipe (software Vulkan) | AT-SPI end-to-end test, run locally | real GPU, Orca |
+| Linux Wayland | same renders as X11 | native `xdg_shell` window under headless sway, screenshot taken | lavapipe | AT-SPI as above | GNOME and KDE compositors |
+| Windows | pass | window opened, still running after 10 s | Microsoft Basic Render Driver (WARP, software, DX12): tests pass | UI Automation shows the counter's Add, Subtract and Reset buttons and texts | real GPU, Narrator |
+| macOS | pass | window opened, still running after 10 s | Apple Paravirtual device (Metal): tests pass | AX tree shows the three buttons | real Apple GPU, VoiceOver |
+
+CI runners have no screen reader, so VoiceOver, Narrator and Orca are untested. GPU results come from virtual or software adapters, so they say the code path works, not how fast it is. GPU tests run single-threaded because Windows WARP crashed when four tests created devices at once. We only call something verified when a run has actually passed.
 
 ## Install
 
