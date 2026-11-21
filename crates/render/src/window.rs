@@ -269,6 +269,7 @@ impl GpuWindow {
             Some(p) => Painter::with_parts(ctx.device.clone(), ctx.queue.clone(), p, text),
             None => Painter::new(ctx.device.clone(), ctx.queue.clone(), format, text),
         };
+        crate::shared::set_global(&painter.shared());
         crate::perf_mark("gpu.pipeline", &mut t);
         Ok(Self {
             surface,

@@ -9,6 +9,10 @@ pub mod counter;
 pub mod dashboard;
 pub mod desk;
 pub mod gallery;
+#[cfg(feature = "gpu")]
+pub mod gpu_scene;
+#[cfg(feature = "media")]
+pub mod media_player;
 pub mod settings;
 pub mod text_editor;
 pub mod todo;

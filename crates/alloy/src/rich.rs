@@ -209,6 +209,7 @@ pub struct Chart {
     area: bool,
     legend: bool,
     unit: String,
+    zoom: Option<u64>,
 }
 
 fn chart(bars: bool, series: Vec<Series>) -> Chart {
@@ -220,6 +221,7 @@ fn chart(bars: bool, series: Vec<Series>) -> Chart {
         area: false,
         legend: true,
         unit: String::new(),
+        zoom: None,
     }
 }
 
@@ -270,6 +272,13 @@ impl Chart {
         self.unit = unit.into();
         self
     }
+    /// Scroll to zoom and drag to pan along the x axis; a "Reset zoom" chip (or `0`) restores
+    /// the full range and the y axis rescales to what is visible.
+    #[track_caller]
+    pub fn zoom(mut self) -> Self {
+        self.zoom = Some(auto_id(70));
+        self
+    }
 }
 
 impl<M: 'static> From<Chart> for Node<M> {
@@ -290,6 +299,9 @@ impl<M: 'static> From<Chart> for Node<M> {
         }
         if !c.legend {
             e = e.no_legend();
+        }
+        if let Some(id) = c.zoom {
+            e = e.zoomable(id);
         }
         Node(e.into_element())
     }

@@ -27,6 +27,8 @@ gles = ["alloy-ui-render/gles"]
 icons-lucide-full = ["alloy-ui-render/icons-lucide-full", "alloy-ui-widgets/icons-lucide-full"]
 icons-phosphor-full = ["alloy-ui-render/icons-phosphor-full", "alloy-ui-widgets/icons-phosphor-full"]
 icons-full = ["icons-lucide-full", "icons-phosphor-full"]
+# Real audio (symphonia + cpal) and video (ffmpeg process) sources: `alloy_ui::codecs::open(path)`.
+media = ["dep:alloy-ui-media"]
 
 [dependencies]
 alloy-ui-core.workspace = true
@@ -40,6 +42,7 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 alloy-ui-macros = { path = "../macros", version = "0.0.1" }
+alloy-ui-media = { path = "../media", version = "0.0.1", optional = true }
 
 [dev-dependencies]
 trybuild = "1"

@@ -1,8 +1,9 @@
 //! Audio and video playback surface: transport controls around a pluggable
 //! [`MediaSource`].
 //!
-//! Alloy ships no decoder: codecs are large, patent-encumbered and OS
-//! specific, which cuts against "tiny binaries". What it ships is the part every
+//! This crate ships no decoder: codecs are large, patent-encumbered and OS
+//! specific, which cuts against "tiny binaries". The optional `alloy-ui-media` crate adds
+//! real ones behind feature flags. What this crate ships is the part every
 //! player needs and nobody wants to rewrite: the picture area, a seek bar with
 //! scrubbing, play/pause, volume, keyboard control and a clock that drives
 //! redraws only while playing. A decoder crate (ffmpeg, gstreamer, AVFoundation,
@@ -31,6 +32,29 @@ pub trait MediaSource {
     /// registers its current frame as a renderer image and calls
     /// [`Frame::image`]; a procedural source just draws.
     fn paint(&self, frame: &mut Frame, t_ms: u64);
+    /// Called every time the player is drawn, before [`MediaSource::paint`], with the state the
+    /// UI wants: the position `t_ms`, whether it should be `playing`, and the output `volume`
+    /// (0.0 when muted). A source with real sound reconciles itself here: start or stop the
+    /// audio, jump when `t_ms` has drifted from its own clock, set the gain. The default does
+    /// nothing, which suits a procedural source.
+    fn sync(&self, _t_ms: u64, _playing: bool, _volume: f32) {}
+}
+
+/// A shared source is a source, so a decoder can live outside the view (in your state) while the
+/// view hands the player a clone of its `Rc` on every rebuild.
+impl<T: MediaSource + ?Sized> MediaSource for Rc<T> {
+    fn duration_ms(&self) -> u64 {
+        (**self).duration_ms()
+    }
+    fn aspect(&self) -> Option<f32> {
+        (**self).aspect()
+    }
+    fn paint(&self, frame: &mut Frame, t_ms: u64) {
+        (**self).paint(frame, t_ms)
+    }
+    fn sync(&self, t_ms: u64, playing: bool, volume: f32) {
+        (**self).sync(t_ms, playing, volume)
+    }
 }
 
 /// Playback state. Keep one in your model and update it from [`MediaAction`]s.
@@ -401,6 +425,15 @@ impl<M: 'static> Widget<M> for MediaPlayer<M> {
             }
             _ => pic,
         };
+        self.source.sync(
+            pos,
+            playing,
+            if self.state.muted {
+                0.0
+            } else {
+                self.state.volume
+            },
+        );
         let mut f = Frame::new(&self.ui, area.origin, area.size);
         self.source.paint(&mut f, pos);
         out.push(DrawCommand::PushClip(area));

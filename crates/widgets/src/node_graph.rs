@@ -109,7 +109,8 @@ type Handler<M> = Rc<dyn Fn(GraphAction) -> M>;
 /// [`GraphAction`]s. Drag a header to move a node, drag from an output port
 /// (right edge) to an input port (left edge) to connect, click a wire and press
 /// Delete to remove it, drag the background to pan and scroll to zoom. Zoom and
-/// pan are view state kept by the widget (press `0` to reset them).
+/// pan are view state kept by the widget (press `0` to reset them, `F` to fit every node,
+/// `+` and `-` to zoom). An optional minimap shows the whole graph.
 pub struct NodeGraph<M> {
     ui: Ui,
     id: u64,
@@ -117,6 +118,7 @@ pub struct NodeGraph<M> {
     wires: Vec<Wire>,
     selected: Option<u64>,
     height: Length,
+    minimap: bool,
     on_action: Option<Handler<M>>,
 }
 
@@ -136,6 +138,10 @@ const K_LX: u64 = 0x4E47_0009; // last pointer for panning
 const K_LY: u64 = 0x4E47_000A;
 const K_WIRE: u64 = 0x4E47_000B; // selected wire index
 const K_DOWN: u64 = 0x4E47_000C; // pressed on empty space
+const K_MAP: u64 = 0x4E47_000D; // dragging inside the minimap
+const Z_MIN: f32 = 0.25;
+const Z_MAX: f32 = 2.5;
+const MAP_W: f32 = 168.0;
 
 impl<M: 'static> NodeGraph<M> {
     /// A graph of `nodes` and `wires`. `id` keeps pan, zoom and drag state.
@@ -152,8 +158,15 @@ impl<M: 'static> NodeGraph<M> {
             wires: wires.into(),
             selected: None,
             height: Length::Fill(1),
+            minimap: false,
             on_action: None,
         }
+    }
+    /// Show a minimap in the bottom-right corner: every node as a small tile, the visible
+    /// area as an outline. Click or drag inside it to move the view there.
+    pub fn minimap(mut self, on: bool) -> Self {
+        self.minimap = on;
+        self
     }
     /// The selected node (drawn with an accent outline).
     pub fn selected(mut self, id: Option<u64>) -> Self {
@@ -205,6 +218,110 @@ impl<M: 'static> NodeGraph<M> {
             (s.x - b.origin.x - pan.x) / z,
             (s.y - b.origin.y - pan.y) / z,
         )
+    }
+    /// Graph-space bounds of every node, or `None` with no nodes.
+    fn content(&self) -> Option<Rectangle> {
+        let mut it = self.nodes.iter();
+        let first = it.next()?;
+        let mut lo = first.pos;
+        let mut hi = Point::new(first.pos.x + first.width, first.pos.y + Self::node_h(first));
+        for n in it {
+            lo = Point::new(lo.x.min(n.pos.x), lo.y.min(n.pos.y));
+            hi = Point::new(
+                hi.x.max(n.pos.x + n.width),
+                hi.y.max(n.pos.y + Self::node_h(n)),
+            );
+        }
+        Some(Rectangle::new(lo, Size::new(hi.x - lo.x, hi.y - lo.y)))
+    }
+    /// Where the minimap panel sits inside `b`.
+    fn minimap_rect(&self, b: &Rectangle) -> Option<Rectangle> {
+        if !self.minimap || self.nodes.is_empty() || b.size.width < 240.0 || b.size.height < 160.0 {
+            return None;
+        }
+        let w = MAP_W.min(b.size.width * 0.4);
+        let h = w * 0.66;
+        Some(Rectangle::new(
+            Point::new(
+                b.origin.x + b.size.width - w - 12.0,
+                b.origin.y + b.size.height - h - 12.0,
+            ),
+            Size::new(w, h),
+        ))
+    }
+    /// Scale and the minimap-space position of graph point (0, 0): the minimap shows the
+    /// nodes and the visible area together, so the outline never leaves the panel.
+    fn minimap_xf(&self, b: &Rectangle, m: &Rectangle) -> (f32, Point) {
+        let (lo, hi) = {
+            let a = self.to_graph(b, b.origin);
+            let z = self.to_graph(
+                b,
+                Point::new(b.origin.x + b.size.width, b.origin.y + b.size.height),
+            );
+            let c = self
+                .content()
+                .unwrap_or(Rectangle::new(a, Size::new(1.0, 1.0)));
+            (
+                Point::new(a.x.min(c.origin.x), a.y.min(c.origin.y)),
+                Point::new(
+                    z.x.max(c.origin.x + c.size.width),
+                    z.y.max(c.origin.y + c.size.height),
+                ),
+            )
+        };
+        let inner = Rectangle::new(
+            Point::new(m.origin.x + 7.0, m.origin.y + 7.0),
+            Size::new(m.size.width - 14.0, m.size.height - 14.0),
+        );
+        let (ww, wh) = ((hi.x - lo.x).max(1.0), (hi.y - lo.y).max(1.0));
+        let k = (inner.size.width / ww).min(inner.size.height / wh);
+        let origin = Point::new(
+            inner.origin.x + (inner.size.width - ww * k) / 2.0 - lo.x * k,
+            inner.origin.y + (inner.size.height - wh * k) / 2.0 - lo.y * k,
+        );
+        (k, origin)
+    }
+    /// Move the view so graph point under minimap point `p` is centred.
+    fn recenter_from_minimap(&self, b: &Rectangle, m: &Rectangle, p: Point) {
+        let (k, o) = self.minimap_xf(b, m);
+        let g = Point::new((p.x - o.x) / k, (p.y - o.y) / k);
+        let z = self.zoom();
+        self.set_view(
+            Point::new(b.size.width / 2.0 - g.x * z, b.size.height / 2.0 - g.y * z),
+            z,
+        );
+    }
+    /// Zoom by `factor` keeping the graph point under screen point `at` fixed.
+    fn zoom_about(&self, b: &Rectangle, at: Point, factor: f32) -> bool {
+        let z0 = self.zoom();
+        let z1 = (z0 * factor).clamp(Z_MIN, Z_MAX);
+        if (z1 - z0).abs() < 1e-4 {
+            return false;
+        }
+        let g = self.to_graph(b, at);
+        self.set_view(
+            Point::new(at.x - b.origin.x - g.x * z1, at.y - b.origin.y - g.y * z1),
+            z1,
+        );
+        true
+    }
+    /// Zoom and pan so every node is visible.
+    fn fit(&self, b: &Rectangle) -> bool {
+        let Some(c) = self.content() else {
+            return false;
+        };
+        let margin = 48.0;
+        let z = ((b.size.width - 2.0 * margin) / c.size.width.max(1.0))
+            .min((b.size.height - 2.0 * margin) / c.size.height.max(1.0))
+            .clamp(Z_MIN, 1.5);
+        self.set_view(
+            Point::new(
+                (b.size.width - c.size.width * z) / 2.0 - c.origin.x * z,
+                (b.size.height - c.size.height * z) / 2.0 - c.origin.y * z,
+            ),
+            z,
+        );
+        true
     }
     fn node(&self, id: u64) -> Option<&GraphNode> {
         self.nodes.iter().find(|n| n.id == id)
@@ -321,6 +438,15 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
     ) -> bool {
         let b = layout.bounds;
         match event {
+            Event::MousePressed(MouseButton::Left)
+                if self.minimap_rect(&b).is_some_and(|m| m.contains(cursor)) =>
+            {
+                let m = self.minimap_rect(&b).expect("checked");
+                self.ui.set_focus(Some(self.id));
+                self.set(K_MAP, Some(1));
+                self.recenter_from_minimap(&b, &m, cursor);
+                true
+            }
             Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
                 self.ui.set_focus(Some(self.id));
                 self.set(K_WIRE, None);
@@ -350,6 +476,12 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
                 true
             }
             Event::CursorMoved(p) => {
+                if self.slot(K_MAP).is_some() {
+                    if let Some(m) = self.minimap_rect(&b) {
+                        self.recenter_from_minimap(&b, &m, *p);
+                    }
+                    return true;
+                }
                 if let Some(id) = self.slot(K_DRAG).map(|v| v as u64) {
                     let g = self.to_graph(&b, *p);
                     let (gx, gy) = (
@@ -380,8 +512,10 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
             }
             Event::MouseReleased(MouseButton::Left) => {
                 let conn = self.slot(K_CONN);
-                let busy =
-                    conn.is_some() || self.slot(K_DRAG).is_some() || self.slot(K_PANNING).is_some();
+                let busy = conn.is_some()
+                    || self.slot(K_DRAG).is_some()
+                    || self.slot(K_PANNING).is_some()
+                    || self.slot(K_MAP).is_some();
                 if let Some(c) = conn {
                     let from = ((c as u64) >> 8, (c as u64 & 0xFF) as usize);
                     if let Some((node, port, false)) = self.port_at(&b, cursor) {
@@ -396,25 +530,15 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
                         }
                     }
                 }
-                for k in [K_CONN, K_DRAG, K_PANNING, K_DOWN, K_GX, K_GY, K_LX, K_LY] {
+                for k in [
+                    K_CONN, K_DRAG, K_PANNING, K_DOWN, K_GX, K_GY, K_LX, K_LY, K_MAP,
+                ] {
                     self.set(k, None);
                 }
                 busy
             }
             Event::Scrolled { dy, .. } if b.contains(cursor) => {
-                let z0 = self.zoom();
-                let z1 = (z0 * (1.0 + dy * 0.0015)).clamp(0.4, 2.0);
-                if (z1 - z0).abs() < 1e-4 {
-                    return false;
-                }
-                // Keep the graph point under the cursor fixed.
-                let g = self.to_graph(&b, cursor);
-                let pan = Point::new(
-                    cursor.x - b.origin.x - g.x * z1,
-                    cursor.y - b.origin.y - g.y * z1,
-                );
-                self.set_view(pan, z1);
-                true
+                self.zoom_about(&b, cursor, 1.0 + dy * 0.0015)
             }
             Event::KeyPressed(key, _) if self.ui.is_focused(Some(self.id)) => {
                 let delete =
@@ -437,6 +561,20 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
                     self.set(K_PAN_Y, None);
                     self.set(K_ZOOM, None);
                     true
+                } else if matches!(key, Key::Character(c) if c == "f" || c == "F") {
+                    self.fit(&b)
+                } else if matches!(key, Key::Character(c) if c == "+" || c == "=") {
+                    let c = Point::new(
+                        b.origin.x + b.size.width / 2.0,
+                        b.origin.y + b.size.height / 2.0,
+                    );
+                    self.zoom_about(&b, c, 1.2)
+                } else if matches!(key, Key::Character(c) if c == "-" || c == "_") {
+                    let c = Point::new(
+                        b.origin.x + b.size.width / 2.0,
+                        b.origin.y + b.size.height / 2.0,
+                    );
+                    self.zoom_about(&b, c, 1.0 / 1.2)
                 } else {
                     false
                 }
@@ -695,6 +833,56 @@ impl<M: 'static> Widget<M> for NodeGraph<M> {
                     });
                 }
             }
+        }
+        if let Some(m) = self.minimap_rect(&b) {
+            out.push(DrawCommand::Quad {
+                bounds: m,
+                fill: p.surface_raised.with_alpha(0.94),
+                radius: t.radii.medium,
+                border: Some(Border {
+                    color: p.border_strong,
+                    width: 1.0,
+                }),
+                shadow: None,
+            });
+            let (k, o) = self.minimap_xf(&b, &m);
+            out.push(DrawCommand::PushClip(m));
+            for n in &self.nodes {
+                let tile = Rectangle::new(
+                    Point::new(o.x + n.pos.x * k, o.y + n.pos.y * k),
+                    Size::new((n.width * k).max(3.0), (Self::node_h(n) * k).max(2.0)),
+                );
+                let picked = self.selected == Some(n.id);
+                out.push(DrawCommand::Quad {
+                    bounds: tile,
+                    fill: if picked {
+                        p.accent
+                    } else if n.tone == Tone::Neutral {
+                        p.border_strong
+                    } else {
+                        n.tone.color(&t)
+                    },
+                    radius: 1.5,
+                    border: None,
+                    shadow: None,
+                });
+            }
+            let a = self.to_graph(&b, b.origin);
+            let vp = Rectangle::new(
+                Point::new(o.x + a.x * k, o.y + a.y * k),
+                Size::new(b.size.width / z * k, b.size.height / z * k),
+            );
+            out.push(DrawCommand::Quad {
+                bounds: vp,
+                fill: p.accent.with_alpha(0.10),
+                radius: 2.0,
+                border: Some(Border {
+                    color: p.accent,
+                    width: 1.5,
+                }),
+                shadow: None,
+            });
+            out.push(DrawCommand::PopClip);
         }
         out.push(DrawCommand::PopClip);
     }

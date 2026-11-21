@@ -107,7 +107,8 @@ type OnOpen<M> = Rc<dyn Fn(u64) -> M>;
 /// (see [`Move::apply`]). While dragging, the card follows the pointer, the
 /// target lane lights up and a placeholder shows where it will land. Keyboard:
 /// focus the board, arrows move the selection, **Alt+arrows** move the selected
-/// card, Enter opens it.
+/// card, Enter opens it. Holding a dragged card near the top or bottom of a lane scrolls that
+/// lane (see [`autoscroll_velocity`]).
 pub struct Kanban<M> {
     ui: Ui,
     id: u64,
@@ -130,6 +131,29 @@ const K_DRAG: u64 = 0x4B41_0004;
 const K_SEL: u64 = 0x4B41_0005;
 const K_PX: u64 = 0x4B41_0006;
 const K_PY: u64 = 0x4B41_0007;
+const K_TICK: u64 = 0x4B41_0008; // clock of the last auto-scroll step
+
+/// Distance from a lane's top or bottom edge, in logical pixels, where dragging a card starts
+/// scrolling that lane.
+pub const AUTOSCROLL_EDGE: f32 = 56.0;
+/// Fastest auto-scroll speed in logical pixels per second (at the very edge).
+pub const AUTOSCROLL_MAX: f32 = 900.0;
+
+/// Scroll velocity (pixels per second, negative is up) for a dragged card at height `y` over a
+/// lane whose card area spans `top..bottom`. Zero away from the edges; it grows with the square
+/// of how far into the edge zone the pointer is, so a gentle approach scrolls gently and
+/// pushing to the edge (or past it) scrolls fast.
+pub fn autoscroll_velocity(y: f32, top: f32, bottom: f32) -> f32 {
+    let edge = AUTOSCROLL_EDGE.min((bottom - top) / 3.0).max(1.0);
+    let depth = |d: f32| (d / edge).clamp(0.0, 1.0).powi(2) * AUTOSCROLL_MAX;
+    if y < top + edge {
+        -depth(top + edge - y)
+    } else if y > bottom - edge {
+        depth(y - (bottom - edge))
+    } else {
+        0.0
+    }
+}
 
 impl<M: 'static> Kanban<M> {
     /// A board of `lanes`. `id` keeps drag and selection state across rebuilds.
@@ -359,6 +383,10 @@ impl<M: 'static> Widget<M> for Kanban<M> {
     fn measure(&self, _available: Size) -> Size {
         Size::new(self.lanes.len() as f32 * 220.0, 320.0)
     }
+    fn animating(&self) -> bool {
+        // Ticks drive auto-scroll while a card is held near a lane edge.
+        self.dragging().is_some()
+    }
     fn on_event(
         &mut self,
         event: &Event,
@@ -409,7 +437,7 @@ impl<M: 'static> Widget<M> for Kanban<M> {
                     return false;
                 };
                 let was_drag = self.dragging().is_some();
-                for k in [K_PRESS, K_DRAG, K_GX, K_GY, K_PX, K_PY] {
+                for k in [K_PRESS, K_DRAG, K_GX, K_GY, K_PX, K_PY, K_TICK] {
                     self.set(k, None);
                 }
                 if was_drag {
@@ -434,6 +462,26 @@ impl<M: 'static> Widget<M> for Kanban<M> {
                     }
                 }
                 true
+            }
+            Event::Tick(ms) if self.dragging().is_some() => {
+                let last = self.slot(K_TICK).map_or(*ms, |v| v as u64);
+                self.set(K_TICK, Some(*ms as i64));
+                let dt = (ms.saturating_sub(last) as f32 / 1000.0).min(0.1);
+                let p = self.ui.cursor();
+                let Some(l) = self.lane_at(&b, p) else {
+                    return false;
+                };
+                let v = autoscroll_velocity(p.y, b.origin.y + HEAD, b.origin.y + b.size.height);
+                if v == 0.0 || dt == 0.0 {
+                    return false;
+                }
+                let key = self.id ^ (0x5C00 + l as u64);
+                // The dragged card still counts toward the lane's height while it floats.
+                let max = self.max_scroll(&b, l, 0.0);
+                let cur = self.ui.scroll_offset(key);
+                let next = (cur + v * dt).clamp(0.0, max);
+                self.ui.set_scroll_offset(key, next);
+                next != cur
             }
             Event::Scrolled { dy, .. } if b.contains(cursor) => {
                 let Some(l) = self.lane_at(&b, cursor) else {

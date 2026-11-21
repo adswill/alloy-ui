@@ -28,7 +28,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Linux system deps
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1 libasound2-dev ffmpeg
       - run: cargo fmt --all -- --check
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings

@@ -116,7 +116,8 @@ impl<M> Widget<M> for BarChart {
             });
             if hot {
                 let s = format!("{v}");
-                out.push(text(centred(&s, x, w), b.origin.y, s, p.text));
+                let head = self.labels.get(i).map_or("", String::as_str);
+                util::chart_tip(&self.ui, Point::new(x + w / 2.0, base - h), b, head, &s);
             }
             if let Some(l) = self.labels.get(i) {
                 out.push(text(

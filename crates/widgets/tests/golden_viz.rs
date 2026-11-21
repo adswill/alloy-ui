@@ -352,3 +352,100 @@ fn mesh_counts() {
     assert_eq!(Mesh::cube(1.0).triangle_count(), 12);
     assert!(Mesh::sphere(1.0, 16).triangle_count() > 100);
 }
+
+// ---- roadmap items 28 and 30: minimap, zoomed charts
+
+#[test]
+fn node_graph_with_minimap() {
+    let nodes = vec![
+        GraphNode::new(1, "A", 10.0, 20.0)
+            .outputs(["x", "y"])
+            .tone(Tone::Accent),
+        GraphNode::new(2, "B", 250.0, 10.0)
+            .inputs(["in"])
+            .outputs(["out"]),
+        GraphNode::new(3, "C", 250.0, 130.0).inputs(["a", "b"]),
+        GraphNode::new(4, "D", 780.0, 420.0)
+            .inputs(["in"])
+            .tone(Tone::Warning),
+    ];
+    let wires = vec![Wire::new((1, 0), (2, 0)), Wire::new((1, 1), (3, 1))];
+    let img = render(Theme::light(), |ui| {
+        pad(NodeGraph::<()>::new(ui, 9, nodes.clone(), wires.clone())
+            .selected(Some(2))
+            .minimap(true)
+            .into_element())
+    });
+    check("viz_graph_minimap_light", &img);
+}
+
+/// Render a chart after scrolling over it to zoom in.
+fn zoomed(theme: Theme, build: impl Fn(&Ui) -> Element<()>) -> alloy_ui_render::Image {
+    let bg = theme.palette.background;
+    let ui = Ui::new(theme);
+    let mut root = Root::new(&ui, build(&ui)).into_element();
+    let layout = alloy_ui_widgets::layout(&root, Size::new(W as f32, H as f32));
+    let mut sink = Vec::new();
+    let at = Point::new(320.0, 150.0);
+    let mut draw = DrawList::default();
+    root.0.draw(&layout, &mut draw); // records the plot area
+    for _ in 0..5 {
+        root.0
+            .on_event(&Event::CursorMoved(at), &layout, at, &mut sink);
+        root.0.on_event(
+            &Event::Scrolled { dx: 0.0, dy: 140.0 },
+            &layout,
+            at,
+            &mut sink,
+        );
+    }
+    // Park the pointer outside so no tooltip is in the picture.
+    let away = Point::new(-5.0, -5.0);
+    root.0
+        .on_event(&Event::CursorMoved(away), &layout, away, &mut sink);
+    let mut list = DrawList::default();
+    root.0.draw(&layout, &mut list);
+    list.0.retain(|c| !matches!(c, DrawCommand::Text { .. }));
+    let mut r = CpuRenderer::new(W * 2, H * 2);
+    r.set_background(bg);
+    r.render_to_image(&list, W * 2, H * 2, 2.0)
+}
+
+#[test]
+fn line_chart_zoomed() {
+    let vals: Vec<f32> = (0..120)
+        .map(|i| (i as f32 * 0.21).sin() * 30.0 + 50.0 + i as f32 * 0.2)
+        .collect();
+    let img = zoomed(Theme::light(), |ui| {
+        pad(Chart::line(ui, [Series::new("Load", vals.clone())])
+            .area()
+            .zoomable(21)
+            .height(300.0)
+            .into_element())
+    });
+    check("viz_chart_zoomed_light", &img);
+}
+
+#[test]
+fn candles_zoomed() {
+    let data: Vec<Candle> = (0..80)
+        .map(|i| {
+            let m = 100.0 + (i as f32 * 0.25).sin() * 12.0;
+            Candle::new(
+                format!("D{i}"),
+                m,
+                m + 4.0,
+                m - 4.0,
+                m + if i % 3 == 0 { -2.0 } else { 2.0 },
+            )
+            .volume(100.0 + (i % 9) as f32 * 20.0)
+        })
+        .collect();
+    let img = zoomed(Theme::dark(), |ui| {
+        pad(CandleChart::new(ui, data.clone())
+            .zoomable(22)
+            .height(300.0)
+            .into_element())
+    });
+    check("viz_candles_zoomed_dark", &img);
+}
