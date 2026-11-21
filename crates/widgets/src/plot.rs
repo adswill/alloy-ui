@@ -449,29 +449,13 @@ impl<M> Widget<M> for Chart {
                     if self.area && pts.len() > 1 {
                         let base = y_of(lo.max(0.0).min(hi));
                         let base = base.min(plot.origin.y + plot.size.height);
-                        let strips = (plot.size.width / 2.0).ceil() as usize;
-                        let w = plot.size.width / strips as f32;
-                        for k in 0..strips {
-                            let x = plot.origin.x + k as f32 * w;
-                            let xm = x + w / 2.0;
-                            let seg = pts
-                                .windows(2)
-                                .find(|s| xm >= s[0].x && xm <= s[1].x)
-                                .unwrap_or(&pts[pts.len() - 2..]);
-                            let f = ((xm - seg[0].x) / (seg[1].x - seg[0].x).max(0.001))
-                                .clamp(0.0, 1.0);
-                            let y = seg[0].y + (seg[1].y - seg[0].y) * f;
-                            out.push(DrawCommand::Quad {
-                                bounds: Rectangle::new(
-                                    Point::new(x, y),
-                                    Size::new(w, (base - y).max(0.0)),
-                                ),
-                                fill: c.with_alpha(0.10),
-                                radius: 0.0,
-                                border: None,
-                                shadow: None,
-                            });
-                        }
+                        let mut poly = pts.clone();
+                        poly.push(Point::new(pts[pts.len() - 1].x, base));
+                        poly.push(Point::new(pts[0].x, base));
+                        out.push(DrawCommand::Polygon {
+                            points: poly,
+                            fill: c.with_alpha(0.10),
+                        });
                     }
                     for w in pts.windows(2) {
                         out.push(DrawCommand::Line {

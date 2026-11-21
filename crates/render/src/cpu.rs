@@ -303,6 +303,33 @@ impl CpuRenderer {
                         }
                         o
                     }
+                    Kind::Tri => {
+                        let a = [p.border_color[0], p.border_color[1]];
+                        let b = [p.border_color[2], p.border_color[3]];
+                        let c = [p.color2[0], p.color2[1]];
+                        let flags = (p.radius + 0.5) as u32;
+                        let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+                        let orient = if area > 0.0 { 1.0 } else { -1.0 };
+                        let mut cov = 1.0f32;
+                        for (i, (p0, p1)) in [(a, b), (b, c), (c, a)].into_iter().enumerate() {
+                            let e = [p1[0] - p0[0], p1[1] - p0[1]];
+                            let len = (e[0] * e[0] + e[1] * e[1]).sqrt().max(1e-6);
+                            let n = [e[1] * orient / len, -e[0] * orient / len];
+                            let d = (pt.0 - p0[0]) * n[0] + (pt.1 - p0[1]) * n[1];
+                            let edge = if (flags >> i) & 1 == 1 {
+                                cover(d)
+                            } else {
+                                let tie = n[0] > 0.0 || (n[0] == 0.0 && n[1] > 0.0);
+                                if d < 0.0 || (d == 0.0 && tie) {
+                                    1.0
+                                } else {
+                                    0.0
+                                }
+                            };
+                            cov = cov.min(edge);
+                        }
+                        fill.map(|v| v * cov)
+                    }
                     Kind::Mask => {
                         let Some((d, w, h)) = tex else { continue };
                         let u = (pt.0 - rx) / rw;

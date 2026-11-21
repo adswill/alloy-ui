@@ -67,6 +67,8 @@ mod guide {
     struct G17;
     #[doc = include_str!("../../../docs/guide/19-system-integration.md")]
     struct G18;
+    #[doc = include_str!("../../../docs/guide/20-visual-widgets.md")]
+    struct G19;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.
@@ -102,6 +104,7 @@ pub mod testing;
 mod tone;
 pub mod valid;
 pub mod view;
+mod viz;
 
 pub use alloy_ui_macros::{at, state};
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
@@ -144,6 +147,12 @@ pub use rich::{
 };
 pub use router::{router, Router};
 pub use view::{col, row, Boxed, Flex, Node, View};
+pub use viz::{
+    calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph, object,
+    pie, pt, rgb, stream, viewport3d, CalAction, CalView, Candle, Candles, Card, Entry, Frame,
+    GraphAction, GraphNode, Lane, MediaAction, MediaSource, Mesh, Move, Object, Orbit, Path, Pie,
+    Playback, Pointer, Ring, Slice, Stream, TestCard, Wire,
+};
 pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
@@ -165,6 +174,10 @@ pub mod prelude {
     pub use crate::{
         at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,
         state, system, t, toast, undo, vals, Hotkey, Shortcuts, WindowEffect,
+    };
+    pub use crate::{
+        calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph,
+        object, pie, pt, stream, viewport3d,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::{Density, Preset};
