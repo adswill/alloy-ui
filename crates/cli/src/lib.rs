@@ -5,7 +5,9 @@
 //! installer. App metadata comes from `[package.metadata.alloy]` in the app's
 //! Cargo.toml (see [`project`]); the capability config referenced there is
 //! validated with `alloy-ui-ipc` and shipped inside every bundle as
-//! `alloy.capabilities.toml`.
+//! `alloy.capabilities.toml`. MSIX and Flatpak packages, code signing and
+//! notarisation, and signed update manifests (`alloy keygen`, `alloy release`)
+//! are described in `bundle::sign` and `bundle::release`.
 
 pub mod args;
 pub mod bundle;
@@ -62,6 +64,42 @@ pub fn run(argv: &[String]) -> Result<()> {
             Ok(())
         }
         Command::Dev => dev::run_dev(&a),
+        Command::Keygen => {
+            let path = a.out.clone().unwrap_or_else(|| "alloy-update.key".into());
+            let public = bundle::release::keygen(&path)?;
+            println!(
+                "private key written to {} (keep it secret, never commit it)",
+                path.display()
+            );
+            println!(
+                "  sign releases with: ALLOY_UPDATE_KEY=@{} alloy bundle",
+                path.display()
+            );
+            println!("public key (put this in the app's update Config):");
+            println!("{public}");
+            Ok(())
+        }
+        Command::Release => {
+            let dir = a.dir.clone().ok_or_else(|| {
+                Error::Usage("usage: alloy release --dir <folder with *.update.json>".into())
+            })?;
+            let key = bundle::sign::process_env("ALLOY_UPDATE_KEY").ok_or_else(|| {
+                Error::Config("set ALLOY_UPDATE_KEY (hex, or @path to the key file)".into())
+            })?;
+            let notes = match &a.notes_file {
+                Some(f) => {
+                    std::fs::read_to_string(f).map_err(error::io(format!("{}", f.display())))?
+                }
+                None => String::new(),
+            };
+            let (m, s) = bundle::release::merge_and_sign(
+                &dir,
+                &notes,
+                &bundle::release::key_from_env(&key)?,
+            )?;
+            println!("{}\n{}", m.display(), s.display());
+            Ok(())
+        }
         Command::Check => {
             let p = Project::load(&a.selector)?;
             let icons = IconSet::load(&p.icons)?;
@@ -120,9 +158,21 @@ pub fn run(argv: &[String]) -> Result<()> {
             std::fs::create_dir_all(&out_dir)
                 .map_err(error::io(format!("creating {}", out_dir.display())))?;
             let ctx = Ctx::new(&p, binary, triple, out_dir, icons, caps.map(|c| c.1))?;
+            let mut built = Vec::new();
             for f in formats {
                 let artifact = bundle::bundle(&ctx, f)?;
                 println!("{}", artifact.display());
+                built.push((f, artifact));
+            }
+            if let Some(frag) = bundle::release::write_fragment(&ctx, &built)? {
+                println!("{}", frag.display());
+                if let Some(key) = bundle::sign::process_env("ALLOY_UPDATE_KEY") {
+                    let key = bundle::release::key_from_env(&key)?;
+                    let (m, s) = bundle::release::merge_and_sign(&ctx.out_dir, "", &key)?;
+                    println!("{}\n{}", m.display(), s.display());
+                } else {
+                    eprintln!("note: no ALLOY_UPDATE_KEY; latest.json not signed (run `alloy release` after collecting every platform's fragment)");
+                }
             }
             Ok(())
         }
