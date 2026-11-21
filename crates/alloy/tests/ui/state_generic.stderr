@@ -1,0 +1,5 @@
+error: `state!` structs cannot be generic; declare the struct yourself and `impl Default` by hand
+ --> tests/ui/state_generic.rs:2:15
+  |
+2 |     struct App<T> {
+  |               ^

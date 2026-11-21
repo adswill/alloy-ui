@@ -1,0 +1,12 @@
+# English: the fallback language, so it must have every key.
+app.title = Mail
+nav.inbox = Inbox
+nav.sent = Sent
+nav.drafts = Drafts
+inbox.title = Inbox
+inbox.summary.one = You have {n} unread message
+inbox.summary.other = You have {n} unread messages
+inbox.summary.zero = You are all caught up
+inbox.read = Mark one as read
+inbox.reset = Mark all as new
+greeting = Good morning, {name}

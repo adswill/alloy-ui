@@ -1,0 +1,11 @@
+app.title = Courrier
+nav.inbox = Réception
+nav.sent = Envoyés
+nav.drafts = Brouillons
+inbox.title = Boîte de réception
+inbox.summary.one = Vous avez {n} message non lu
+inbox.summary.other = Vous avez {n} messages non lus
+inbox.summary.zero = Vous êtes à jour
+inbox.read = Marquer comme lu
+inbox.reset = Tout marquer comme nouveau
+greeting = Bonjour, {name}

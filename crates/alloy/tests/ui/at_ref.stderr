@@ -1,0 +1,5 @@
+error: drop the `&`: `at!` already borrows the field (write at!(s.name), at!(s.form.email) or at!(s.minutes[i]))
+ --> tests/ui/at_ref.rs:5:17
+  |
+5 |     let _ = at!(&s.name);
+  |                 ^

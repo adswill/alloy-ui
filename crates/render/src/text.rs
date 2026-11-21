@@ -462,6 +462,21 @@ impl TextSystem {
     }
 }
 
+/// System fallback fonts for other scripts (Arabic, Hebrew, CJK, ...) usually ship only Regular
+/// and Bold, and the font matcher then skips them at in-between weights and lands on whatever
+/// has the glyph (a monospace or serif face, with the letters unjoined). Snapping such text to
+/// 400 or 700 keeps it in the proper sans fallback.
+fn fallback_weight(content: &str, weight: u16) -> u16 {
+    let other_script = content
+        .chars()
+        .any(|c| c as u32 > 0x24F && !matches!(c as u32, 0x2000..=0x2BFF | 0xFE00..=0xFE0F));
+    match (other_script, weight) {
+        (false, w) | (true, w @ (400 | 700)) => w,
+        (true, w) if w >= 600 => 700,
+        (true, _) => 400,
+    }
+}
+
 fn shaped(
     inner: &mut Inner,
     content: &str,
@@ -477,7 +492,7 @@ fn shaped(
     let mut buffer = Buffer::new(&mut inner.fonts, Metrics::new(size, lh));
     buffer.set_size(&mut inner.fonts, max_width, None);
     let attrs = Attrs::new()
-        .weight(Weight(weight.clamp(1, 1000)))
+        .weight(Weight(fallback_weight(content, weight).clamp(1, 1000)))
         .family(match family {
             FontFamily::Sans => Family::SansSerif,
             FontFamily::Mono => Family::Monospace,

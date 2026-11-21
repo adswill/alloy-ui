@@ -1,0 +1,5 @@
+error: `count` needs a type: `count: Type`, or `count: Type = start_value`
+ --> tests/ui/state_missing_type.rs:3:9
+  |
+3 |         count,
+  |         ^^^^^

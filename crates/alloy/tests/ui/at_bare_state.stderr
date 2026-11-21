@@ -1,0 +1,5 @@
+error: `at!(s)` names the whole state; point at one of its fields, like `at!(s.name)`
+ --> tests/ui/at_bare_state.rs:4:17
+  |
+4 |     let _ = at!(s);
+  |                 ^

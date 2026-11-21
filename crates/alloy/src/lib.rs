@@ -51,7 +51,14 @@ mod guide {
     struct G9;
     #[doc = include_str!("../../../docs/guide/11-capabilities-and-ipc.md")]
     struct G10;
+    #[doc = include_str!("../../../docs/guide/12-dev-loop.md")]
+    struct G11;
+    #[doc = include_str!("../../../docs/guide/13-localization.md")]
+    struct G12;
 }
+
+// Lets the proc macros name this crate as `::alloy_ui` from inside it too.
+extern crate self as alloy_ui;
 
 mod app;
 mod bind;
@@ -63,6 +70,7 @@ mod cx;
 mod declare;
 mod dsl;
 pub mod fs;
+pub mod i18n;
 mod inputs;
 mod keys;
 mod mock;
@@ -78,6 +86,7 @@ mod tone;
 pub mod valid;
 pub mod view;
 
+pub use alloy_ui_macros::{at, state};
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
@@ -118,6 +127,7 @@ pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
+    pub use crate::i18n::language_picker;
     pub use crate::{
         animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
         choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
@@ -131,7 +141,7 @@ pub mod prelude {
         Resource, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clock, col, money, redo, row, state, toast, undo, vals, Hotkey, Shortcuts,
+        at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;

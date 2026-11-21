@@ -1,0 +1,14 @@
+app.title = البريد
+nav.inbox = الوارد
+nav.sent = المرسل
+nav.drafts = المسودات
+inbox.title = صندوق الوارد
+inbox.summary.zero = لا توجد رسائل جديدة
+inbox.summary.one = لديك رسالة واحدة غير مقروءة
+inbox.summary.two = لديك رسالتان غير مقروءتين
+inbox.summary.few = لديك {n} رسائل غير مقروءة
+inbox.summary.many = لديك {n} رسالة غير مقروءة
+inbox.summary.other = لديك {n} رسالة غير مقروءة
+inbox.read = تعيين واحدة كمقروءة
+inbox.reset = تعيين الكل كجديد
+greeting = صباح الخير، {name}

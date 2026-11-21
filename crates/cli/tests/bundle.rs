@@ -266,6 +266,7 @@ fn new_creates_a_project_that_passes_check() {
             name: "fresh-app".into(),
             identifier: None,
             source: alloy_ui_cli::scaffold::Source::Path(dir.clone()),
+            template: None,
         },
     )
     .unwrap();

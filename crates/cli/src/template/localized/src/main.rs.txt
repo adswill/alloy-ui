@@ -1,0 +1,53 @@
+// A translated app: the language switches live (plurals included) and right-to-left languages
+// mirror the layout. Strings live in locales/*.txt as `key = value`; to add a language, add a
+// file and one `i18n::add` line below. Try it: `LANG=ar alloy dev`.
+use alloy_ui::{i18n, prelude::*};
+
+state! { struct Mail { page: usize, unread: u32 = 3 } }
+
+fn view(s: &Mail) -> impl View<Act<Mail>> {
+    let pages = [t!("nav.inbox"), t!("nav.sent"), t!("nav.drafts")];
+    row![
+        col![
+            heading(t!("app.title")),
+            col(pages.iter().enumerate().map(|(i, p)| button(p)
+                .nav(i == s.page)
+                .act(move |s: &mut Mail| s.page = i)))
+            .gap(2.0),
+        ]
+        .gap(16.0)
+        .pad(16.0)
+        .w(180.0)
+        .fill_h(),
+        col![
+            heading(pages[s.page].clone()),
+            caption(t!("greeting", name = "Ada")).dim(),
+            text(t!("inbox.summary", n = s.unread)),
+            row![
+                button(t!("inbox.read"))
+                    .primary()
+                    .act(|s: &mut Mail| s.unread = s.unread.saturating_sub(1)),
+                button(t!("inbox.reset")).act(|s: &mut Mail| s.unread = 12),
+            ],
+            vspace(),
+            i18n::language_picker::<Mail>(&[
+                ("en", "English"),
+                ("fr", "Français"),
+                ("ar", "العربية")
+            ]),
+        ]
+        .gap(12.0)
+        .pad(24.0)
+        .fill()
+    ]
+    .gap(0.0)
+    .fill()
+}
+
+fn main() {
+    i18n::add("en", include_str!("../locales/en.txt"));
+    i18n::add("fr", include_str!("../locales/fr.txt"));
+    i18n::add("ar", include_str!("../locales/ar.txt"));
+    i18n::set_locale(&i18n::detect());
+    sketch(Mail::default(), view).run_sized("@TITLE@", 640.0, 300.0)
+}

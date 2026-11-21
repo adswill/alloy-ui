@@ -1,0 +1,11 @@
+error: field `count` is declared twice
+ --> tests/ui/state_duplicate.rs:4:9
+  |
+4 |         count: i32,
+  |         ^^^^^
+
+error: first declared here
+ --> tests/ui/state_duplicate.rs:3:9
+  |
+3 |         count: i32,
+  |         ^^^^^

@@ -1,0 +1,5 @@
+error: `at!` needs a field of the state, not a literal (write at!(s.name), at!(s.form.email) or at!(s.minutes[i]))
+ --> tests/ui/at_literal.rs:3:17
+  |
+3 |     let _ = at!(5);
+  |                 ^
