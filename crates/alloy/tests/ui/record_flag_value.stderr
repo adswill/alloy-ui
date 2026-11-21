@@ -1,0 +1,5 @@
+error: `email` is a flag, not a setting: write `#[form(email)]`
+ --> tests/ui/record_flag_value.rs:5:12
+  |
+5 |     #[form(email = true)]
+  |            ^^^^^

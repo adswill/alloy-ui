@@ -13,7 +13,23 @@ alloy dev
 
 `alloy new` writes a `Cargo.toml` with an `[package.metadata.alloy]` table, a capability file (`alloy.capabilities.toml`), icons and a starter `src/main.rs`. `alloy dev` validates the capability file, then runs a debug build. `alloy check` validates the metadata without building.
 
-> **Heads up.** The starter `main.rs` that `alloy new` writes today is the low-level Elm version (about 60 lines). The 10-line version below is the one to use; replace `src/main.rs` with it. Its dependency line is `alloy-ui = { git = "https://github.com/adswill/alloy-ui" }`.
+### Starter templates
+
+`alloy new` writes a counter by default. Pick another starting point with `--template`:
+
+| template | what you get |
+|---|---|
+| `counter` | the smallest complete app (about 20 lines) |
+| `dashboard` | headline numbers, a live chart and a table of jobs |
+| `editor` | a text editor that opens and saves files, with Ctrl/Cmd+S |
+| `settings` | a settings panel: pages, a theme switch, controls bound with `at!` |
+| `localized` | a translated app (English, French, Arabic) with live language switching and right-to-left layout, see [Localization](12-localization.md) |
+
+```sh
+alloy new inbox --template localized
+```
+
+An unknown name lists the valid ones (and suggests the closest). Every template is compiled and driven headless by this repository's tests, so none of them goes stale.
 
 ## Your first app
 

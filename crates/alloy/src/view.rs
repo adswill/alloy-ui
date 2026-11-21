@@ -322,9 +322,23 @@ impl<M: 'static> Flex<M> {
 
 impl<M: 'static> From<Flex<M>> for Node<M> {
     fn from(f: Flex<M>) -> Self {
-        let (p, g, a, w, h) = (f.pad, f.gap, f.align, f.w, f.h);
+        let (p, g, mut a, w, h) = (f.pad, f.gap, f.align, f.w, f.h);
+        let mut items = f.items;
+        // Right-to-left: rows mirror (first child on the right) and a column's "start" edge is
+        // the right one, so layouts written start-to-end flip with the locale.
+        if crate::i18n::is_rtl() {
+            if f.horizontal {
+                items.reverse();
+            } else {
+                a = match a {
+                    Align::Start => Align::End,
+                    Align::End => Align::Start,
+                    other => other,
+                };
+            }
+        }
         Node(if f.horizontal {
-            w::Row::new(f.items)
+            w::Row::new(items)
                 .spacing(g)
                 .padding(p)
                 .align(a)
@@ -332,7 +346,7 @@ impl<M: 'static> From<Flex<M>> for Node<M> {
                 .height(h)
                 .into_element()
         } else {
-            w::Column::new(f.items)
+            w::Column::new(items)
                 .spacing(g)
                 .padding(p)
                 .align(a)

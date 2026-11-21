@@ -1,4 +1,5 @@
-//! `alloy new`: write a starter app (a counter) that builds and bundles.
+//! `alloy new`: write a starter app that builds and bundles. Pick the starting point with
+//! `--template` (see [`TEMPLATES`]); the default is a counter.
 
 use crate::error::{io, Error, Result};
 use crate::icon::rounded_square_png;
@@ -22,6 +23,109 @@ pub struct NewApp {
     pub identifier: Option<String>,
     /// Where the Alloy crates come from.
     pub source: Source,
+    /// Which starter app to write; one of [`TEMPLATES`]' names (`counter` when `None`).
+    pub template: Option<String>,
+}
+
+/// A starter app `alloy new --template <name>` can write.
+pub struct Template {
+    /// The name given to `--template`.
+    pub name: &'static str,
+    /// One line for the help text.
+    pub about: &'static str,
+    main: &'static str,
+    /// Extra files, as (path inside the project, contents).
+    files: &'static [(&'static str, &'static str)],
+}
+
+/// Every starter app, the first being the default.
+pub const TEMPLATES: &[Template] = &[
+    Template {
+        name: "counter",
+        about: "a counter: the smallest complete app",
+        main: include_str!("template/counter/main.rs.txt"),
+        files: &[],
+    },
+    Template {
+        name: "dashboard",
+        about: "headline numbers, a live chart and a table",
+        main: include_str!("template/dashboard/main.rs.txt"),
+        files: &[],
+    },
+    Template {
+        name: "editor",
+        about: "a text editor that opens and saves files",
+        main: include_str!("template/editor/main.rs.txt"),
+        files: &[],
+    },
+    Template {
+        name: "settings",
+        about: "a settings panel: pages, theme switch, bound controls",
+        main: include_str!("template/settings/main.rs.txt"),
+        files: &[],
+    },
+    Template {
+        name: "localized",
+        about: "a translated app (English, French, Arabic) with live language switching and RTL",
+        main: include_str!("template/localized/src/main.rs.txt"),
+        files: &[
+            (
+                "locales/en.txt",
+                include_str!("template/localized/locales/en.txt"),
+            ),
+            (
+                "locales/fr.txt",
+                include_str!("template/localized/locales/fr.txt"),
+            ),
+            (
+                "locales/ar.txt",
+                include_str!("template/localized/locales/ar.txt"),
+            ),
+        ],
+    },
+];
+
+/// The template called `name`, or an error naming the valid ones (and the closest, if any).
+pub fn find_template(name: &str) -> Result<&'static Template> {
+    TEMPLATES.iter().find(|t| t.name == name).ok_or_else(|| {
+        let names: Vec<&str> = TEMPLATES.iter().map(|t| t.name).collect();
+        let near = names
+            .iter()
+            .find(|n| n.starts_with(name) || name.starts_with(**n) || edits(n, name) <= 2);
+        let hint = near
+            .map(|n| format!(" Did you mean `{n}`?"))
+            .unwrap_or_default();
+        Error::Usage(format!(
+            "unknown template `{name}`.{hint} Templates: {}",
+            names.join(", ")
+        ))
+    })
+}
+
+/// Edit distance, for the "did you mean" hint.
+fn edits(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            cur.push(
+                (prev[j] + usize::from(ca != *cb))
+                    .min(prev[j + 1] + 1)
+                    .min(cur[j] + 1),
+            );
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// The templates as help text lines.
+pub fn template_help() -> String {
+    TEMPLATES
+        .iter()
+        .map(|t| format!("    {:<10} {}\n", t.name, t.about))
+        .collect()
 }
 
 /// Check a crate-style name: lowercase letters, digits, `-` and `_`,
@@ -54,7 +158,6 @@ pub fn title_case(name: &str) -> String {
         .join(" ")
 }
 
-const MAIN_RS: &str = include_str!("template/main.rs.txt");
 const CAPS: &str = "\
 # What this app may ask the platform for. Everything not listed is denied.
 # Options: clipboard, dialogs, fs_read, fs_write, network, notifications,
@@ -87,6 +190,7 @@ fn write(path: &Path, data: &[u8]) -> Result<()> {
 /// Create the app under `parent/<name>` and return its directory.
 pub fn create(parent: &Path, a: &NewApp) -> Result<PathBuf> {
     validate_name(&a.name)?;
+    let template = find_template(a.template.as_deref().unwrap_or("counter"))?;
     let dir = parent.join(&a.name);
     if dir.exists() {
         return Err(Error::Usage(format!("{} already exists", dir.display())));
@@ -115,8 +219,14 @@ pub fn create(parent: &Path, a: &NewApp) -> Result<PathBuf> {
     )?;
     write(
         &dir.join("src/main.rs"),
-        MAIN_RS.replace("@TITLE@", &title_case(&a.name)).as_bytes(),
+        template
+            .main
+            .replace("@TITLE@", &title_case(&a.name))
+            .as_bytes(),
     )?;
+    for (path, contents) in template.files {
+        write(&dir.join(path), contents.as_bytes())?;
+    }
     write(&dir.join("alloy.capabilities.toml"), CAPS.as_bytes())?;
     write(&dir.join(".gitignore"), b"/target\n")?;
     let accent = [0x2d, 0x6c, 0xdf, 0xff];
@@ -158,6 +268,7 @@ mod tests {
                 name: "my-app".into(),
                 identifier: None,
                 source: Source::Path(PathBuf::from("/src/alloy")),
+                template: None,
             },
         )
         .unwrap();
@@ -184,10 +295,49 @@ mod tests {
                 name: "my-app".into(),
                 identifier: None,
                 source: Source::Git,
+                template: None,
             },
         );
         assert!(again.is_err());
         std::fs::remove_dir_all(t).ok();
+    }
+
+    #[test]
+    fn every_template_writes_its_files() {
+        for t in TEMPLATES {
+            let tmp = tmp(&format!("tpl-{}", t.name));
+            let d = create(
+                &tmp,
+                &NewApp {
+                    name: "demo".into(),
+                    identifier: None,
+                    source: Source::Git,
+                    template: Some(t.name.into()),
+                },
+            )
+            .unwrap();
+            let main = std::fs::read_to_string(d.join("src/main.rs")).unwrap();
+            assert!(!main.contains("@TITLE@"), "{}", t.name);
+            assert!(main.contains("use alloy_ui"), "{}", t.name);
+            // Every file the code embeds with include_str! was written next to it.
+            for (path, _) in t.files {
+                assert!(d.join(path).exists(), "{} {path}", t.name);
+                let file = path.rsplit('/').next().unwrap();
+                assert!(main.contains(file), "{} never uses {path}", t.name);
+            }
+            std::fs::remove_dir_all(tmp).ok();
+        }
+    }
+
+    #[test]
+    fn unknown_template_names_the_valid_ones() {
+        let e = find_template("dashbord").err().unwrap().to_string();
+        assert!(
+            e.contains("Did you mean `dashboard`?") && e.contains("localized"),
+            "{e}"
+        );
+        let e = find_template("zzzzzzzz").err().unwrap().to_string();
+        assert!(!e.contains("Did you mean") && e.contains("counter"), "{e}");
     }
 
     #[test]
@@ -199,6 +349,7 @@ mod tests {
                 name: "x".into(),
                 identifier: Some("nodots".into()),
                 source: Source::Git,
+                template: None,
             },
         );
         assert!(r.is_err());

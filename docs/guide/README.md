@@ -13,5 +13,6 @@ Read in order, or jump to what you need. Every code block here is compiled as a 
 9. [Theming](09-theming.md)
 10. [Bundling](10-bundling.md)
 11. [Capabilities and IPC](11-capabilities-and-ipc.md)
+12. [Localization](12-localization.md): `t!`, plurals, switching language, right-to-left
 
 Design background: [ARCHITECTURE.md](../../ARCHITECTURE.md), [DECISIONS.md](../../DECISIONS.md), [DESIGN.md](../../DESIGN.md). API reference: `cargo doc --open -p alloy-ui`.

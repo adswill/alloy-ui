@@ -1,0 +1,5 @@
+error: `#[derive(Record)]` needs named fields to label the form and table: write `struct P { name: String, .. }` instead of a tuple or unit struct
+ --> tests/ui/record_tuple_struct.rs:3:8
+  |
+3 | struct P(String);
+  |        ^

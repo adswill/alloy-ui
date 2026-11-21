@@ -1,5 +1,5 @@
-//! A starter Alloy app: a counter. Run it with `alloy dev`, package it with
-//! `alloy bundle`.
+// A starter Alloy app: a counter. Run it with `alloy dev`, package it with
+// `alloy bundle`.
 
 use alloy_ui::prelude::*;
 

@@ -1,0 +1,64 @@
+// A settings panel: pages on the left, grouped controls on the right. Most controls write
+// straight into the state with `at!`, so there are no handlers to write.
+use alloy_ui::prelude::*;
+
+choices! { enum Page { Appearance, General } }
+
+state! {
+    struct Prefs {
+        page: Page = Page::Appearance,
+        dark: bool,
+        text_px: f32 = 14.0,
+        name: String,
+        login: bool,
+        updates: bool = true,
+    }
+}
+
+fn view(s: &Prefs) -> impl View<Act<Prefs>> {
+    let page = match s.page {
+        Page::Appearance => col![
+            heading("Appearance"),
+            section(
+                "Theme",
+                choose([("Light", false), ("Dark", true)], s.dark).act(|s: &mut Prefs, d| {
+                    s.dark = d;
+                    set_dark(d);
+                })
+            ),
+            section(
+                "Text size",
+                col![
+                    slider(12.0..=20.0, at!(s.text_px)).step(1.0),
+                    "The quick brown fox jumps over the lazy dog.",
+                    caption(format!("{:.0} px", s.text_px)).dim(),
+                ]
+            ),
+        ],
+        Page::General => col![
+            heading("General"),
+            section("Display name", input(at!(s.name)).hint("Your name")),
+            section(
+                "Startup",
+                col![
+                    check("Launch at login", at!(s.login)),
+                    check("Check for updates automatically", at!(s.updates)),
+                ]
+            ),
+        ],
+    };
+    row![
+        nav(&s.page)
+            .bind(|s: &mut Prefs| &mut s.page)
+            .surface()
+            .w(170.0)
+            .fill_h(),
+        page.gap(22.0).pad(28.0).fill()
+    ]
+    .gap(0.0)
+    .fill()
+}
+
+fn main() {
+    sketch(Prefs::default(), view).run_sized("@TITLE@", 560.0, 340.0)
+}

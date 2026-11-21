@@ -1,0 +1,5 @@
+error: unknown form option `lable`. Did you mean `label`? Options are `label`, `email`, `required`, `long`, `skip`, `range`, `step` and `choices`
+ --> tests/ui/record_typo_option.rs:4:12
+  |
+4 |     #[form(lable = "Full name")]
+  |            ^^^^^
