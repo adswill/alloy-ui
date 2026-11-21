@@ -226,3 +226,113 @@ fn number_and_date_inputs_light() {
     );
     check("inputs_light", &img);
 }
+
+#[test]
+fn gradient_and_elevation_light() {
+    let build = |ui: &Ui| {
+        let t = ui.theme();
+        let p = t.palette.clone();
+        let card = |c: Container<()>| {
+            c.padding(alloy_ui_core::style::Padding::all(24.0))
+                .width(Length::Fixed(150.0))
+                .height(Length::Fixed(80.0))
+                .radius(t.radii.large)
+                .into_element()
+        };
+        page(
+            ui,
+            vec![Row::new(vec![
+                card(
+                    Container::new(Space::fixed(1.0, 1.0).into_element()).gradient(
+                        p.accent,
+                        p.accent_hover.with_alpha(0.55),
+                        90.0,
+                    ),
+                ),
+                card(
+                    Container::new(Space::fixed(1.0, 1.0).into_element())
+                        .background(p.surface_raised)
+                        .border(p.border, 1.0)
+                        .shadow(t.elevation.medium),
+                ),
+            ])
+            .spacing(24.0)
+            .into_element()],
+        )
+    };
+    check(
+        "gradient_elevation_light",
+        &render(Theme::light(), build, |_| {}),
+    );
+}
+
+fn rich(ui: &Ui) -> Element<()> {
+    let series = || {
+        vec![
+            Series::new("A", vec![3.0, 5.0, 4.0, 8.0, 6.0]),
+            Series::new("B", vec![1.0, 2.0, 2.0, 3.0, 2.0]),
+        ]
+    };
+    page(
+        ui,
+        vec![
+            Row::new(vec![
+                Badge::new(ui, "Active")
+                    .tone(Tone::Success)
+                    .dot()
+                    .into_element(),
+                Badge::new(ui, "Failed")
+                    .tone(Tone::Danger)
+                    .solid()
+                    .into_element(),
+                Badge::new(ui, "Beta")
+                    .tone(Tone::Accent)
+                    .outline()
+                    .into_element(),
+                Swatch::<()>::new(ui, Color::hex(0x4338CA))
+                    .selected(true)
+                    .into_element(),
+                Swatch::<()>::new(ui, Color::hex(0xC2185B)).into_element(),
+                Sparkline::new(ui, vec![1.0, 3.0, 2.0, 5.0, 4.0]).into_element(),
+            ])
+            .spacing(10.0)
+            .into_element(),
+            Chart::line(ui, series())
+                .x_labels(["a", "b", "c", "d", "e"])
+                .area()
+                .height(110.0)
+                .into_element(),
+            Row::new(vec![
+                Tree::<()>::new(
+                    ui,
+                    vec![
+                        TreeItem::new(1, "src").children([TreeItem::new(2, "lib.rs")]),
+                        TreeItem::new(3, "Cargo.toml"),
+                    ],
+                )
+                .expanded([1])
+                .selected(Some(2))
+                .into_element(),
+                ColorPicker::<()>::new(ui, 9, Color::hex(0x0B6B5F)).into_element(),
+            ])
+            .spacing(16.0)
+            .into_element(),
+        ],
+    )
+}
+
+#[test]
+fn rich_light() {
+    let img = render(Theme::light(), rich, |_| {});
+    check("rich_light", &img);
+}
+
+#[test]
+fn rich_dark_accent() {
+    let img = render(
+        Theme::dark().with_accent(Color::hex(0x4338CA)),
+        rich,
+        |_| {},
+    );
+    check("rich_dark_accent", &img);
+}

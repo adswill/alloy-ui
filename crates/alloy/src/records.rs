@@ -66,6 +66,12 @@ pub enum Value {
 
 /// A type that can be a [`Record`] field. Implemented for `String`, `bool`, the
 /// number types and every [`choices!`](crate::choices) enum.
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` cannot be a `Record` field",
+    label = "no form control for this type",
+    note = "fields can be `String`, `bool`, a number, or a `choices!` enum; \
+            add `#[form(skip)]` to keep other types out of the form and table"
+)]
 pub trait Field: Sized {
     /// The default control for this type.
     fn kind() -> Kind;

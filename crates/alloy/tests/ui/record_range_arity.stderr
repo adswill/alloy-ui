@@ -1,0 +1,5 @@
+error: `range` takes exactly two numbers, (min, max); found 3
+ --> tests/ui/record_range_arity.rs:5:20
+  |
+5 |     #[form(range = (1.0, 2.0, 3.0))]
+  |                    ^^^^^^^^^^^^^^^

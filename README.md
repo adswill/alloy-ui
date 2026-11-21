@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/alloy-lockup-dark.svg">
+    <img alt="Alloy" src="assets/logo/alloy-lockup-light.svg" width="360">
+  </picture>
+</p>
+
 # Alloy
 
 **A native Rust desktop UI framework where an app is a state struct and a view function.** Every pixel is drawn by Alloy's own GPU renderer. No webview, no HTML, CSS or JavaScript, and no existing GUI toolkit underneath. Tauri-sized binaries and idle behaviour, an iced-style typed architecture, and a lot less code to write.
@@ -54,6 +61,8 @@ Read this as: **about 2.9x fewer lines on everyday apps, 9 to 14x when the app i
 * **Finished-app details.** Shortcuts, a `mod+k` command palette, toasts with Undo, undo and redo, persisted state, multi-window.
 * **Looks designed.** One teal-green accent, cool neutrals, small radii, WCAG AA contrast, light and dark following the system. See [DESIGN.md](DESIGN.md).
 * **Small and quiet.** Counter binary 7.5 MB (`.deb` and `.rpm` 3.2 MB), 0% CPU when idle, first paint 87 to 106 ms under Xvfb (Linux, measured; see BENCHMARKS.md).
+* **Speaks your users' language.** `t!("items", n = 3)` with plain-text catalogs, CLDR plurals, live language switching and right-to-left layouts that mirror on their own. See the [localization guide](docs/guide/13-localization.md).
+* **Errors that explain themselves.** `state!`, `at!` and `derive(Record)` mistakes are reported on the exact token, with a suggestion.
 * **Accessible.** An accessibility tree with AT-SPI on Linux.
 * **Tauri-style shell.** `alloy` CLI to create, run and bundle (`.app`, `.dmg`, `.deb`, `.rpm`, AppImage, `.exe`, NSIS, MSI) and a capability file that denies everything not declared.
 * **Testable.** A built-in headless `Harness` clicks, types and renders PNGs, and golden-image tests run without a window.
@@ -74,7 +83,7 @@ Alloy is not on crates.io yet. Use the git repository:
 
 ```sh
 cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli   # the `alloy` tool
-alloy new hello --identifier com.example.hello
+alloy new hello --identifier com.example.hello   # or --template dashboard | editor | settings | localized
 cd hello && alloy dev
 ```
 

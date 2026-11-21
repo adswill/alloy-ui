@@ -39,16 +39,6 @@ pub fn place<'a, S, T>(
     }
 }
 
-/// A field of the state, for two-way binding: `input(at!(s.name))`, `check("On", at!(s.on))`,
-/// `button("Pause").toggle(at!(s.paused))`. `s` is the `&State` your view receives;
-/// nested fields (`at!(s.form.email)`) and indexing (`at!(s.minutes[i])`) work too.
-#[macro_export]
-macro_rules! at {
-    ($s:ident $($path:tt)+) => {
-        $crate::place(&*$s, &$s $($path)+, move |__s| &mut __s $($path)+)
-    };
-}
-
 type Setter<T, M> = Box<dyn Fn(T) -> M>;
 
 /// A widget's value: a plain value (read-only until `.on(..)`) or a [`Place`] (edits write back).

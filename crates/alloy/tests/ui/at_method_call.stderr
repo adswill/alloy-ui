@@ -1,0 +1,5 @@
+error: `at!` can only point at a field or an index, not call `clone()`: the value has to live in the state so edits can be written back (try at!(s.name), at!(s.form.email) or at!(s.minutes[i]))
+ --> tests/ui/at_method_call.rs:5:17
+  |
+5 |     let _ = at!(s.name.clone());
+  |                 ^

@@ -50,6 +50,8 @@ pub struct Boxed<M> {
     child: Element<M>,
     pad: Padding,
     bg: Option<Color>,
+    grad: Option<(Color, Color, f32)>,
+    shadow: Option<alloy_ui_core::Shadow>,
     border: Option<(Color, f32)>,
     radius: f32,
     w: Length,
@@ -63,6 +65,8 @@ impl<M: 'static> Boxed<M> {
             child,
             pad: Padding::ZERO,
             bg: None,
+            grad: None,
+            shadow: None,
             border: None,
             radius: 0.0,
             w: Length::Shrink,
@@ -109,6 +113,17 @@ impl<M: 'static> Boxed<M> {
         self.bg = Some(c);
         self
     }
+    /// A linear gradient background; `angle_deg` 0 runs top to bottom, 90
+    /// left to right. Keep the stops close (a tonal shift, not a rainbow).
+    pub fn gradient(mut self, from: Color, to: Color, angle_deg: f32) -> Self {
+        self.grad = Some((from, to, angle_deg));
+        self
+    }
+    /// Lift off the page: the theme's medium elevation shadow.
+    pub fn elevated(mut self) -> Self {
+        self.shadow = Some(cx::theme().elevation.medium);
+        self
+    }
     /// The theme's panel colour as background.
     pub fn surface(self) -> Self {
         self.bg(cx::palette().surface)
@@ -145,6 +160,12 @@ impl<M: 'static> From<Boxed<M>> for Node<M> {
             .height(b.h);
         if let Some(bg) = b.bg {
             c = c.background(bg);
+        }
+        if let Some((from, to, a)) = b.grad {
+            c = c.gradient(from, to, a);
+        }
+        if let Some(sh) = b.shadow {
+            c = c.shadow(sh);
         }
         if let Some((col, width)) = b.border {
             c = c.border(col, width);
@@ -191,6 +212,14 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     /// Background colour.
     fn bg(self, c: Color) -> Boxed<M> {
         self.boxed().bg(c)
+    }
+    /// Gradient background (see [`Boxed::gradient`]).
+    fn gradient(self, from: Color, to: Color, angle_deg: f32) -> Boxed<M> {
+        self.boxed().gradient(from, to, angle_deg)
+    }
+    /// Medium elevation shadow.
+    fn elevated(self) -> Boxed<M> {
+        self.boxed().elevated()
     }
     /// Panel background.
     fn surface(self) -> Boxed<M> {
@@ -322,9 +351,23 @@ impl<M: 'static> Flex<M> {
 
 impl<M: 'static> From<Flex<M>> for Node<M> {
     fn from(f: Flex<M>) -> Self {
-        let (p, g, a, w, h) = (f.pad, f.gap, f.align, f.w, f.h);
+        let (p, g, mut a, w, h) = (f.pad, f.gap, f.align, f.w, f.h);
+        let mut items = f.items;
+        // Right-to-left: rows mirror (first child on the right) and a column's "start" edge is
+        // the right one, so layouts written start-to-end flip with the locale.
+        if crate::i18n::is_rtl() {
+            if f.horizontal {
+                items.reverse();
+            } else {
+                a = match a {
+                    Align::Start => Align::End,
+                    Align::End => Align::Start,
+                    other => other,
+                };
+            }
+        }
         Node(if f.horizontal {
-            w::Row::new(f.items)
+            w::Row::new(items)
                 .spacing(g)
                 .padding(p)
                 .align(a)
@@ -332,7 +375,7 @@ impl<M: 'static> From<Flex<M>> for Node<M> {
                 .height(h)
                 .into_element()
         } else {
-            w::Column::new(f.items)
+            w::Column::new(items)
                 .spacing(g)
                 .padding(p)
                 .align(a)

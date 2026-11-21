@@ -2,6 +2,7 @@
 
 use crate::{
     a11y::{A11yNode, Role},
+    motion::{Animatable, Presence, Spring, Transition},
     text_edit::{Edit, History},
     util,
 };
@@ -123,6 +124,8 @@ struct Inner {
     clipboard: Rc<dyn Clipboard>,
     focused: Option<u64>,
     order: Vec<u64>,
+    /// Same ids as `order`, for O(1) duplicate checks while registering.
+    order_seen: std::collections::HashSet<u64>,
     cursor: Point,
     pressed: Option<(i32, i32)>,
     scroll: HashMap<u64, f32>,
@@ -130,6 +133,7 @@ struct Inner {
     popup: Option<u64>,
     now: u64,
     anims: HashMap<u64, Anim>,
+    reduced_motion: bool,
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
@@ -137,34 +141,72 @@ struct Inner {
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
     a11y: Vec<A11yNode>,
+    viewport: Rectangle,
 }
 
-/// One value moving toward a target over time (hover fades, toggle knobs,
-/// smooth scroll). `start` is `None` until the next tick so a transition
-/// begun by an event always runs its full duration.
+/// One value (up to four components) moving toward a target, by timed tween
+/// or by spring. `start` is `None` until the next tick so a tween begun by an
+/// event always runs its full duration.
 struct Anim {
-    from: f32,
-    to: f32,
+    from: [f32; 4],
+    to: [f32; 4],
+    cur: [f32; 4],
+    vel: [f32; 4],
     start: Option<u64>,
-    dur: u64,
-    easing: Easing,
+    last: u64,
+    tr: Transition,
 }
 
 impl Anim {
-    fn value(&self, now: u64) -> f32 {
-        let Some(start) = self.start else {
-            return self.from;
-        };
-        if self.dur == 0 || now >= start + self.dur {
-            return self.to;
+    fn value(&self, now: u64) -> [f32; 4] {
+        match self.tr {
+            Transition::Spring(_) => self.cur,
+            Transition::Tween { ms, easing } => {
+                let Some(start) = self.start else {
+                    return self.from;
+                };
+                if ms == 0 || now >= start + ms as u64 {
+                    return self.to;
+                }
+                let k = easing.at((now - start) as f32 / ms as f32);
+                [0, 1, 2, 3].map(|i| self.from[i] + (self.to[i] - self.from[i]) * k)
+            }
         }
-        let t = (now - start) as f32 / self.dur as f32;
-        self.from + (self.to - self.from) * self.easing.at(t)
     }
     fn running(&self, now: u64) -> bool {
-        match self.start {
-            None => self.from != self.to,
-            Some(s) => now < s + self.dur,
+        match self.tr {
+            Transition::Spring(_) => {
+                !(0..4).all(|i| Spring::settled(self.cur[i], self.vel[i], self.to[i]))
+            }
+            Transition::Tween { ms, .. } => match self.start {
+                _ if self.from == self.to => false,
+                None => true,
+                Some(s) => now < s + ms as u64,
+            },
+        }
+    }
+    fn advance(&mut self, now: u64) {
+        match self.tr {
+            Transition::Tween { .. } => {
+                if self.start.is_none() {
+                    self.start = Some(now);
+                }
+            }
+            Transition::Spring(sp) => {
+                let dt = (now.saturating_sub(self.last)) as f32 / 1000.0;
+                self.last = now;
+                if dt > 0.0 {
+                    for i in 0..4 {
+                        let (x, v) = sp.step(self.cur[i], self.vel[i], self.to[i], dt.min(0.1));
+                        self.cur[i] = x;
+                        self.vel[i] = v;
+                    }
+                }
+                if !self.running(now) {
+                    self.cur = self.to;
+                    self.vel = [0.0; 4];
+                }
+            }
         }
     }
 }
@@ -182,6 +224,7 @@ impl Ui {
             clipboard: Rc::new(MemoryClipboard::default()),
             focused: None,
             order: Vec::new(),
+            order_seen: Default::default(),
             // Off-screen until the first pointer event, so nothing starts hovered.
             cursor: Point::new(-1.0e6, -1.0e6),
             pressed: None,
@@ -190,6 +233,7 @@ impl Ui {
             popup: None,
             now: 0,
             anims: HashMap::new(),
+            reduced_motion: std::env::var("ALLOY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
             overlay: Vec::new(),
             regions: Vec::new(),
             hit: None,
@@ -197,6 +241,10 @@ impl Ui {
             histories: HashMap::new(),
             slots: HashMap::new(),
             a11y: Vec::new(),
+            viewport: Rectangle::new(
+                Point::new(0.0, 0.0),
+                Size::new(f32::INFINITY, f32::INFINITY),
+            ),
         })))
     }
 
@@ -290,13 +338,14 @@ impl Ui {
     /// Focusable widgets register themselves while drawing, in tab order.
     pub(crate) fn register(&self, id: u64) {
         let mut s = self.0.borrow_mut();
-        if !s.order.contains(&id) {
+        if s.order_seen.insert(id) {
             s.order.push(id);
         }
     }
     pub(crate) fn begin_frame(&self) {
         let mut s = self.0.borrow_mut();
         s.order.clear();
+        s.order_seen.clear();
         s.overlay.clear();
         s.regions.clear();
         s.a11y.clear();
@@ -329,9 +378,7 @@ impl Ui {
         let mut s = self.0.borrow_mut();
         s.now = now;
         for a in s.anims.values_mut() {
-            if a.start.is_none() {
-                a.start = Some(now);
-            }
+            a.advance(now);
         }
     }
     /// True while any transition is still running; the runtime then keeps ticking.
@@ -348,26 +395,71 @@ impl Ui {
     /// Like [`Ui::ease`] with an explicit duration and easing. A duration of
     /// zero jumps straight to the target.
     pub fn ease_with(&self, key: u64, target: f32, dur_ms: u64, easing: Easing) -> f32 {
+        self.animate(key, target, Transition::eased(dur_ms as u32, easing))
+    }
+    /// Move any [`Animatable`] value (number, point, colour) toward `target`
+    /// by tween or spring, and return where it is now. The first call for a
+    /// `key` returns `target` at once; retargeting mid-flight continues from
+    /// the current value (and, for springs, the current velocity). Honours
+    /// [`Ui::reduced_motion`] by jumping.
+    pub fn animate<T: Animatable>(&self, key: u64, target: T, tr: Transition) -> T {
         let mut s = self.0.borrow_mut();
         let now = s.now;
+        let reduced = s.reduced_motion;
+        let to = target.to_parts();
         let a = s.anims.entry(key).or_insert(Anim {
-            from: target,
-            to: target,
+            from: to,
+            to,
+            cur: to,
+            vel: [0.0; 4],
             start: Some(now),
-            dur: 0,
-            easing,
+            last: now,
+            tr,
         });
-        if a.to != target {
+        if a.to != to {
             let cur = a.value(now);
+            let jump = reduced || matches!(tr, Transition::Tween { ms: 0, .. });
             *a = Anim {
                 from: cur,
-                to: target,
-                start: if dur_ms == 0 { Some(now) } else { None },
-                dur: dur_ms,
-                easing,
+                to,
+                cur: if jump { to } else { cur },
+                vel: if matches!(tr, Transition::Spring(_)) && !jump {
+                    a.vel
+                } else {
+                    [0.0; 4]
+                },
+                start: if jump { Some(now) } else { None },
+                last: now,
+                tr: if jump { Transition::ms(0) } else { tr },
             };
         }
-        a.value(now)
+        T::from_parts(a.value(now))
+    }
+    /// A spring-driven number: like [`Ui::ease`] but physical, with velocity
+    /// carried across retargets so rapid hover in and out never snaps.
+    pub fn spring(&self, key: u64, target: f32, spring: Spring) -> f32 {
+        self.animate(key, target, Transition::Spring(spring))
+    }
+    /// Enter and exit progress for something that appears and disappears.
+    /// `present` flips the target; `progress` eases 0 to 1 over `ms`, and
+    /// `mounted` stays true until an exit has fully played, so the caller can
+    /// keep drawing the outgoing content.
+    pub fn presence(&self, key: u64, present: bool, ms: u32) -> Presence {
+        let progress = self.animate(key, present as u8 as f32, Transition::ms(ms));
+        Presence {
+            progress,
+            mounted: present || progress > 0.002,
+        }
+    }
+    /// True when the user (or the app) asked for less motion: every
+    /// transition then jumps to its end state, and nothing keeps ticking.
+    pub fn reduced_motion(&self) -> bool {
+        self.0.borrow().reduced_motion
+    }
+    /// Turn reduced motion on or off. It starts on when the environment
+    /// variable `ALLOY_REDUCE_MOTION` is set to anything but `0`.
+    pub fn set_reduced_motion(&self, on: bool) {
+        self.0.borrow_mut().reduced_motion = on;
     }
     /// A key for a per-widget transition, derived from where the widget is.
     pub(crate) fn anim_key(bounds: &Rectangle, kind: u64) -> u64 {
@@ -413,6 +505,15 @@ impl Ui {
             }
             _ => None,
         }
+    }
+
+    /// The window area of the last drawn frame, so popups can stay on screen.
+    /// Unbounded until the first frame.
+    pub fn viewport(&self) -> Rectangle {
+        self.0.borrow().viewport
+    }
+    pub(crate) fn set_viewport(&self, r: Rectangle) {
+        self.0.borrow_mut().viewport = r;
     }
 
     /// Last known cursor position (used for hover styling).
@@ -565,6 +666,7 @@ impl<M: 'static> Widget<M> for Root<M> {
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         self.ui.begin_frame();
+        self.ui.set_viewport(layout.bounds);
         util::draw_children(&self.child, layout, out);
         for c in self.ui.take_overlay() {
             out.push(c);

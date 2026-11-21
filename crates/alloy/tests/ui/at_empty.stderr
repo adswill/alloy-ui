@@ -1,0 +1,7 @@
+error: `at!` needs a field of the state: at!(s.name), at!(s.form.email) or at!(s.minutes[i])
+ --> tests/ui/at_empty.rs:3:13
+  |
+3 |     let _ = at!();
+  |             ^^^^^
+  |
+  = note: this error originates in the macro `at` (in Nightly builds, run with -Z macro-backtrace for more info)

@@ -6,7 +6,7 @@ use crate::project::Selector;
 use std::path::PathBuf;
 
 /// Usage text.
-pub const USAGE: &str = "\
+const USAGE_TEMPLATE: &str = "\
 alloy - build and bundle Alloy apps
 
 USAGE:
@@ -15,8 +15,8 @@ USAGE:
 COMMANDS:
     build     Build the release binary
     bundle    Build, then package (default formats depend on the host OS)
-    new       Create a starter app: alloy new <name>
-    dev       Run the app (debug build) with its capability config
+    new       Create a starter app: alloy new <name> [--template <T>]
+    dev       Run the app, rebuild and restart on every save (F12 = inspector)
     check     Validate [package.metadata.alloy], icons and the capability config
     help      Show this text
     version   Show the version
@@ -30,10 +30,14 @@ OPTIONS:
     --out <DIR>              Output directory (default: <target>/alloy-bundle)
     --binary <PATH>          Bundle this prebuilt binary instead of building
     --identifier <ID>        (new) reverse-DNS app identifier
+    -t, --template <NAME>    (new) starter app, see TEMPLATES (default: counter)
     --alloy-path <DIR>       (new) depend on a local Alloy checkout instead of git
     --release                (dev) run the release build
+    --once                   (dev) run once, do not watch for changes
     --skip-build             Bundle the existing release binary without building
 
+TEMPLATES (alloy new --template):
+{templates}
 FORMATS:
     app        macOS .app bundle (ad-hoc signed when built on macOS)
     dmg        macOS disk image (macOS only, needs hdiutil)
@@ -44,6 +48,11 @@ FORMATS:
     nsis       Windows installer (needs `makensis`)
     msi        Windows MSI installer (needs WiX 4+: `wix`, or ALLOY_WIX)
 ";
+
+/// The help text, with the template list filled in.
+pub fn usage() -> String {
+    USAGE_TEMPLATE.replace("{templates}", &crate::scaffold::template_help())
+}
 
 /// A parsed command.
 #[derive(Debug, PartialEq)]
@@ -87,8 +96,12 @@ pub struct Args {
     pub identifier: Option<String>,
     /// `--alloy-path`.
     pub alloy_path: Option<PathBuf>,
+    /// `--template` (new).
+    pub template: Option<String>,
     /// `--release` (dev).
     pub release: bool,
+    /// `--once` (dev): run once instead of rebuilding when files change.
+    pub once: bool,
     /// Arguments after `--`: forwarded to cargo (`build`, `bundle`) or to the
     /// app itself (`dev`).
     pub cargo_args: Vec<String>,
@@ -122,7 +135,9 @@ pub fn parse(args: &[String]) -> Result<Args> {
         name: None,
         identifier: None,
         alloy_path: None,
+        template: None,
         release: false,
+        once: false,
         cargo_args: vec![],
     };
     let value = |it: &mut std::slice::Iter<String>, flag: &str| -> Result<String> {
@@ -140,7 +155,9 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--binary" => a.binary = Some(value(&mut it, arg)?.into()),
             "--skip-build" => a.skip_build = true,
             "--release" => a.release = true,
+            "--once" => a.once = true,
             "--identifier" => a.identifier = Some(value(&mut it, arg)?),
+            "-t" | "--template" => a.template = Some(value(&mut it, arg)?),
             "--alloy-path" => a.alloy_path = Some(value(&mut it, arg)?.into()),
             "--format" => {
                 for f in value(&mut it, arg)?.split(',') {
@@ -197,6 +214,12 @@ mod tests {
         assert_eq!(a.command, Command::New);
         assert_eq!(a.name.as_deref(), Some("my-app"));
         assert_eq!(a.identifier.as_deref(), Some("dev.x.y"));
+        assert_eq!(
+            p("new x -t editor").unwrap().template.as_deref(),
+            Some("editor")
+        );
+        assert!(p("new x --template").is_err());
+        assert!(usage().contains("dashboard") && !usage().contains("{templates}"));
         let d = p("dev --release -- --flag").unwrap();
         assert!(d.release);
         assert_eq!(d.cargo_args, vec!["--flag"]);

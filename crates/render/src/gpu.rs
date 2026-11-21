@@ -366,6 +366,7 @@ impl Painter {
         let mut overflow = false;
         for p in prims {
             let (binding, uv) = match p.source {
+                Source::None if p.kind == Kind::Gradient => (None, p.color2),
                 Source::None => (None, [0.0, 0.0, 1.0, 1.0]),
                 Source::Image(id) => {
                     if !self.images.contains_key(&id) {
@@ -397,9 +398,10 @@ impl Painter {
                         Kind::Quad => 1.0,
                         Kind::Mask => 2.0,
                         Kind::Texture => 3.0,
+                        Kind::Gradient => 4.0,
                     },
-                    0.0,
-                    0.0,
+                    p.dir[0],
+                    p.dir[1],
                 ],
             });
             match batches.last_mut() {

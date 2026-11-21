@@ -1,0 +1,5 @@
+error: `count` needs a type before its start value: `count: Type = value`
+ --> tests/ui/state_default_before_type.rs:3:9
+  |
+3 |         count = 3,
+  |         ^^^^^

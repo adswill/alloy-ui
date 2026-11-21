@@ -1,0 +1,50 @@
+// A dashboard: headline numbers, a live chart and a table of jobs. Swap in your own data.
+use alloy_ui::prelude::*;
+
+state! { struct Dash { live: Vec<f32> = series("requests", 12), seed: u32 = 7 } }
+
+const JOBS: [(&str, &str, &str); 4] = [
+    ("nightly-index", "done", "4m 12s"),
+    ("thumbnail-sweep", "done", "38s"),
+    ("export-ledger", "failed", "1m 05s"),
+    ("sync-calendars", "running", "12s"),
+];
+
+fn view(d: &Dash) -> impl View<Act<Dash>> {
+    let peak = d.live.iter().cloned().fold(0.0, f32::max);
+    let cell = |s: &'static str, w| text(s).caption().no_wrap().w(w);
+    col![
+        heading("@TITLE@"),
+        stats([("Requests", "48.2k"), ("Errors", "0.4%"), ("p95", "212 ms")]),
+        col![
+            caption(format!("Peak {:.0}k per interval", peak * 100.0)).dim(),
+            bars(d.live.clone())
+        ]
+        .gap(8.0)
+        .card()
+        .pad(16.0),
+        text("Recent jobs").sub(),
+        col(JOBS.map(|(name, state, time)| {
+            row![
+                cell(name, 170.0),
+                cell(state, 90.0).danger_if(state == "failed"),
+                cell(time, 80.0)
+            ]
+        })),
+    ]
+    .gap(16.0)
+    .pad(24.0)
+    .fill()
+}
+
+fn main() {
+    sketch(Dash::default(), view)
+        .tick(secs(1.0), |d| {
+            d.seed = d.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let last = d.live.last().copied().unwrap_or(0.5);
+            d.live.remove(0);
+            d.live
+                .push((last + ((d.seed >> 16) % 100) as f32 / 400.0 - 0.125).clamp(0.1, 0.95));
+        })
+        .run_sized("@TITLE@", 560.0, 520.0)
+}

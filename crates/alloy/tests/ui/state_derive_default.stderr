@@ -1,0 +1,5 @@
+error: `state!` already implements `Default` from the starting values; remove `Default` from this derive
+ --> tests/ui/state_derive_default.rs:2:21
+  |
+2 |     #[derive(Debug, Default)]
+  |                     ^^^^^^^

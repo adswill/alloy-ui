@@ -51,7 +51,14 @@ mod guide {
     struct G9;
     #[doc = include_str!("../../../docs/guide/11-capabilities-and-ipc.md")]
     struct G10;
+    #[doc = include_str!("../../../docs/guide/12-dev-loop.md")]
+    struct G11;
+    #[doc = include_str!("../../../docs/guide/13-localization.md")]
+    struct G12;
 }
+
+// Lets the proc macros name this crate as `::alloy_ui` from inside it too.
+extern crate self as alloy_ui;
 
 mod app;
 mod bind;
@@ -63,18 +70,23 @@ mod cx;
 mod declare;
 mod dsl;
 pub mod fs;
+pub mod i18n;
 mod inputs;
 mod keys;
 mod mock;
+mod motion;
 mod palette;
 mod persist;
+mod pro;
 mod records;
 mod resource;
+mod rich;
 pub mod testing;
 mod tone;
 pub mod valid;
 pub mod view;
 
+pub use alloy_ui_macros::{at, state};
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
@@ -86,7 +98,7 @@ pub use collections::{
     browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
     Prop, TextCell,
 };
-pub use cx::{palette, set_dark, theme, ui};
+pub use cx::{palette, set_accent, set_dark, set_look, theme, ui, Look};
 pub use declare::{clock, money};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
@@ -96,30 +108,43 @@ pub use dsl::{
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use mock::{series, Mock};
+pub use motion::{animated, fade, reveal, spring};
+pub use pro::{
+    context_menu, markdown, menu_item, menu_rule, popover, split, tab_bar, vlist, Markdown, Menu,
+    MenuEntry, Popover, Split, TabBar, VList,
+};
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
     Stamp, Value,
 };
 pub use resource::{block_on, resource, sleep, Resource};
+pub use rich::{
+    badge, bar_chart, color_picker, line_chart, sparkline, swatch, tree, Badge, Chart, Picker,
+    Series, Spark, Swatch, Tone, Tree, TreeItem,
+};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
+    pub use crate::i18n::language_picker;
     pub use crate::{
-        app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
-        custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
-        nav, number, options, palette, pick, progress, radio, radio_list, radio_list_with, radios,
-        records, records_in, resource, rule, scroll, secs, section, series, set_dark, shell,
-        sketch, sleep, slider, space, stat, stats, stepper, store, store_as, table, table_of, tabs,
-        tally, text, theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
-        FlagCell, Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View,
-        Wizard,
+        animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
+        choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
+        field_after, filter_by, gap, heading, input, line_chart, list, local, markdown, menu_item,
+        menu_rule, nav, number, options, palette, pick, popover, progress, radio, radio_list,
+        radio_list_with, radios, records, records_in, resource, reveal, rule, scroll, secs,
+        section, series, set_accent, set_dark, set_look, shell, sketch, sleep, slider, space,
+        sparkline, split, spring, stat, stats, stepper, store, store_as, swatch, tab_bar, table,
+        table_of, tabs, tally, text, theme_switch, toggle, tree, vlist, vspace, wizard, Act, App,
+        Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Local, Look, Node, Place, Record, Records,
+        Resource, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clock, col, money, redo, row, state, toast, undo, vals, Hotkey, Shortcuts,
+        at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
     };
     pub use alloy_ui_core::Color;
+    pub use alloy_ui_theme::Density;
     pub use std::time::Duration;
 }
 

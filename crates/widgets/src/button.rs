@@ -145,20 +145,23 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         let hover = enabled && self.ui.hovered(&b);
         let down = enabled && self.ui.is_pressed(&b) && hover;
         let h = self.ui.ease(Ui::anim_key(&b, 2), hover as u8 as f32);
+        // Press is eased too: quick in, a touch slower out, so a tap reads as
+        // a change of state rather than a flicker.
+        let pr = self.ui.ease_with(
+            Ui::anim_key(&b, 8),
+            down as u8 as f32,
+            if down { 45 } else { 120 },
+            t.motion.easing,
+        );
         let overlay = |base: alloy_ui_core::Color| {
-            if down {
-                util::over(base, p.pressed)
-            } else {
-                util::over(base, p.hover.with_alpha(p.hover.a * h))
-            }
+            util::over(
+                util::over(base, p.hover.with_alpha(p.hover.a * h * (1.0 - pr))),
+                p.pressed.with_alpha(p.pressed.a * pr),
+            )
         };
         let (fill, border, text) = match (self.variant, enabled) {
             (Variant::Primary, true) => (
-                if down {
-                    p.accent_pressed
-                } else {
-                    util::mix(p.accent, p.accent_hover, h)
-                },
+                util::mix(util::mix(p.accent, p.accent_hover, h), p.accent_pressed, pr),
                 None,
                 p.on_accent,
             ),
@@ -199,8 +202,16 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
         if let Some(id) = self.id {
             self.ui.register(id);
         }
-        if self.ui.is_focused(self.id) {
-            out.push(focus_ring(b, t.radii.medium, p.focus_ring));
+        let ring = self.ui.ease(
+            Ui::anim_key(&b, 9),
+            self.ui.is_focused(self.id) as u8 as f32,
+        );
+        if ring > 0.01 {
+            out.push(focus_ring(
+                b,
+                t.radii.medium,
+                p.focus_ring.with_alpha(p.focus_ring.a * ring),
+            ));
         }
         out.push(DrawCommand::Quad {
             bounds: b,
@@ -231,7 +242,7 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             family: alloy_ui_core::FontFamily::Sans,
             weight,
             line_height: None,
-            origin: Point::new(x, b.origin.y + (b.size.height - s.line_height) / 2.0),
+            origin: Point::new(x, b.origin.y + (b.size.height - s.line_height) / 2.0 + pr),
             content: self.label.clone(),
             size: s.size,
             color: text,

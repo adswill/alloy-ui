@@ -1,0 +1,8 @@
+{
+  "productName": "notes",
+  "version": "0.0.0",
+  "identifier": "dev.compare.notes",
+  "build": { "frontendDist": "../ui" },
+  "app": { "windows": [{ "title": "notes", "width": 960, "height": 640 }], "security": { "csp": null } },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

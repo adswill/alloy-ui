@@ -16,8 +16,9 @@ struct Instance {
     @location(2) border_color: vec4<f32>,
     @location(3) uv: vec4<f32>,
     // radius, border width, blur, unused
+    // (for gradients `uv` carries the end colour)
     @location(4) params: vec4<f32>,
-    // pad, kind, unused, unused
+    // pad, kind, gradient dir x, gradient dir y
     @location(5) info: vec4<f32>,
 };
 
@@ -30,6 +31,7 @@ struct VOut {
     @location(4) @interpolate(flat) uv: vec4<f32>,
     @location(5) @interpolate(flat) params: vec4<f32>,
     @location(6) @interpolate(flat) kind: f32,
+    @location(7) @interpolate(flat) dir: vec2<f32>,
 };
 
 @vertex
@@ -49,6 +51,7 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VOut {
     o.uv = inst.uv;
     o.params = inst.params;
     o.kind = inst.info.y;
+    o.dir = inst.info.zw;
     return o;
 }
 
@@ -66,6 +69,14 @@ fn cover(sd: f32) -> f32 {
 
 fn premul(c: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(c.rgb * c.a, c.a);
+}
+
+// 4x4 ordered-dither threshold in [0, 16); identical to `bayer4` in cpu.rs.
+fn bayer4(p: vec2<f32>) -> f32 {
+    let x = u32(floor(p.x)) & 3u;
+    let y = u32(floor(p.y)) & 3u;
+    let xy = x ^ y;
+    return f32(((y & 1u) << 3u) | ((xy & 1u) << 2u) | (((y >> 1u) & 1u) << 1u) | ((xy >> 1u) & 1u));
 }
 
 @fragment
@@ -98,6 +109,20 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
             inner = cover(sd_rrect(in.p, r, max(radius - bw, 0.0)));
         }
         return outer * mix(border, fill, inner);
+    } else if (in.kind > 3.5) {
+        // Gradient quad (end colour travels in `uv`)
+        let outer = cover(sd_rrect(in.p, in.rect, radius));
+        var inner = 1.0;
+        if (bw > 0.0) {
+            let r = vec4<f32>(in.rect.xy + vec2<f32>(bw), max(in.rect.zw - vec2<f32>(2.0 * bw), vec2<f32>(0.0)));
+            inner = cover(sd_rrect(in.p, r, max(radius - bw, 0.0)));
+        }
+        let len = max(abs(in.dir.x) * in.rect.z + abs(in.dir.y) * in.rect.w, 1e-4);
+        let gt = clamp(0.5 + dot(in.p - (in.rect.xy + in.rect.zw * 0.5), in.dir) / len, 0.0, 1.0);
+        let dither = ((bayer4(in.p) + 0.5) / 16.0 - 0.5) / 255.0;
+        var g = mix(fill, premul(in.uv), gt);
+        g = vec4<f32>(max(g.rgb + vec3<f32>(dither * g.a), vec3<f32>(0.0)), g.a);
+        return outer * mix(border, g, inner);
     } else if (in.kind < 2.5) {
         // Glyph mask
         return fill * texel.a;

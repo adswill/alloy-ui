@@ -1,0 +1,62 @@
+// A text editor: open and save a file, a live status line, and Ctrl/Cmd+S.
+use alloy_ui::{fs, prelude::*};
+use std::path::Path;
+
+state! { struct Doc { path: String = "notes.txt", text: String, saved: String } }
+
+impl Doc {
+    fn open(&mut self) {
+        match fs::read(Path::new(&self.path)) {
+            Ok(t) => {
+                self.saved = t.clone();
+                self.text = t;
+            }
+            Err(e) => {
+                toast(e).error();
+            }
+        }
+    }
+
+    fn save(&mut self) {
+        match fs::write(Path::new(&self.path), &self.text) {
+            Ok(()) => {
+                self.saved = self.text.clone();
+                toast("Saved");
+            }
+            Err(e) => {
+                toast(e).error();
+            }
+        }
+    }
+}
+
+fn view(d: &Doc) -> impl View<Act<Doc>> {
+    let dirty = d.text != d.saved;
+    col![
+        row![
+            input(at!(d.path)).hint("File path").fill_w(),
+            button("Open").act(Doc::open),
+            button("Save").primary().enabled(dirty).act(Doc::save),
+        ],
+        editor(at!(d.text)),
+        row![
+            caption(format!(
+                "{} lines, {} words",
+                d.text.lines().count(),
+                d.text.split_whitespace().count()
+            ))
+            .dim()
+            .fill_w(),
+            caption(if dirty { "Unsaved changes" } else { "Saved" }).dim(),
+        ],
+    ]
+    .gap(8.0)
+    .pad(16.0)
+    .fill()
+}
+
+fn main() {
+    sketch(Doc::default(), view)
+        .shortcut("mod+s", Doc::save)
+        .run_sized("@TITLE@", 620.0, 420.0)
+}

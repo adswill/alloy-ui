@@ -1,0 +1,5 @@
+error: expected `,` after the field `count`; separate fields with commas
+ --> tests/ui/state_missing_comma.rs:4:9
+  |
+4 |         name: String,
+  |         ^^^^

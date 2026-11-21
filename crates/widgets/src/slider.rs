@@ -179,10 +179,27 @@ impl<M: 'static> Widget<M> for Slider<M> {
             out.push(focus_ring(thumb, THUMB / 2.0, p.focus_ring));
         }
         let hot = enabled && (self.ui.hovered(&b) || self.ui.is_pressed(&b));
+        // The thumb swells under the pointer on a critically damped spring
+        // (no overshoot), and grabbing it swells a little more.
+        let grab = enabled && self.ui.is_pressed(&b);
+        let k = self.ui.spring(
+            Ui::anim_key(&b, 12),
+            if grab {
+                1.14
+            } else if hot {
+                1.08
+            } else {
+                1.0
+            },
+            crate::Spring::SNAPPY,
+        );
+        let c = Point::new(thumb.origin.x + THUMB / 2.0, thumb.origin.y + THUMB / 2.0);
+        let d = THUMB * k;
+        let thumb = Rectangle::new(Point::new(c.x - d / 2.0, c.y - d / 2.0), Size::new(d, d));
         out.push(DrawCommand::Quad {
             bounds: thumb,
             fill: p.surface_raised,
-            radius: THUMB / 2.0,
+            radius: d / 2.0,
             border: Some(Border {
                 color: if !enabled {
                     p.border

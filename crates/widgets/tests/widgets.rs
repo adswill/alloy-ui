@@ -277,6 +277,9 @@ fn focused_button_draws_ring_and_space_activates() {
     );
     h.draw();
     h.key(Key::Tab);
+    h.draw();
+    h.tick(16);
+    h.tick(400); // the ring fades in
     let quads = h
         .draw()
         .0

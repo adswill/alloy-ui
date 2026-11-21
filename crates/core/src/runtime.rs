@@ -170,6 +170,7 @@ pub struct Runtime<A: Application> {
     futures: Vec<BoxFuture<A::Message>>,
     requests: Vec<WindowRequest>,
     dirty: std::collections::BTreeSet<WindowId>,
+    inspect: bool,
 }
 
 impl<A: Application> Runtime<A> {
@@ -182,6 +183,7 @@ impl<A: Application> Runtime<A> {
             futures: Vec::new(),
             requests: Vec::new(),
             dirty: Default::default(),
+            inspect: false,
         };
         rt.add_window(WindowId::MAIN, size);
         rt
@@ -197,20 +199,37 @@ impl<A: Application> Runtime<A> {
             cursor: Default::default(),
             last_frame: Default::default(),
         };
-        win.last_frame = Self::draw_win(&win);
+        win.last_frame = Self::draw_win(&win, self.inspect);
         self.windows.insert(id, win);
         self.dirty.insert(id);
     }
 
-    fn draw_win(win: &Win<A::Message>) -> crate::draw::DrawList {
+    fn draw_win(win: &Win<A::Message>, inspect: bool) -> crate::draw::DrawList {
         let mut list = crate::draw::DrawList::default();
         win.view.0.draw(&win.layout, &mut list);
+        if inspect {
+            crate::inspector::draw(&win.view, &win.layout, win.cursor, win.size, &mut list);
+        }
         list
     }
 
     /// The application state.
     pub fn app(&self) -> &A {
         &self.app
+    }
+
+    /// Show or hide the layout inspector overlay (F12 does this when
+    /// [`inspector::available`](crate::inspector::available)).
+    pub fn set_inspector(&mut self, on: bool) {
+        self.inspect = on;
+        for id in self.window_ids() {
+            self.refresh(id);
+        }
+    }
+
+    /// Whether the inspector overlay is showing.
+    pub fn inspecting(&self) -> bool {
+        self.inspect
     }
 
     /// Ids of the open windows.
@@ -227,7 +246,7 @@ impl<A: Application> Runtime<A> {
     pub fn draw_window(&self, id: WindowId) -> crate::draw::DrawList {
         self.windows
             .get(&id)
-            .map(Self::draw_win)
+            .map(|w| Self::draw_win(w, self.inspect))
             .unwrap_or_default()
     }
 
@@ -313,6 +332,15 @@ impl<A: Application> Runtime<A> {
 
     /// Route a platform event to window `id`'s widget tree.
     pub fn handle_window_event(&mut self, id: WindowId, event: &crate::event::Event) -> Outcome {
+        if let crate::event::Event::KeyPressed(crate::event::Key::Named(k), _) = event {
+            if k == "F12" && crate::inspector::available() {
+                self.set_inspector(!self.inspect);
+                return Outcome {
+                    redraw: true,
+                    ..Outcome::default()
+                };
+            }
+        }
         let Some(win) = self.windows.get_mut(&id) else {
             return Outcome::default();
         };
@@ -329,6 +357,13 @@ impl<A: Application> Runtime<A> {
         win.view
             .0
             .on_event(event, &win.layout, win.cursor, &mut out);
+        if matches!(event, crate::event::Event::Tick(_)) && out.is_empty() {
+            // Views may read animated values (`animated`, `spring`, `reveal`),
+            // so a tick that moves something rebuilds the view. Ticks only
+            // arrive while something animates, so idle cost stays zero.
+            win.view = self.app.view_window(id);
+            return self.refresh(id);
+        }
         if out.is_empty() {
             // Widget-local state (hover, caret) may still have changed.
             return self.refresh(id);
@@ -341,7 +376,7 @@ impl<A: Application> Runtime<A> {
             return Outcome::default();
         };
         win.layout = (self.layouter)(&win.view, win.size);
-        let frame = Self::draw_win(win);
+        let frame = Self::draw_win(win, self.inspect);
         let redraw = frame != win.last_frame;
         win.last_frame = frame;
         if redraw {

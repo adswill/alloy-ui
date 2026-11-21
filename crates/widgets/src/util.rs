@@ -203,3 +203,116 @@ pub(crate) fn control_label(
         max_width: None,
     }
 }
+
+/// `cmd` with its colours' alpha scaled by `alpha` and its geometry moved by
+/// `(dx, dy)`. This is how a group fades without a render layer: every
+/// primitive is faded on its own, which is exact for non-overlapping content.
+pub(crate) fn fade_translate(cmd: DrawCommand, alpha: f32, dx: f32, dy: f32) -> DrawCommand {
+    use alloy_ui_core::{Border, Shadow};
+    let c = |mut c: alloy_ui_core::Color| {
+        c.a *= alpha;
+        c
+    };
+    let r = |b: Rectangle| Rectangle::new(Point::new(b.origin.x + dx, b.origin.y + dy), b.size);
+    let p = |q: Point| Point::new(q.x + dx, q.y + dy);
+    let border = |b: Option<Border>| {
+        b.map(|b| Border {
+            color: c(b.color),
+            ..b
+        })
+    };
+    let shadow = |s: Option<Shadow>| {
+        s.map(|s| Shadow {
+            color: c(s.color),
+            ..s
+        })
+    };
+    match cmd {
+        DrawCommand::Quad {
+            bounds,
+            fill,
+            radius,
+            border: b,
+            shadow: s,
+        } => DrawCommand::Quad {
+            bounds: r(bounds),
+            fill: c(fill),
+            radius,
+            border: border(b),
+            shadow: shadow(s),
+        },
+        DrawCommand::Text {
+            origin,
+            content,
+            size,
+            color,
+            max_width,
+            weight,
+            family,
+            line_height,
+        } => DrawCommand::Text {
+            origin: p(origin),
+            content,
+            size,
+            color: c(color),
+            max_width,
+            weight,
+            family,
+            line_height,
+        },
+        DrawCommand::Line {
+            from,
+            to,
+            width,
+            color,
+        } => DrawCommand::Line {
+            from: p(from),
+            to: p(to),
+            width,
+            color: c(color),
+        },
+        DrawCommand::GradientQuad {
+            bounds,
+            from,
+            to,
+            angle_deg,
+            radius,
+            border: b,
+            shadow: s,
+        } => DrawCommand::GradientQuad {
+            bounds: r(bounds),
+            from: c(from),
+            to: c(to),
+            angle_deg,
+            radius,
+            border: border(b),
+            shadow: shadow(s),
+        },
+        DrawCommand::Image { bounds, id } => DrawCommand::Image {
+            bounds: r(bounds),
+            id,
+        },
+        DrawCommand::PushClip(b) => DrawCommand::PushClip(r(b)),
+        other => other,
+    }
+}
+
+/// A single-line text command in the sans family.
+pub(crate) fn label_cmd(
+    origin: Point,
+    content: impl Into<String>,
+    style: &alloy_ui_theme::TextStyle,
+    weight: u16,
+    color: alloy_ui_core::Color,
+) -> DrawCommand {
+    DrawCommand::Text {
+        family: alloy_ui_core::FontFamily::Sans,
+        weight,
+        line_height: Some(style.line_height),
+        origin,
+        content: content.into(),
+        size: style.size,
+        color,
+        max_width: None,
+    }
+}

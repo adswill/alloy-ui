@@ -6,6 +6,7 @@
 //! their call site plus an occurrence counter, so `input(..)` just works and
 //! `.id(n)` stays available as an override.
 
+use alloy_ui_core::Color;
 use alloy_ui_theme::{Palette, Theme};
 use alloy_ui_widgets::Ui;
 use std::{cell::RefCell, collections::HashMap, hash::Hasher, rc::Rc};
@@ -24,6 +25,21 @@ thread_local! {
 }
 
 /// Run `f` with `ui` as the ambient context and the id counters reset.
+/// Run `f` with `ui` as the ambient context, ids salted by `key`, without touching the durable
+/// counters: for building a piece of the tree later than `view` (a virtualised row, at draw time).
+pub(crate) fn scoped<R>(ui: &Ui, key: u64, f: impl FnOnce() -> R) -> R {
+    let prev = CX.with(|c| {
+        c.borrow_mut().replace(Cx {
+            ui: ui.clone(),
+            seen: HashMap::new(),
+            salt: key.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x7157_0001,
+        })
+    });
+    let r = f();
+    CX.with(|c| *c.borrow_mut() = prev);
+    r
+}
+
 pub(crate) fn enter<R>(ui: &Ui, f: impl FnOnce() -> R) -> R {
     let prev = CX.with(|c| {
         c.borrow_mut().replace(Cx {
@@ -61,9 +77,99 @@ pub fn palette() -> Palette {
     theme().palette.clone()
 }
 
-/// Switch the window between the light and dark theme.
+/// Switch the window between the light and dark theme (an accent set with [`set_accent`] stays).
 pub fn set_dark(dark: bool) {
-    ui().set_theme(if dark { Theme::dark() } else { Theme::light() });
+    let mut t = if dark { Theme::dark() } else { Theme::light() };
+    if let Some(c) = ACCENT.with(|a| a.get()) {
+        t = t.with_accent(c);
+    }
+    ui().set_theme(t);
+}
+
+thread_local! {
+    static ACCENT: std::cell::Cell<Option<Color>> = const { std::cell::Cell::new(None) };
+}
+
+/// Recolour the whole window with a brand accent, keeping light or dark. The accent is nudged
+/// until it passes WCAG AA on the theme's surfaces. Cheap to call every frame: nothing happens
+/// if the window already has that accent.
+pub fn set_accent(brand: alloy_ui_core::Color) {
+    ACCENT.with(|a| a.set(Some(brand)));
+    let t = theme().as_ref().clone().with_accent(brand);
+    if t.palette.accent != theme().palette.accent {
+        ui().set_theme(t);
+    }
+}
+
+/// A complete look: appearance, optional brand accent, contrast and density. Build one and
+/// apply it with [`set_look`]; every part is optional.
+///
+/// ```ignore
+/// set_look(Look::dark().accent(Color::hex(0x6D4AFF)).density(Density::Compact));
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Look {
+    dark: bool,
+    accent: Option<alloy_ui_core::Color>,
+    high_contrast: bool,
+    density: alloy_ui_theme::Density,
+}
+
+impl Look {
+    /// The light theme.
+    pub fn light() -> Self {
+        Self::default()
+    }
+    /// The dark theme.
+    pub fn dark() -> Self {
+        Self {
+            dark: true,
+            ..Self::default()
+        }
+    }
+    /// Pick light or dark from a flag.
+    pub fn is_dark(self, dark: bool) -> Self {
+        Self { dark, ..self }
+    }
+    /// Use a brand accent.
+    pub fn accent(self, c: alloy_ui_core::Color) -> Self {
+        Self {
+            accent: Some(c),
+            ..self
+        }
+    }
+    /// 7:1 text, solid borders.
+    pub fn high_contrast(self, on: bool) -> Self {
+        Self {
+            high_contrast: on,
+            ..self
+        }
+    }
+    /// Spacing preset.
+    pub fn density(self, d: alloy_ui_theme::Density) -> Self {
+        Self { density: d, ..self }
+    }
+    /// The theme this look describes.
+    pub fn theme(self) -> Theme {
+        let mut t = if self.dark {
+            Theme::dark()
+        } else {
+            Theme::light()
+        };
+        if let Some(c) = self.accent {
+            t = t.with_accent(c);
+        }
+        if self.high_contrast {
+            t = t.high_contrast();
+        }
+        t.density(self.density)
+    }
+}
+
+/// Apply a [`Look`] to the window.
+pub fn set_look(look: Look) {
+    ACCENT.with(|a| a.set(look.accent));
+    ui().set_theme(look.theme());
 }
 
 /// Run `f` with every generated id (and so every [`local`](crate::local)) keyed by `key` as

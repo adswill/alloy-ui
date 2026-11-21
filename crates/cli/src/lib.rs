@@ -29,7 +29,7 @@ pub fn run(argv: &[String]) -> Result<()> {
     let a = args::parse(argv)?;
     match a.command {
         Command::Help => {
-            print!("{}", args::USAGE);
+            print!("{}", args::usage());
             Ok(())
         }
         Command::Version => {
@@ -54,6 +54,7 @@ pub fn run(argv: &[String]) -> Result<()> {
                     name,
                     identifier: a.identifier,
                     source,
+                    template: a.template,
                 },
             )?;
             println!("created {}", dir.display());
@@ -107,7 +108,7 @@ pub fn run(argv: &[String]) -> Result<()> {
             } else {
                 a.formats.clone()
             };
-            let icons = IconSet::load(&p.icons)?;
+            let icons = IconSet::load_or_default(&p.icons)?;
             let caps = p.load_capabilities()?;
             if let Some((set, _)) = &caps {
                 eprintln!("  capabilities: {}", describe_capabilities(set));
