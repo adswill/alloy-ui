@@ -31,8 +31,17 @@ pub enum PlatformEvent {
     FileHovered(PathBuf),
     /// The drag left the window without dropping.
     FileHoverCancelled,
-    /// A file was dropped on the window.
-    FileDropped(PathBuf),
+    /// Files were dropped on the window. One event per drop, however many
+    /// files it carried. (winit reports them one by one; the shell batches
+    /// them at the end of the loop turn.)
+    FilesDropped(Vec<PathBuf>),
+    /// The OS appearance or accessibility settings changed, or were read for
+    /// the first time (shortly after start-up). See [`crate::settings`].
+    SettingsChanged(crate::settings::SystemSettings),
+    /// The app was asked to open something: a URL for a registered scheme
+    /// (`myapp://...`), or files (macOS "Open With", a second launch that was
+    /// forwarded to this single instance). Carries the raw argument strings.
+    Open(Vec<String>),
     /// The OS switched between light and dark.
     ThemeChanged {
         /// True when the new theme is dark.
@@ -320,6 +329,10 @@ struct App<H> {
     t0: Instant,
     /// True while an IME preedit string is showing; key events are dropped.
     composing: bool,
+    /// Files of the drop being delivered; flushed in `about_to_wait`.
+    dropped: Vec<PathBuf>,
+    #[cfg(not(target_os = "linux"))]
+    settings_seen: Option<crate::settings::SystemSettings>,
 }
 
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
@@ -472,6 +485,13 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         self.dispatch(el, PlatformEvent::Wake);
     }
 
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        if !self.dropped.is_empty() {
+            let files = std::mem::take(&mut self.dropped);
+            self.dispatch(el, PlatformEvent::FilesDropped(files));
+        }
+    }
+
     fn exiting(&mut self, _: &ActiveEventLoop) {
         if let Some(ctx) = &self.ctx {
             if perf_log() {
@@ -596,7 +616,22 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }
             WindowEvent::HoveredFile(p) => Some(PlatformEvent::FileHovered(p)),
             WindowEvent::HoveredFileCancelled => Some(PlatformEvent::FileHoverCancelled),
-            WindowEvent::DroppedFile(p) => Some(PlatformEvent::FileDropped(p)),
+            WindowEvent::DroppedFile(p) => {
+                self.dropped.push(p);
+                None
+            }
+            // Settings can only change while another app is in front, so on
+            // OSes without a change notification we re-read on focus.
+            #[cfg(not(target_os = "linux"))]
+            WindowEvent::Focused(true) => {
+                let now = crate::settings::system_settings();
+                if self.settings_seen != Some(now) {
+                    self.settings_seen = Some(now);
+                    Some(PlatformEvent::SettingsChanged(now))
+                } else {
+                    None
+                }
+            }
             _ => None,
         };
         if let Some(e) = out {
@@ -647,7 +682,19 @@ pub fn run<H: ShellHandler + 'static>(
         error: None,
         proxy,
         composing: false,
+        dropped: Vec::new(),
+        #[cfg(not(target_os = "linux"))]
+        settings_seen: None,
     };
+    // Read the OS settings off the UI thread (it can spawn helper processes);
+    // the answer arrives as `SettingsChanged` right after start-up.
+    let _ = std::thread::Builder::new()
+        .name("alloy-settings".into())
+        .spawn(|| {
+            crate::os::push_pending(PlatformEvent::SettingsChanged(
+                crate::settings::system_settings(),
+            ))
+        });
     el.run_app(&mut app)
         .map_err(|e| PlatformError(format!("run: {e}")))?;
     app.error.map_or(Ok(()), Err)

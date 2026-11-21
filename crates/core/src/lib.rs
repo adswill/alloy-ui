@@ -7,6 +7,7 @@
 pub mod draw;
 pub mod event;
 pub mod geometry;
+pub mod host;
 pub mod inspector;
 pub mod runtime;
 pub mod style;
@@ -14,6 +15,7 @@ pub mod widget;
 
 pub use draw::{Border, DrawCommand, DrawList, FontFamily, Shadow};
 pub use event::{Event, Key, Modifiers, MouseButton};
+pub use host::{HostConfig, HostEvent, WindowEffect};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
 pub use runtime::{
     Application, Command, Layouter, Outcome, Runtime, Subscription, SubscriptionKind, WindowId,

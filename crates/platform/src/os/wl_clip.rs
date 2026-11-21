@@ -11,6 +11,8 @@
 //! `read` opens a short-lived connection, finds the current selection offer and
 //! pipes it. `write` parks a thread that owns the selection until another
 //! client replaces it (`cancelled`), serving `send` requests like `x11_clip`.
+//! Both work on any MIME type, so HTML, PNG images and file lists use the same
+//! path as text (`read_mime`, `write_formats`, `mimes`).
 
 use std::io::{Read, Write};
 use std::os::fd::{AsFd, OwnedFd};
@@ -34,17 +36,17 @@ fn pick_mime(offered: &[String]) -> Option<&'static str> {
 }
 
 /// Pipe `fd` to `text` on a thread, so a slow reader cannot stall the owner loop.
-fn serve(fd: OwnedFd, text: String) {
+fn serve(fd: OwnedFd, data: std::sync::Arc<Vec<u8>>) {
     let _ = std::thread::Builder::new()
         .name("alloy-wl-send".into())
         .spawn(move || {
             let mut f = std::fs::File::from(fd);
-            let _ = f.write_all(text.as_bytes());
+            let _ = f.write_all(&data);
         });
 }
 
 /// Read everything from `fd`, giving up after [`TIMEOUT`].
-fn drain(fd: OwnedFd) -> Option<String> {
+fn drain(fd: OwnedFd) -> Option<Vec<u8>> {
     let (tx, rx) = mpsc::channel();
     let _ = std::thread::Builder::new()
         .name("alloy-wl-recv".into())
@@ -53,14 +55,26 @@ fn drain(fd: OwnedFd) -> Option<String> {
             let _ = std::fs::File::from(fd).read_to_end(&mut buf);
             let _ = tx.send(buf);
         });
-    let bytes = rx.recv_timeout(TIMEOUT).ok()?;
-    Some(String::from_utf8_lossy(&bytes).into_owned())
+    // Images are large; allow far longer than for text before giving up.
+    rx.recv_timeout(TIMEOUT * 10).ok()
 }
 
 /// Read the clipboard text. `None` when no data-control protocol is offered,
 /// the selection is empty, or it has no text flavour.
 pub fn read() -> Option<String> {
-    ext::read().or_else(wlr::read)
+    let mimes = mimes()?;
+    let m = pick_mime(&mimes)?;
+    Some(String::from_utf8_lossy(&read_mime(m)?).into_owned())
+}
+
+/// MIME types the current selection offers.
+pub fn mimes() -> Option<Vec<String>> {
+    ext::mimes().or_else(wlr::mimes)
+}
+
+/// The selection's bytes in one MIME type.
+pub fn read_mime(mime: &str) -> Option<Vec<u8>> {
+    ext::read_mime(mime).or_else(|| wlr::read_mime(mime))
 }
 
 /// Take ownership of the clipboard with `text`. Returns false when no
@@ -68,7 +82,18 @@ pub fn read() -> Option<String> {
 /// The previous owner thread of ours, if any, is told `cancelled` by the
 /// compositor when we replace the selection, and exits by itself.
 pub fn write(text: &str) -> bool {
-    ext::write(text) || wlr::write(text)
+    write_formats(crate::clipboard::to_formats(&crate::clipboard::ClipContent::text(
+        text,
+    )))
+}
+
+/// Take ownership offering every `(mime, bytes)` pair.
+pub fn write_formats(formats: Vec<(String, Vec<u8>)>) -> bool {
+    let data: std::collections::HashMap<String, std::sync::Arc<Vec<u8>>> = formats
+        .into_iter()
+        .map(|(m, d)| (m, std::sync::Arc::new(d)))
+        .collect();
+    ext::write(&data) || wlr::write(&data)
 }
 
 /// Expands to one protocol flavour. The two protocols are identical in shape
@@ -79,6 +104,7 @@ macro_rules! data_control {
         mod $name {
             use super::*;
             use std::collections::HashMap;
+            use std::sync::Arc;
             use wayland_client::{
                 event_created_child,
                 globals::{registry_queue_init, GlobalListContents},
@@ -97,7 +123,7 @@ macro_rules! data_control {
             struct St {
                 mimes: HashMap<wayland_client::backend::ObjectId, Vec<String>>,
                 selection: Option<Option<Offer>>,
-                text: String,
+                data: HashMap<String, Arc<Vec<u8>>>,
                 cancelled: bool,
             }
 
@@ -127,10 +153,18 @@ macro_rules! data_control {
                 })
             }
 
-            pub fn read() -> Option<String> {
+            pub fn mimes() -> Option<Vec<String>> {
                 let mut s = open()?;
                 let offer = s.st.selection.take()??;
-                let mime = pick_mime(s.st.mimes.get(&offer.id())?)?;
+                s.st.mimes.get(&offer.id()).cloned()
+            }
+
+            pub fn read_mime(mime: &str) -> Option<Vec<u8>> {
+                let mut s = open()?;
+                let offer = s.st.selection.take()??;
+                if !s.st.mimes.get(&offer.id())?.iter().any(|m| m == mime) {
+                    return None;
+                }
                 // A socketpair stands in for a pipe (`io::pipe` is newer than our MSRV).
                 let (rd, wr) = std::os::unix::net::UnixStream::pair().ok()?;
                 offer.receive(mime.to_owned(), wr.as_fd());
@@ -139,17 +173,17 @@ macro_rules! data_control {
                 drain(OwnedFd::from(rd))
             }
 
-            pub fn write(text: &str) -> bool {
+            pub fn write(data: &HashMap<String, Arc<Vec<u8>>>) -> bool {
                 let Some(mut s) = open() else {
                     return false;
                 };
                 let qh = s.queue.handle();
                 let source = s.manager.create_data_source(&qh, ());
-                for m in TEXT_MIMES {
-                    source.offer(m.to_owned());
+                for m in data.keys() {
+                    source.offer(m.clone());
                 }
                 s.device.set_selection(Some(&source));
-                s.st.text = text.to_owned();
+                s.st.data = data.clone();
                 if s.queue.roundtrip(&mut s.st).is_err() || s.st.cancelled {
                     return false;
                 }
@@ -249,7 +283,10 @@ macro_rules! data_control {
                     _: &QueueHandle<Self>,
                 ) {
                     match ev {
-                        src_mod::Event::Send { fd, .. } => serve(fd, st.text.clone()),
+                        src_mod::Event::Send { fd, mime_type } => match st.data.get(&mime_type) {
+                            Some(d) => serve(fd, d.clone()),
+                            None => drop(fd),
+                        },
                         src_mod::Event::Cancelled => st.cancelled = true,
                         _ => {}
                     }
@@ -306,5 +343,16 @@ mod tests {
         let big = "x".repeat(300_000);
         assert!(write(&big));
         assert_eq!(read().map(|s| s.len()), Some(big.len()));
+        // Several formats at once, binary included.
+        let png = vec![0x89u8, b'P', b'N', b'G', 0, 1, 2, 255];
+        assert!(write_formats(vec![
+            ("image/png".into(), png.clone()),
+            ("text/html".into(), b"<b>x</b>".to_vec()),
+        ]));
+        let offered = mimes().unwrap();
+        assert!(offered.iter().any(|m| m == "image/png"));
+        assert_eq!(read_mime("image/png"), Some(png));
+        assert_eq!(read_mime("text/html"), Some(b"<b>x</b>".to_vec()));
+        assert_eq!(read_mime("text/uri-list"), None);
     }
 }

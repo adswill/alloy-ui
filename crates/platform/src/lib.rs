@@ -10,11 +10,13 @@
 #![deny(unsafe_code)]
 
 pub mod access;
+pub mod clipboard;
 pub mod convert;
 pub mod dialog;
 pub mod fonts;
 pub mod menu;
 mod os;
+pub mod settings;
 pub mod shell;
 pub mod shortcut;
 pub mod theme;
@@ -23,6 +25,7 @@ pub mod tray;
 use alloy_ui_core::Size;
 use std::path::PathBuf;
 
+pub use clipboard::{ClipContent, ClipImage};
 pub use os::{default_clipboard, default_dialogs, default_system_theme};
 pub use shell::{run, PlatformEvent, ShellContext, ShellHandler};
 
@@ -52,6 +55,24 @@ pub trait Clipboard {
     fn read_text(&self) -> Result<Option<String>, PlatformError>;
     /// Write text.
     fn write_text(&mut self, text: &str) -> Result<(), PlatformError>;
+    /// Read everything the clipboard holds: text, HTML, an image, files.
+    /// The default reads text only.
+    fn read_rich(&self) -> Result<clipboard::ClipContent, PlatformError> {
+        Ok(clipboard::ClipContent {
+            text: self.read_text()?,
+            ..clipboard::ClipContent::default()
+        })
+    }
+    /// Put several formats on the clipboard at once (a paste target picks the
+    /// richest one it understands). The default keeps only the text.
+    fn write_rich(&mut self, content: &clipboard::ClipContent) -> Result<(), PlatformError> {
+        match &content.text {
+            Some(t) => self.write_text(t),
+            None => Err(PlatformError(
+                "this clipboard only supports text".into(),
+            )),
+        }
+    }
 }
 
 /// Native dialogs.
