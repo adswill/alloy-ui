@@ -138,6 +138,14 @@ pub use collections::{
 };
 pub use cx::{files_hovering, palette, set_accent, set_dark, set_look, system, theme, ui, Look};
 pub use declare::{clock, money};
+
+/// Open the command palette (what `mod+k` does), for a button that advertises it.
+/// Does nothing when it is already open.
+pub fn open_palette() {
+    if !palette::is_open() {
+        palette::toggle();
+    }
+}
 pub use desktop::{files, notify, Desktop, DesktopSpec, FileDialog, MenuBuilder, TrayBuilder};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,

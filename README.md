@@ -35,6 +35,17 @@ No message enum, no `update` function, no ids, no wrapper types. Handlers are cl
 
 *The notes app above (searchable list, editor, pin, delete with confirmation, autosave, settings page, undo, command palette) is 26 lines in `crates/alloy/examples/notes.rs`.*
 
+## Try everything in one app
+
+```sh
+cargo run --release -p alloy-ui --example alloy_studio
+```
+
+Alloy Studio is a ten-page app with a sidebar and router, charts, a 100 000 row grid, code and rich-text editors, kanban, calendar, node graph, 3D, forms and a wizard, a command palette, native menus and tray, a second window, undo with toasts, three languages (one right-to-left), ten themes and the F12 inspector. See [its tour](crates/alloy/examples/alloy_studio/RUN.md).
+
+![Alloy Studio overview](docs/studio/01_overview.png)
+![Alloy Studio planner](docs/studio/05_planner_board.png)
+
 ## How much less code, honestly
 
 We wrote the same apps in idiomatic iced 0.14 (compiled, never a dependency) and in Alloy, and counted non-blank, non-comment lines after `cargo fmt` (`python3 crates/alloy/loc/count.py`).

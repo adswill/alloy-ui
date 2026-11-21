@@ -127,7 +127,7 @@ pub struct DesktopSpec {
 }
 
 /// The menu bar, tray and global hotkeys of an app over state `S`. Held by
-/// [`Sketch`](crate::Sketch) and [`Pages`](crate::Pages); not built by hand.
+/// [`Sketch`](crate::Sketch) and [`Pages`](crate::Pages). An [`App`](crate::App) written by hand can hold one and return its `spec()` and `hotkeys()`.
 pub struct Desktop<S> {
     menus: Vec<(String, Vec<Entry<S>>)>,
     tray: Option<(String, TrayBuilder<S>)>,
@@ -219,7 +219,7 @@ impl<S: 'static> Desktop<S> {
     }
 
     /// The commands behind every menu item, tray item and global hotkey.
-    pub(crate) fn hotkeys(&self) -> Vec<Hotkey<Act<S>>> {
+    pub fn hotkeys(&self) -> Vec<Hotkey<Act<S>>> {
         let mut out = Vec::new();
         for (_, es) in &self.menus {
             hotkeys(es, false, &mut out);
@@ -237,7 +237,7 @@ impl<S: 'static> Desktop<S> {
     }
 
     /// What to hand the shell.
-    pub(crate) fn spec(&self) -> DesktopSpec {
+    pub fn spec(&self) -> DesktopSpec {
         DesktopSpec {
             menus: self
                 .menus
