@@ -399,7 +399,7 @@ pub enum Pointer {
 type Painter = Rc<dyn Fn(&mut Frame)>;
 type Handler<M> = Rc<dyn Fn(Pointer) -> Option<M>>;
 
-/// A rectangle the app paints with a closure. See the [module docs](self).
+/// A rectangle the app paints with a closure. See the canvas module docs.
 pub struct Canvas<M> {
     ui: Ui,
     id: u64,
