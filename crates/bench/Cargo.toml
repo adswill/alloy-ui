@@ -28,3 +28,11 @@ path = "src/bin/phases.rs"
 [[bin]]
 name = "text"
 path = "src/bin/text.rs"
+
+[[bin]]
+name = "large"
+path = "src/bin/large.rs"
+
+[[bin]]
+name = "startup"
+path = "src/bin/startup.rs"

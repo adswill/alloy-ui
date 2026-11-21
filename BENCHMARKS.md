@@ -92,6 +92,30 @@ Reading: on the CPU side a whole frame is about 0.2 ms; what remains is fragment
 
 Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled Plex fonts are 1.15 MB of the binary.
 
+## Large views (Linux, headless, CPU only)
+
+`cargo run --release -p alloy-ui-bench --bin large -- <rows>` drives a scrolling checklist (one `check` per row, 440x470 window) through `Harness` and times: build + first settle (cold text caches), one frame's draw list, and one no-op `Tick` (event, view rebuild, layout, draw, diff). Linux x86_64 cloud container, shared CPU, so figures move 20 to 30% between runs. No GPU is involved.
+
+Two real problems showed up and were fixed:
+
+1. **Text cache cliff.** The shaping cache was cleared wholesale at 4096 entries. A view with more distinct strings than that (10 000 rows) re-shaped every string on every frame, about 150 us each. It is now two generations (an LRU approximation) that doubles its size when it sees keys it just evicted, capped at 262 144 entries.
+2. **O(n^2) tab order.** Each focusable widget registered itself with a linear `contains` scan over all earlier ones. Registration is now a hash-set check.
+
+| Rows | Metric | Before | After |
+|---|---|---|---|
+| 1 000 | no-op tick | 0.68 ms | 0.7 to 1.0 ms (noise) |
+| 10 000 | no-op tick (view + layout + draw) | 1 780 ms | 7.5 to 9.6 ms |
+| 10 000 | draw list only | 16.1 ms | 1.3 to 1.8 ms |
+| 10 000 | build + first settle (cold caches) | 3 370 ms | 1 260 to 1 870 ms |
+| 20 000 | no-op tick | not measured before the fix | 17 ms |
+| 40 000 | no-op tick | not measured before the fix | 43 ms |
+
+A 10 000-row view therefore goes from about 0.5 frames per second to over 100 on the CPU side. The cost that remains is the cold first pass (about 150 us per distinct string to shape) and rebuilding and laying out every row on each event; real virtualisation (build only visible rows) is the next step and is not done. Draw output still contains commands for off-screen rows (26 673 commands for 10 000 rows); culling them without dropping their tab-order registration needs a widget-contract change, so it was left alone.
+
+Smaller changes: the six bundled Plex fonts are borrowed from the binary instead of copied to the heap at startup (1.15 MB less heap; `TextSystem::new` is about 4 ms with 117 system faces, measured by `--bin startup`).
+
+Tried and not kept: removing winit's `wayland-csd-adwaita` feature changed the counter binary by under 0.1 MB (7.17 MB), so Wayland window decorations stay as they were. Binary size is otherwise unchanged from the figures above; the biggest remaining items are wgpu and the bundled fonts.
+
 ## Not measured yet
 
 - 120 fps on ProMotion, and any frame rate on a real GPU: the container has none.
