@@ -10,7 +10,11 @@ mod dbus;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+mod linux_appmenu;
+#[cfg(target_os = "linux")]
 pub(crate) mod linux_atspi;
+#[cfg(target_os = "linux")]
+mod linux_notify;
 #[cfg(target_os = "linux")]
 mod linux_tray;
 #[cfg(target_os = "macos")]
@@ -29,6 +33,8 @@ mod windows_access;
 mod wl_clip;
 #[cfg(target_os = "linux")]
 mod x11_clip;
+#[cfg(target_os = "linux")]
+mod x11_hotkey;
 
 #[cfg(target_os = "linux")]
 use linux as backend;
@@ -138,7 +144,9 @@ pub(crate) fn unavailable(what: &str) -> PlatformError {
 }
 
 /// Native menu bar / tray entry points; each backend implements these.
-pub(crate) use backend::{clear_tray, set_menu, set_tray};
+pub(crate) use backend::{
+    clear_tray, file_dialog, notify, register_hotkey, set_menu, set_tray, unregister_hotkeys,
+};
 #[cfg(target_os = "linux")]
 pub(crate) use linux::watch_theme;
 #[cfg(windows)]
@@ -198,3 +206,7 @@ pub(crate) fn new_access_adapter(
         backend::new_access_adapter(window, key, sink)
     }
 }
+
+/// Serialises the tests that talk to a D-Bus session and read the shared pending-event queue.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) static BUS_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());

@@ -13,6 +13,7 @@ pub struct Pages {
     save: Option<std::path::PathBuf>,
     keys: Vec<(String, Option<String>, Act<()>)>,
     undo: bool,
+    desktop: crate::Desktop<()>,
 }
 
 /// Start a multi-page app: `app("Admin").page("People", || ..).page("Settings", || ..).run()`.
@@ -24,6 +25,7 @@ pub fn app(title: &str) -> Pages {
         save: None,
         keys: Vec::new(),
         undo: false,
+        desktop: crate::Desktop::default(),
     }
 }
 
@@ -87,6 +89,31 @@ impl Pages {
         self.keys.push((keys.into(), label.map(Into::into), act));
         self
     }
+    /// Add a menu to the menu bar: `.menu("File", |m| m.item("Export", "mod+e", || export()))`.
+    /// Items run a plain closure, as [`shortcut`](Self::shortcut) does.
+    pub fn menu(
+        mut self,
+        title: &str,
+        build: impl FnOnce(crate::MenuBuilder<()>) -> crate::MenuBuilder<()>,
+    ) -> Self {
+        self.desktop.menu(title, build);
+        self
+    }
+    /// Put an icon in the system tray with a context menu, as [`Sketch::tray`](crate::Sketch::tray).
+    pub fn tray(
+        mut self,
+        tooltip: &str,
+        build: impl FnOnce(crate::TrayBuilder<()>) -> crate::TrayBuilder<()>,
+    ) -> Self {
+        self.desktop.tray(tooltip, build);
+        self
+    }
+    /// Run `f` when `keys` is pressed anywhere on the desktop, as
+    /// [`Sketch::global_hotkey`](crate::Sketch::global_hotkey).
+    pub fn global_hotkey(mut self, keys: &str, f: impl Fn() + Send + Sync + 'static) -> Self {
+        self.desktop.global_hotkey(keys, move |_: &mut ()| f());
+        self
+    }
     /// Undo and redo for every change to a [`store`] (`mod+z`, `mod+shift+z`, and the Undo
     /// button of [`toast(..).undo()`](crate::toast)). The theme and the open page are not undone.
     pub fn undoable(mut self) -> Self {
@@ -141,7 +168,12 @@ impl App for Pages {
                     None => h,
                 }
             })
+            .chain(self.desktop.hotkeys())
             .collect()
+    }
+
+    fn desktop(&self) -> crate::DesktopSpec {
+        self.desktop.spec()
     }
 
     fn snapshot(&self) -> Option<crate::keys::Snap> {
