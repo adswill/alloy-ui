@@ -226,3 +226,42 @@ fn number_and_date_inputs_light() {
     );
     check("inputs_light", &img);
 }
+
+#[test]
+fn gradient_and_elevation_light() {
+    let build = |ui: &Ui| {
+        let t = ui.theme();
+        let p = t.palette.clone();
+        let card = |c: Container<()>| {
+            c.padding(alloy_ui_core::style::Padding::all(24.0))
+                .width(Length::Fixed(150.0))
+                .height(Length::Fixed(80.0))
+                .radius(t.radii.large)
+                .into_element()
+        };
+        page(
+            ui,
+            vec![Row::new(vec![
+                card(
+                    Container::new(Space::fixed(1.0, 1.0).into_element()).gradient(
+                        p.accent,
+                        p.accent_hover.with_alpha(0.55),
+                        90.0,
+                    ),
+                ),
+                card(
+                    Container::new(Space::fixed(1.0, 1.0).into_element())
+                        .background(p.surface_raised)
+                        .border(p.border, 1.0)
+                        .shadow(t.elevation.medium),
+                ),
+            ])
+            .spacing(24.0)
+            .into_element()],
+        )
+    };
+    check(
+        "gradient_elevation_light",
+        &render(Theme::light(), build, |_| {}),
+    );
+}

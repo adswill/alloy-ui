@@ -53,3 +53,11 @@ Found by rendering the admin, status, notes and wizard apps and critiquing them 
 - **Browse detail**: checkboxes (Pinned) move into the footer beside the count and Delete instead of floating under the editor; both panes use 16 px padding so their tops line up.
 - **Placeholder text** is 70% of secondary text so a hint is never mistaken for a value.
 - **Command palette** (`mod+k`): a 560 px panel 14% from the top over a light 14% scrim, raised surface, 1 px border, `elevation.high`. One search row, up to eight results with the selected row on the selection tint, shortcut keys right-aligned and dim (`Ctrl+S`, or `⌘S` on macOS). No icons, no animation, no category headers. It lists every shortcut, every `.command(label, f)`, and for `app()` apps "Go to <page>" and the theme switch. Arrow keys, Enter, Escape and mouse all work; it swallows other input while open.
+
+## Motion (visual pass 4, 2026-11-21)
+Renders: `gallery/motion_rest.png`, `motion_midflight.png` (50 ms into a transition), `motion_after.png`, `motion_dark.png`; demo is `crates/alloy/examples/motion.rs` (`--headless x.png --click Details --advance 50`).
+
+- Meaningful change only: details reveal, switch slide, value follow, press, focus. Nothing loops and nothing pulses.
+- `reveal(show, view)` fade, 6 px rise and height collapse; `fade`; `animated(x)` eased value; `spring(x)` critically damped spring. All respect reduced motion.
+- Button: press fades in 45 ms and out 120 ms, label presses 1 px, focus ring fades in. Slider thumb swells on a spring.
+- Depth: `.elevated()` (medium shadow, with a real 1 px border) for the one card that is above the page; `.gradient(..)` only as a tonal shift between two stops of the accent or surface, never hue-shifting.
