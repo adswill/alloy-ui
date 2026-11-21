@@ -29,11 +29,7 @@ impl Sel {
 /// Sort by position and merge selections that overlap or touch. Returns where the selection
 /// that held `keep` (an index into the input) ended up.
 pub(crate) fn normalize(v: &mut Vec<Sel>, keep: usize) -> usize {
-    let mut tagged: Vec<(Sel, bool)> = v
-        .iter()
-        .enumerate()
-        .map(|(i, s)| (*s, i == keep))
-        .collect();
+    let mut tagged: Vec<(Sel, bool)> = v.iter().enumerate().map(|(i, s)| (*s, i == keep)).collect();
     tagged.sort_by_key(|(s, _)| (s.range().0, s.range().1));
     let mut out: Vec<(Sel, bool)> = Vec::with_capacity(tagged.len());
     for (s, k) in tagged {
@@ -62,7 +58,10 @@ pub(crate) fn normalize(v: &mut Vec<Sel>, keep: usize) -> usize {
         }
         out.push((s, k));
     }
-    let at = out.iter().position(|x| x.1).unwrap_or(out.len().saturating_sub(1));
+    let at = out
+        .iter()
+        .position(|x| x.1)
+        .unwrap_or(out.len().saturating_sub(1));
     *v = out.into_iter().map(|x| x.0).collect();
     at
 }
@@ -406,7 +405,10 @@ pub(crate) fn match_bracket(text: &str, at: usize) -> Option<usize> {
 /// The bracket pair to highlight for a caret at byte offset `caret`: the bracket just before
 /// it, else the one just after, with its match. `Err` holds an unmatched bracket's offset.
 pub(crate) fn bracket_pair(text: &str, caret: usize) -> Option<Result<(usize, usize), usize>> {
-    let before = text[..caret].chars().next_back().map(|c| caret - c.len_utf8());
+    let before = text[..caret]
+        .chars()
+        .next_back()
+        .map(|c| caret - c.len_utf8());
     let candidates = [before, Some(caret)];
     for at in candidates.into_iter().flatten() {
         if at >= text.len() {
@@ -452,7 +454,16 @@ mod tests {
 
     #[test]
     fn selections_are_replaced_and_newline_keeps_indent() {
-        let sels = vec![Sel { anchor: 0, caret: 3 }, Sel { anchor: 4, caret: 7 }];
+        let sels = vec![
+            Sel {
+                anchor: 0,
+                caret: 3,
+            },
+            Sel {
+                anchor: 4,
+                caret: 7,
+            },
+        ];
         let (t, _) = insert("foo bar baz", &sels, "X");
         assert_eq!(t, "X X baz");
         let (t, c) = newline("  a b", &carets(&[3]));
@@ -480,7 +491,10 @@ mod tests {
         assert!(ch);
         assert_eq!(c[0].range(), (0, 3));
         let (c, _) = add_next_occurrence(t, &c, 0);
-        assert_eq!(c.iter().map(|s| s.range()).collect::<Vec<_>>(), [(0, 3), (8, 11)]);
+        assert_eq!(
+            c.iter().map(|s| s.range()).collect::<Vec<_>>(),
+            [(0, 3), (8, 11)]
+        );
         let all = select_all_occurrences(t, &carets(&[1]), 0);
         assert_eq!(all.len(), 3);
     }
@@ -503,12 +517,24 @@ mod tests {
     #[test]
     fn normalize_merges_overlaps_but_not_touching_selections() {
         let mut v = vec![
-            Sel { anchor: 0, caret: 3 },
-            Sel { anchor: 2, caret: 5 },
-            Sel { anchor: 5, caret: 7 },
+            Sel {
+                anchor: 0,
+                caret: 3,
+            },
+            Sel {
+                anchor: 2,
+                caret: 5,
+            },
+            Sel {
+                anchor: 5,
+                caret: 7,
+            },
             Sel::at(7),
         ];
         normalize(&mut v, 0);
-        assert_eq!(v.iter().map(|s| s.range()).collect::<Vec<_>>(), [(0, 5), (5, 7)]);
+        assert_eq!(
+            v.iter().map(|s| s.range()).collect::<Vec<_>>(),
+            [(0, 5), (5, 7)]
+        );
     }
 }

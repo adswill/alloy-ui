@@ -30,7 +30,7 @@ const K_DRAG: u64 = 0x_41c4_0001 << 20;
 /// `on_change`; `RichText::to_markdown` and `from_markdown` save and load it.
 ///
 /// Select text and use the toolbar or `Ctrl/Cmd+B`, `I`, `U`, `E` (code) and `K` (link).
-/// Typing `- `, `1. `, `# `, `## ` or `> ` at the start of a paragraph turns it into a list item,
+/// Typing `- `, `1. `, `# `..`###### `, `` ``` `` or `> ` at the start of a paragraph turns it into a list item,
 /// heading or quote; Enter on an empty item ends the list. Ctrl/Cmd-click opens a link
 /// (a plain click when the editor is read-only).
 pub struct RichEditor<M> {
@@ -40,6 +40,7 @@ pub struct RichEditor<M> {
     placeholder: String,
     on_change: Option<Rc<dyn Fn(RichText) -> M>>,
     on_link: Option<Rc<dyn Fn(String) -> M>>,
+    images: Option<Rc<dyn Fn(&str) -> Option<u64>>>,
     toolbar: bool,
     width: Length,
     height: Length,
@@ -55,6 +56,7 @@ impl<M: 'static> RichEditor<M> {
             placeholder: String::new(),
             on_change: None,
             on_link: None,
+            images: None,
             toolbar: true,
             width: Length::Fill(1),
             height: Length::Fill(1),
@@ -63,6 +65,12 @@ impl<M: 'static> RichEditor<M> {
     /// Called with the new document on every edit; without it the editor is read-only.
     pub fn on_change(mut self, f: impl Fn(RichText) -> M + 'static) -> Self {
         self.on_change = Some(Rc::new(f));
+        self
+    }
+    /// Resolve an image block's `src` to a renderer image id (as registered with the window).
+    /// Without it, or when it returns `None`, an image block shows a labelled placeholder.
+    pub fn images(mut self, f: impl Fn(&str) -> Option<u64> + 'static) -> Self {
+        self.images = Some(Rc::new(f));
         self
     }
     /// Called with the target of an opened link.
@@ -164,7 +172,12 @@ impl<M: 'static> RichEditor<M> {
             ],
             &[(Link, 44.0)],
             &[(Head(1), 32.0), (Head(2), 32.0)],
-            &[(Bullet, 30.0), (Numbered, 30.0), (Quote, 30.0)],
+            &[
+                (Bullet, 30.0),
+                (Numbered, 30.0),
+                (Quote, 30.0),
+                (CodeBlock, 30.0),
+            ],
         ];
         for (gi, g) in groups.iter().enumerate() {
             if gi > 0 {
@@ -220,6 +233,7 @@ impl<M: 'static> RichEditor<M> {
             Tool::Bullet => doc.kind_of(a, z) == Some(BlockKind::Bullet),
             Tool::Numbered => doc.kind_of(a, z) == Some(BlockKind::Numbered),
             Tool::Quote => doc.kind_of(a, z) == Some(BlockKind::Quote),
+            Tool::CodeBlock => doc.kind_of(a, z) == Some(BlockKind::Code),
         }
     }
 
@@ -303,6 +317,7 @@ impl<M: 'static> RichEditor<M> {
             Tool::Bullet => d.toggle_kind(a, z, BlockKind::Bullet),
             Tool::Numbered => d.toggle_kind(a, z, BlockKind::Numbered),
             Tool::Quote => d.toggle_kind(a, z, BlockKind::Quote),
+            Tool::CodeBlock => d.toggle_kind(a, z, BlockKind::Code),
             Tool::Link => {
                 // Open the link bar on the selection, or on the link under the caret.
                 let (la, lz, url) = match self.doc.link_at(a) {
@@ -806,6 +821,46 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
                 ));
             }
         };
+        // Code blocks sit on one panel per run of consecutive code lines.
+        let cw = self.content_w(&b);
+        let mut panel: Option<(f32, f32)> = None;
+        let panel_color = mix(p.surface_raised, p.border, 0.3);
+        for line in l.lines.iter().chain(std::iter::once(&Line {
+            block: usize::MAX,
+            y: 0.0,
+            h: 0.0,
+            x0: 0.0,
+            start: 0,
+            end: 0,
+            frags: Vec::new(),
+            first: false,
+            scale: 1.0,
+            weight: 400,
+            mono: false,
+        })) {
+            if line.mono {
+                match &mut panel {
+                    Some(q) => q.1 = line.y + line.h,
+                    None => panel = Some((line.y, line.y + line.h)),
+                }
+            } else if let Some((top, bot)) = panel.take() {
+                if bot >= off - 40.0 && top <= off + view.size.height + 40.0 {
+                    out.push(DrawCommand::Quad {
+                        bounds: Rectangle::new(
+                            Point::new(o.x - 4.0, o.y + top - 7.0),
+                            Size::new(cw + 8.0, bot - top + 14.0),
+                        ),
+                        fill: panel_color,
+                        radius: t.radii.small + 2.0,
+                        border: Some(Border {
+                            color: p.border,
+                            width: 1.0,
+                        }),
+                        shadow: None,
+                    });
+                }
+            }
+        }
         let vis_lo = off - 40.0;
         let vis_hi = off + view.size.height + 40.0;
         for line in &l.lines {
@@ -818,6 +873,59 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
                 match &mut quote {
                     Some(q) => q.2 = line.y + line.h,
                     None => quote = Some((line.block, line.y, line.y + line.h)),
+                }
+            }
+            if line.first && self.doc.blocks[line.block].kind == BlockKind::Image {
+                let top = line.y - IMG_H - 6.0;
+                if top + IMG_H >= vis_lo && top <= vis_hi {
+                    let card = Rectangle::new(Point::new(o.x, o.y + top), Size::new(cw, IMG_H));
+                    let src = self.doc.blocks[line.block].src.clone().unwrap_or_default();
+                    let id = self.images.as_ref().and_then(|f| f(&src));
+                    match id {
+                        Some(id) => out.push(DrawCommand::Image { bounds: card, id }),
+                        None => {
+                            out.push(quad(card, panel_color, t.radii.small + 2.0));
+                            // A small landscape glyph and the source name.
+                            let (cx, cy) = (card.origin.x + cw / 2.0, card.origin.y + IMG_H / 2.0);
+                            out.push(quad(
+                                Rectangle::new(
+                                    Point::new(cx - 18.0, cy - 22.0),
+                                    Size::new(36.0, 26.0),
+                                ),
+                                p.border_strong.with_alpha(0.55),
+                                4.0,
+                            ));
+                            out.push(quad(
+                                Rectangle::new(
+                                    Point::new(cx + 4.0, cy - 17.0),
+                                    Size::new(7.0, 7.0),
+                                ),
+                                p.surface_raised,
+                                3.5,
+                            ));
+                            let label = if src.is_empty() {
+                                "image".to_string()
+                            } else {
+                                src
+                            };
+                            let w = self.ui.metrics().width_styled(
+                                &label,
+                                l.base * 0.85,
+                                400,
+                                FontFamily::Mono,
+                            );
+                            out.push(DrawCommand::Text {
+                                family: FontFamily::Mono,
+                                weight: 400,
+                                line_height: None,
+                                origin: Point::new(cx - w.min(cw - 16.0) / 2.0, cy + 12.0),
+                                content: label,
+                                size: l.base * 0.85,
+                                color: p.text_secondary,
+                                max_width: Some(cw - 16.0),
+                            });
+                        }
+                    }
                 }
             }
             if line.y + line.h < vis_lo || line.y > vis_hi {
@@ -845,7 +953,7 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
             for f in &line.frags {
                 let (size, weight, family) = frag_style(f.marks, line, l.base);
                 let fx = x0 + f.x;
-                if f.marks.code {
+                if f.marks.code && !line.mono {
                     out.push(quad(
                         Rectangle::new(
                             Point::new(fx - 2.0, y + (line.h - size * 1.45) / 2.0),
@@ -857,7 +965,10 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
                 }
                 let ink = if f.link {
                     p.accent
-                } else if self.doc.blocks[line.block].kind == BlockKind::Quote {
+                } else if matches!(
+                    self.doc.blocks[line.block].kind,
+                    BlockKind::Quote | BlockKind::Image
+                ) {
                     p.text_secondary
                 } else {
                     p.text
@@ -1146,6 +1257,7 @@ enum Tool {
     Bullet,
     Numbered,
     Quote,
+    CodeBlock,
 }
 impl Tool {
     fn mark(self) -> Option<Mark> {
@@ -1246,6 +1358,23 @@ fn draw_tool_glyph(ui: &Ui, tool: Tool, r: Rectangle, ink: Color, out: &mut Draw
                 });
             }
         }
+        Tool::CodeBlock => {
+            for (i, w) in [6.0f32, 10.0, 4.0].iter().enumerate() {
+                out.push(DrawCommand::Quad {
+                    bounds: Rectangle::new(
+                        Point::new(
+                            cx - 7.0 + (i == 1) as u8 as f32 * 3.0,
+                            cy - 5.5 + i as f32 * 5.5,
+                        ),
+                        Size::new(*w, 1.5),
+                    ),
+                    fill: ink,
+                    radius: 0.75,
+                    border: None,
+                    shadow: None,
+                });
+            }
+        }
         Tool::Quote => {
             out.push(DrawCommand::Quad {
                 bounds: Rectangle::new(Point::new(cx - 6.0, cy - 7.0), Size::new(2.5, 14.0)),
@@ -1279,7 +1408,7 @@ impl<M: 'static> RichEditor<M> {
         }
         let (bi, off) = self.doc.at(a);
         let blk = &self.doc.blocks[bi];
-        if blk.kind != BlockKind::Paragraph || off == 0 || off > 4 {
+        if blk.kind != BlockKind::Paragraph || off == 0 || off > 6 {
             return false;
         }
         let before: String = blk.text().chars().take(off).collect();
@@ -1288,6 +1417,10 @@ impl<M: 'static> RichEditor<M> {
             "#" => BlockKind::Heading(1),
             "##" => BlockKind::Heading(2),
             "###" => BlockKind::Heading(3),
+            "####" => BlockKind::Heading(4),
+            "#####" => BlockKind::Heading(5),
+            "######" => BlockKind::Heading(6),
+            "```" => BlockKind::Code,
             ">" => BlockKind::Quote,
             s if s.ends_with('.')
                 && s.len() > 1
@@ -1312,6 +1445,9 @@ impl<M: 'static> RichEditor<M> {
 
 const INDENT: f32 = 28.0;
 const QUOTE_INDENT: f32 = 18.0;
+const CODE_PAD: f32 = 12.0;
+/// Height of an image card above its caption.
+const IMG_H: f32 = 150.0;
 
 /// A run of text on a line with one style.
 struct Frag {
@@ -1335,6 +1471,8 @@ struct Line {
     /// Heading size multiplier and weight.
     scale: f32,
     weight: u16,
+    /// Code block line: monospace, no per-run chips.
+    mono: bool,
 }
 impl Line {
     fn end_incl(&self) -> usize {
@@ -1361,7 +1499,7 @@ fn frag_style(marks: Marks, line: &Line, base: f32) -> (f32, u16, FontFamily) {
     } else if marks.italic && weight < 500 {
         weight = 500; // stands in for italic until a bundled italic face exists
     }
-    if marks.code {
+    if marks.code || line.mono {
         (
             size * 0.92,
             if marks.bold { 700 } else { 400 },
@@ -1404,7 +1542,9 @@ impl Laid {
             let (scale, weight, lscale) = match b.kind {
                 BlockKind::Heading(1) => (1.8, 700, 1.3),
                 BlockKind::Heading(2) => (1.4, 700, 1.35),
-                BlockKind::Heading(_) => (1.18, 650, 1.4),
+                BlockKind::Heading(3) => (1.18, 650, 1.4),
+                BlockKind::Heading(_) => (1.06, 650, 1.4),
+                BlockKind::Image => (0.88, 400, 1.0),
                 _ => (1.0, 400, 1.0),
             };
             let h = if lscale == 1.0 {
@@ -1416,6 +1556,9 @@ impl Laid {
                 (None, _) => 0.0,
                 (Some(BlockKind::Bullet), BlockKind::Bullet)
                 | (Some(BlockKind::Numbered), BlockKind::Numbered) => 3.0,
+                (Some(BlockKind::Code), BlockKind::Code) => 0.0,
+                (_, BlockKind::Code) | (Some(BlockKind::Code), _) => 14.0,
+                (_, BlockKind::Image) => IMG_H + 12.0,
                 (_, BlockKind::Heading(_)) => 18.0,
                 (Some(BlockKind::Heading(_)), _) => 6.0,
                 _ => 10.0,
@@ -1424,9 +1567,11 @@ impl Laid {
             let x0 = match b.kind {
                 BlockKind::Bullet | BlockKind::Numbered => INDENT,
                 BlockKind::Quote => QUOTE_INDENT,
+                BlockKind::Code => CODE_PAD,
                 _ => 0.0,
             };
-            let avail = (width - x0).max(40.0);
+            let mono = b.kind == BlockKind::Code;
+            let avail = (width - x0 - if mono { CODE_PAD } else { 0.0 }).max(40.0);
             let mut line = Line {
                 block: bi,
                 y,
@@ -1438,6 +1583,7 @@ impl Laid {
                 first: true,
                 scale,
                 weight,
+                mono,
             };
             let mut x = 0.0f32;
             let mut pos = flat;
@@ -1451,6 +1597,7 @@ impl Laid {
                 first: false,
                 scale,
                 weight,
+                mono,
                 frags: Vec::new(),
             };
             for r in &b.runs {
@@ -1477,6 +1624,7 @@ impl Laid {
                             first: false,
                             scale,
                             weight,
+                            mono,
                         };
                         std::mem::swap(&mut next, &mut line);
                         next.end = pos;
@@ -1504,6 +1652,7 @@ impl Laid {
                                     first: false,
                                     scale,
                                     weight,
+                                    mono,
                                 };
                                 std::mem::swap(&mut next, &mut line);
                                 next.end = pos;

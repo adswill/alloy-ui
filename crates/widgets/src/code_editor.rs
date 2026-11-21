@@ -257,8 +257,9 @@ impl<M: 'static> CodeEditor<M> {
         if new != self.value {
             // Typing one character at each of n carets is one burst for undo, like typing one.
             let (now, n) = (self.ui.now(), mc.extras.len() + 1);
-            self.ui
-                .with_history(self.id, |h| h.record_carets(&self.value, caret0, &new, now, n));
+            self.ui.with_history(self.id, |h| {
+                h.record_carets(&self.value, caret0, &new, now, n)
+            });
             if let Some(f) = &self.on_input {
                 out.push(f(new));
             }
@@ -303,7 +304,9 @@ impl<M: 'static> CodeEditor<M> {
             Event::TextInput(s) if editable && !mc.extras.is_empty() => {
                 let clean = sanitize(s, true);
                 if !clean.is_empty() {
-                    self.multi_edit(mc, e, caret0, out, |t, sels| code_ops::insert(t, sels, &clean));
+                    self.multi_edit(mc, e, caret0, out, |t, sels| {
+                        code_ops::insert(t, sels, &clean)
+                    });
                 }
                 Some(true)
             }
@@ -315,11 +318,16 @@ impl<M: 'static> CodeEditor<M> {
                 match k {
                     Key::Character(c) if cmd && m.shift && c.eq_ignore_ascii_case("d") => {
                         let (sels, keep) = Self::all_sels(e, mc);
-                        let (mut next, changed) = code_ops::add_next_occurrence(&self.value, &sels, keep);
+                        let (mut next, changed) =
+                            code_ops::add_next_occurrence(&self.value, &sels, keep);
                         if changed {
                             let newest = next.len() - 1;
                             // A first press only selects the word: keep it primary.
-                            let k = if next.len() == sels.len() { keep } else { newest };
+                            let k = if next.len() == sels.len() {
+                                keep
+                            } else {
+                                newest
+                            };
                             self.set_sels(e, mc, std::mem::take(&mut next), k);
                         }
                         return Some(true);
@@ -333,7 +341,8 @@ impl<M: 'static> CodeEditor<M> {
                     }
                     Key::Named(n) if add_caret && (n == "ArrowUp" || n == "ArrowDown") => {
                         let (sels, _) = Self::all_sels(e, mc);
-                        let next = code_ops::add_caret_vertical(&self.value, &sels, n == "ArrowDown");
+                        let next =
+                            code_ops::add_caret_vertical(&self.value, &sels, n == "ArrowDown");
                         let keep = next.len().saturating_sub(1);
                         // The new caret is the one that was not there before.
                         let pos = next.iter().position(|s| !sels.contains(s)).unwrap_or(keep);
@@ -389,7 +398,9 @@ impl<M: 'static> CodeEditor<M> {
                             None => None,
                         }
                     }
-                    Key::Character(c) if cmd && !m.alt && c.eq_ignore_ascii_case("v") && editable => {
+                    Key::Character(c)
+                        if cmd && !m.alt && c.eq_ignore_ascii_case("v") && editable =>
+                    {
                         if let Some(text) = self.ui.clipboard().get() {
                             let text = sanitize(&text, true);
                             let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
@@ -399,7 +410,9 @@ impl<M: 'static> CodeEditor<M> {
                                     code_ops::replace_all(t, s, &|i, _| lines[i].clone())
                                 });
                             } else {
-                                self.multi_edit(mc, e, caret0, out, |t, s| code_ops::insert(t, s, &text));
+                                self.multi_edit(mc, e, caret0, out, |t, s| {
+                                    code_ops::insert(t, s, &text)
+                                });
                             }
                         }
                         Some(true)
@@ -1370,7 +1383,10 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
             let line = doc.line(&self.value, cl);
             let caret_byte = doc.starts[cl.min(doc.len() - 1)].0 + byte_col(line, cc);
             let mark = |byte: usize, good: bool, out: &mut DrawList| {
-                let l = doc.starts.partition_point(|s| s.0 <= byte).saturating_sub(1);
+                let l = doc
+                    .starts
+                    .partition_point(|s| s.0 <= byte)
+                    .saturating_sub(1);
                 if l < first || l >= last {
                     return;
                 }

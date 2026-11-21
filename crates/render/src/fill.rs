@@ -95,7 +95,11 @@ pub(crate) fn resolve(contours: &[Vec<P>], rule: FillRule) -> Option<Vec<Vec<P>>
         (a.0.min(b.0), a.0.max(b.0), a.1.min(b.1), a.1.max(b.1))
     };
     let mut order: Vec<usize> = (0..edges.len()).collect();
-    order.sort_by(|&i, &j| bbox(&edges[i], &nodes).0.total_cmp(&bbox(&edges[j], &nodes).0));
+    order.sort_by(|&i, &j| {
+        bbox(&edges[i], &nodes)
+            .0
+            .total_cmp(&bbox(&edges[j], &nodes).0)
+    });
     for oi in 0..order.len() {
         let i = order[oi];
         let bi = bbox(&edges[i], &nodes);
@@ -148,9 +152,12 @@ pub(crate) fn resolve(contours: &[Vec<P>], rule: FillRule) -> Option<Vec<Vec<P>>
         }
     }
     // One contour that crosses nothing is already a simple outline: keep it exactly as given.
-    if contours.iter().filter(|c| c.len() >= 3).count() == 1 && cuts.iter().all(|c| c.is_empty())
-    {
-        let mut c = contours.iter().find(|c| c.len() >= 3).cloned().unwrap_or_default();
+    if contours.iter().filter(|c| c.len() >= 3).count() == 1 && cuts.iter().all(|c| c.is_empty()) {
+        let mut c = contours
+            .iter()
+            .find(|c| c.len() >= 3)
+            .cloned()
+            .unwrap_or_default();
         c.dedup();
         if c.len() >= 3 && c.first() == c.last() {
             c.pop();
@@ -168,7 +175,11 @@ pub(crate) fn resolve(contours: &[Vec<P>], rule: FillRule) -> Option<Vec<Vec<P>>
         let mut prev = a;
         for (_, n) in c.into_iter().chain(std::iter::once((1.0, b))) {
             if n != prev {
-                let (lo, hi, s) = if prev < n { (prev, n, 1) } else { (n, prev, -1) };
+                let (lo, hi, s) = if prev < n {
+                    (prev, n, 1)
+                } else {
+                    (n, prev, -1)
+                };
                 *net.entry((lo, hi)).or_insert(0) += s;
                 prev = n;
             }
@@ -588,8 +599,16 @@ mod tests {
         let nz = resolve(&[star.clone()], FillRule::NonZero).unwrap();
         let eo = resolve(&[star], FillRule::EvenOdd).unwrap();
         // Non-zero fills the pentagon in the middle too; even-odd leaves it empty.
-        assert!(total(&nz) > total(&eo) + 100.0, "{} {}", total(&nz), total(&eo));
-        assert!(eo.iter().all(|l| area(l) > 0.0), "even-odd star is five tips");
+        assert!(
+            total(&nz) > total(&eo) + 100.0,
+            "{} {}",
+            total(&nz),
+            total(&eo)
+        );
+        assert!(
+            eo.iter().all(|l| area(l) > 0.0),
+            "even-odd star is five tips"
+        );
         assert_eq!(eo.len(), 5);
         assert_eq!(nz.len(), 1);
     }

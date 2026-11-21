@@ -291,7 +291,11 @@ fn tri_prim(a: [f32; 2], b: [f32; 2], c: [f32; 2], flags: u8, color: Color, clip
 /// Where the edge `p -> q` crosses `t == bound`. The endpoints are ordered first so the two
 /// triangles (and two bands) that share the edge compute bit-identical points.
 fn crossing(p: [f32; 2], q: [f32; 2], t: &dyn Fn([f32; 2]) -> f32, bound: f32) -> [f32; 2] {
-    let (p, q) = if (p[0], p[1]) <= (q[0], q[1]) { (p, q) } else { (q, p) };
+    let (p, q) = if (p[0], p[1]) <= (q[0], q[1]) {
+        (p, q)
+    } else {
+        (q, p)
+    };
     let (tp, tq) = (t(p), t(q));
     let k = ((bound - tp) / (tq - tp)).clamp(0.0, 1.0);
     [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k]
@@ -384,7 +388,10 @@ fn lower_path(
             }
         }
         PathPaint::Linear { from, to, stops } => {
-            let (a, b) = ([from.x * scale, from.y * scale], [to.x * scale, to.y * scale]);
+            let (a, b) = (
+                [from.x * scale, from.y * scale],
+                [to.x * scale, to.y * scale],
+            );
             let d = [b[0] - a[0], b[1] - a[1]];
             let len2 = (d[0] * d[0] + d[1] * d[1]).max(1e-6);
             let t = |p: [f32; 2]| ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1]) / len2;
@@ -416,7 +423,14 @@ fn lower_path(
                         let f = u8::from(j == 1 && piece[0].1)
                             | u8::from(piece[j].1) << 1
                             | u8::from(j + 1 == m - 1 && piece[m - 1].1) << 2;
-                        out.push(tri_prim(piece[0].0, piece[j].0, piece[j + 1].0, f, color, clip));
+                        out.push(tri_prim(
+                            piece[0].0,
+                            piece[j].0,
+                            piece[j + 1].0,
+                            f,
+                            color,
+                            clip,
+                        ));
                     }
                 }
             }
@@ -725,7 +739,10 @@ mod path_tests {
                 sum += f64::from(tri_area(&[b.points[i], b.points[j], b.points[k]]));
             }
         }
-        assert!((sum - expect).abs() < expect * 1e-3, "triangles cover {sum}, want {expect}");
+        assert!(
+            (sum - expect).abs() < expect * 1e-3,
+            "triangles cover {sum}, want {expect}"
+        );
     }
 
     fn star(cx: f32, cy: f32, r: f32) -> Vec<[f32; 2]> {
