@@ -107,7 +107,7 @@ pub fn run(argv: &[String]) -> Result<()> {
             } else {
                 a.formats.clone()
             };
-            let icons = IconSet::load(&p.icons)?;
+            let icons = IconSet::load_or_default(&p.icons)?;
             let caps = p.load_capabilities()?;
             if let Some((set, _)) = &caps {
                 eprintln!("  capabilities: {}", describe_capabilities(set));

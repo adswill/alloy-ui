@@ -47,6 +47,11 @@ const ICNS_TYPES: [(u32, &[u8; 4]); 7] = [
     (1024, b"ic10"),
 ];
 
+/// The Alloy logo as the default app icon (see `assets/logo` at the repo root).
+pub const ALLOY_ICON_256: &[u8] = include_bytes!("../assets/icon-256.png");
+/// 512 px variant of [`ALLOY_ICON_256`].
+pub const ALLOY_ICON_512: &[u8] = include_bytes!("../assets/icon-512.png");
+
 impl IconSet {
     /// Load icons from `paths`, dispatching on file extension.
     pub fn load(paths: &[PathBuf]) -> Result<Self> {
@@ -90,6 +95,33 @@ impl IconSet {
         }
         set.pngs.sort_by_key(|i| i.size);
         Ok(set)
+    }
+
+    /// The Alloy logo (256 and 512 px), used when an app configures no icon.
+    pub fn alloy_default() -> Self {
+        IconSet {
+            pngs: vec![
+                PngIcon {
+                    size: 256,
+                    data: ALLOY_ICON_256.to_vec(),
+                },
+                PngIcon {
+                    size: 512,
+                    data: ALLOY_ICON_512.to_vec(),
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    /// Like [`IconSet::load`], but falls back to the Alloy logo when `paths` is empty.
+    pub fn load_or_default(paths: &[PathBuf]) -> Result<Self> {
+        let set = Self::load(paths)?;
+        Ok(if set.is_empty() {
+            Self::alloy_default()
+        } else {
+            set
+        })
     }
 
     /// True when no icon of any kind was provided.
@@ -288,6 +320,16 @@ mod tests {
                 .collect(),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn default_icon_is_the_logo() {
+        let d = IconSet::load_or_default(&[]).unwrap();
+        assert_eq!(
+            d.pngs.iter().map(|i| i.size).collect::<Vec<_>>(),
+            vec![256, 512]
+        );
+        assert!(d.icns_bytes().is_some());
     }
 
     #[test]

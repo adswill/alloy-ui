@@ -1,7 +1,7 @@
 //! `alloy new`: write a starter app (a counter) that builds and bundles.
 
 use crate::error::{io, Error, Result};
-use crate::icon::rounded_square_png;
+use crate::icon::{ALLOY_ICON_256, ALLOY_ICON_512};
 use std::path::{Path, PathBuf};
 
 /// How the generated app depends on the Alloy crates.
@@ -119,13 +119,8 @@ pub fn create(parent: &Path, a: &NewApp) -> Result<PathBuf> {
     )?;
     write(&dir.join("alloy.capabilities.toml"), CAPS.as_bytes())?;
     write(&dir.join(".gitignore"), b"/target\n")?;
-    let accent = [0x2d, 0x6c, 0xdf, 0xff];
-    for size in [256, 512] {
-        write(
-            &dir.join(format!("assets/icon-{size}.png")),
-            &rounded_square_png(size, accent),
-        )?;
-    }
+    write(&dir.join("assets/icon-256.png"), ALLOY_ICON_256)?;
+    write(&dir.join("assets/icon-512.png"), ALLOY_ICON_512)?;
     Ok(dir)
 }
 

@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo/alloy-lockup-dark.svg">
+    <img alt="Alloy" src="assets/logo/alloy-lockup-light.svg" width="360">
+  </picture>
+</p>
+
 # Alloy
 
 **A native Rust desktop UI framework where an app is a state struct and a view function.** Every pixel is drawn by Alloy's own GPU renderer. No webview, no HTML, CSS or JavaScript, and no existing GUI toolkit underneath. Tauri-sized binaries and idle behaviour, an iced-style typed architecture, and a lot less code to write.
