@@ -145,7 +145,7 @@ pub trait App: Sized + 'static {
     /// Open a window of the given logical size and run until it closes.
     ///
     /// `--headless [file.png]` renders one frame to a PNG instead (after
-    /// pressing every `--click <text>`, `--chord <keys>`, `--type <text>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
+    /// pressing every `--click <text>`, `--rclick <text>`, `--hover <text>`, `--key <name>`, `--chord <keys>`, `--type <text>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
     fn run_sized(self, title: &str, width: f32, height: f32) {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(at) = args.iter().position(|a| a == "--headless") {
@@ -157,7 +157,9 @@ pub trait App: Sized + 'static {
                     "--click" => drop(h.click(&pair[1])),
                     "--chord" => drop(h.chord(&pair[1])),
                     "--type" => drop(h.type_text(&pair[1])),
+                    "--rclick" => drop(h.right_click(&pair[1])),
                     "--hover" => drop(h.hover(&pair[1])),
+                    "--key" => drop(h.key(&pair[1])),
                     "--advance" => drop(h.advance(16).advance(pair[1].parse().unwrap_or(0))),
                     _ => {}
                 }
