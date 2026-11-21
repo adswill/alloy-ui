@@ -2,14 +2,15 @@ use alloy_ui::prelude::*;
 
 choices! { enum Mode { Focus, Short = "Short break", Long = "Long break" } }
 
-#[derive(Default)]
-struct Timer {
-    mode: Mode,
-    minutes: [f32; 3],
-    elapsed: u32,
-    running: bool,
-    done: u32,
-    auto: bool,
+state! {
+    struct Timer {
+        mode: Mode,
+        minutes: [f32; 3] = [25.0, 5.0, 15.0],
+        elapsed: u32,
+        running: bool,
+        done: u32,
+        auto: bool,
+    }
 }
 
 impl Timer {
@@ -41,7 +42,7 @@ fn view(s: &Timer) -> impl View<Act<Timer>> {
     let left = s.total() - s.elapsed;
     col![
         options(at!(s.mode)).act(Timer::switch),
-        heading(format!("{:02}:{:02}", left / 60, left % 60)).display(),
+        heading(clock(left)).display(),
         progress(0.0..=s.total() as f32, s.elapsed as f32),
         row![
             button(if s.running { "Pause" } else { "Start" }).toggle(at!(s.running)),
@@ -63,11 +64,7 @@ fn view(s: &Timer) -> impl View<Act<Timer>> {
 }
 
 fn main() {
-    let timer = Timer {
-        minutes: [25.0, 5.0, 15.0],
-        ..Default::default()
-    };
-    sketch(timer, view)
+    sketch(Timer::default(), view)
         .tick_while(|t| t.running, secs(1.0), Timer::tick)
         .run_sized("Pomodoro", 480.0, 560.0)
 }

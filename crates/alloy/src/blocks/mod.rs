@@ -109,6 +109,11 @@ pub fn field<M: 'static>(label: &str, body: impl Into<Node<M>>, error: Option<&s
     field_after(label, body, error, false)
 }
 
+thread_local! {
+    /// Fields with an error drawn since the last wizard page, for `Wizard::step`.
+    pub(super) static FIELD_ERRORS: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// Like [`field`], but `submitted` forces the message to show even if the control was never
 /// touched: keep a `let tried = local(false)` and set it in the submit handler.
 #[track_caller]
@@ -118,6 +123,9 @@ pub fn field_after<M: 'static>(
     error: Option<&str>,
     submitted: bool,
 ) -> Flex<M> {
+    if error.is_some() {
+        FIELD_ERRORS.with(|n| n.set(n.get() + 1));
+    }
     let touched = cx::slot(auto_id(21), TouchState::default);
     let shown = Arc::new(AtomicBool::new(submitted));
     let body: Node<M> = Node::from(Element::new(Watch {

@@ -60,6 +60,7 @@ mod chart;
 mod chrome;
 mod collections;
 mod cx;
+mod declare;
 mod dsl;
 pub mod fs;
 mod inputs;
@@ -86,10 +87,11 @@ pub use collections::{
     Prop, TextCell,
 };
 pub use cx::{palette, set_dark, theme, ui};
+pub use declare::{clock, money};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
-    options, pick, progress, radio, radios, rule, scroll, section, slider, space, tabs, text,
-    toggle, vspace, Act, Choice, Variant,
+    options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll, section,
+    slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
 };
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
@@ -107,13 +109,16 @@ pub mod prelude {
     pub use crate::{
         app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
         custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
-        nav, number, options, palette, pick, progress, radio, radios, records, records_in,
-        resource, rule, scroll, secs, section, series, set_dark, shell, sketch, sleep, slider,
-        space, stat, stats, stepper, store, store_as, table, table_of, tabs, tally, text,
-        theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell,
-        Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View, Wizard,
+        nav, number, options, palette, pick, progress, radio, radio_list, radio_list_with, radios,
+        records, records_in, resource, rule, scroll, secs, section, series, set_dark, shell,
+        sketch, sleep, slider, space, stat, stats, stepper, store, store_as, table, table_of, tabs,
+        tally, text, theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
+        FlagCell, Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View,
+        Wizard,
     };
-    pub use crate::{at, choices, col, redo, row, toast, undo, vals, Hotkey, Shortcuts};
+    pub use crate::{
+        at, choices, clock, col, money, redo, row, state, toast, undo, vals, Hotkey, Shortcuts,
+    };
     pub use alloy_ui_core::Color;
     pub use std::time::Duration;
 }

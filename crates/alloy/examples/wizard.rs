@@ -3,49 +3,46 @@ use alloy_ui::{prelude::*, valid};
 choices! { enum Plan { Free, Pro, Team } }
 const PRICES: [u32; 3] = [0, 12, 40];
 
-#[derive(Default)]
-struct Wizard {
-    step: usize,
-    name: String,
-    email: String,
-    password: String,
-    plan: Plan,
-    yearly: bool,
-    terms: bool,
+state! {
+    struct Wizard {
+        step: usize,
+        name: String,
+        email: String,
+        password: String,
+        plan: Plan = Plan::Pro,
+        yearly: bool,
+        terms: bool,
+    }
 }
 
 fn view(s: &Wizard) -> impl View<Act<Wizard>> {
-    let short = valid::min_len(&s.password, 8);
-    let errors = (
-        valid::required(&s.name),
-        valid::email(&s.email),
-        short.as_deref(),
-    );
     let price = PRICES[s.plan as usize] * if s.yearly { 10 } else { 12 } / 12;
     wizard(at!(s.step))
-        .page(
+        .step(
             "Account",
-            errors == (None, None, None),
             col![
-                field("Name", input(at!(s.name)).hint("Ada Lovelace"), errors.0),
+                field(
+                    "Name",
+                    input(at!(s.name)).hint("Ada Lovelace"),
+                    valid::required(&s.name)
+                ),
                 field(
                     "Email",
                     input(at!(s.email)).hint("ada@example.com"),
-                    errors.1
+                    valid::email(&s.email)
                 ),
-                field("Password", input(at!(s.password)).secure(), errors.2),
+                field(
+                    "Password",
+                    input(at!(s.password)).secure(),
+                    valid::password(&s.password)
+                ),
             ],
         )
         .page(
             "Plan",
             true,
             col![
-                radios(
-                    at!(s.plan),
-                    Plan::all()
-                        .iter()
-                        .map(|&(n, p)| (format!("{n} (${}/mo)", PRICES[p as usize]), p))
-                ),
+                radio_list_with(at!(s.plan), |p| format!("${}/mo", PRICES[p as usize])),
                 check("Bill yearly (2 months free)", at!(s.yearly)),
             ],
         )
@@ -69,9 +66,5 @@ fn view(s: &Wizard) -> impl View<Act<Wizard>> {
 }
 
 fn main() {
-    let wizard = Wizard {
-        plan: Plan::Pro,
-        ..Default::default()
-    };
-    sketch(wizard, view).run_sized("Sign up", 520.0, 520.0)
+    sketch(Wizard::default(), view).run_sized("Sign up", 520.0, 520.0)
 }

@@ -259,6 +259,36 @@ where
     col
 }
 
+/// Radios for every variant of a [`Choice`] enum, bound to a field: `radio_list(at!(s.plan))`.
+#[track_caller]
+pub fn radio_list<S: 'static, T: Choice + Send + Sync>(
+    place: Place<'_, S, T>,
+) -> crate::view::Flex<Act<S>> {
+    radio_list_with(place, |_| String::new())
+}
+
+/// Like [`radio_list`], with a note after each label: `radio_list_with(at!(s.plan), price)`.
+#[track_caller]
+pub fn radio_list_with<S: 'static, T: Choice + Send + Sync>(
+    place: Place<'_, S, T>,
+    note: impl Fn(T) -> String,
+) -> crate::view::Flex<Act<S>> {
+    radios(
+        place,
+        T::all().iter().map(|&(l, v)| {
+            let n = note(v);
+            (
+                if n.is_empty() {
+                    l.to_string()
+                } else {
+                    format!("{l} ({n})")
+                },
+                v,
+            )
+        }),
+    )
+}
+
 /// A horizontal slider. See [`slider`].
 pub struct Slide<M> {
     range: (f32, f32),

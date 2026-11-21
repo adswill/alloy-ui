@@ -1,12 +1,13 @@
 use alloy_ui::{fs, prelude::*};
 use std::path::PathBuf;
 
-#[derive(Default)]
-struct Files {
-    dir: PathBuf,
-    hidden: bool,
-    query: String,
-    picked: Option<fs::Entry>,
+state! {
+    struct Files {
+        dir: PathBuf = fs::cwd(),
+        hidden: bool,
+        query: String,
+        picked: Option<fs::Entry>,
+    }
 }
 
 impl Files {
@@ -67,9 +68,5 @@ fn view(s: &Files) -> impl View<Act<Files>> {
 }
 
 fn main() {
-    let files = Files {
-        dir: fs::cwd(),
-        ..Default::default()
-    };
-    sketch(files, view).run_sized("Files", 900.0, 600.0)
+    sketch(Files::default(), view).run_sized("Files", 900.0, 600.0)
 }

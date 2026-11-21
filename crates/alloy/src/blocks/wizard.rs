@@ -17,13 +17,14 @@ pub struct Wizard<S> {
 ///
 /// ```ignore
 /// wizard(at!(s.step))
-///     .page("Account", s.account_ok(), col![field("Name", input(at!(s.name)), None)])
+///     .step("Account", col![field("Name", input(at!(s.name)), valid::required(&s.name))])
 ///     .page("Review", s.terms, col!["Check everything", check("I agree", at!(s.terms))])
 ///     .finish("Create account")
 ///     .on_finish(|s| s.submit())
 ///     .done(col![heading("All set")])
 /// ```
 pub fn wizard<S: 'static>(step: Place<'_, S, usize>) -> Wizard<S> {
+    FIELD_ERRORS.with(|n| n.set(0));
     Wizard {
         at: *step.cur,
         lens: step.lens,
@@ -37,8 +38,15 @@ pub fn wizard<S: 'static>(step: Place<'_, S, usize>) -> Wizard<S> {
 impl<S: 'static> Wizard<S> {
     /// Add a page. `valid` gates the Next button.
     pub fn page(mut self, title: &str, valid: bool, body: impl Into<Node<Act<S>>>) -> Self {
+        FIELD_ERRORS.with(|n| n.set(0));
         self.pages.push((title.into(), valid, body.into()));
         self
+    }
+    /// Add a page whose Next button stays disabled while any [`field`] in `body` shows an
+    /// error: no separate `valid` flag to keep in step with the fields.
+    pub fn step(self, title: &str, body: impl Into<Node<Act<S>>>) -> Self {
+        let ok = FIELD_ERRORS.with(|n| n.replace(0)) == 0;
+        self.page(title, ok, body)
     }
     /// Label of the last page's button (default "Finish").
     pub fn finish(mut self, label: &str) -> Self {

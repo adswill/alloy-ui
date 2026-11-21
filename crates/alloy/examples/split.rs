@@ -1,10 +1,12 @@
 use alloy_ui::prelude::*;
 
-struct Split {
-    bill: f64,
-    tip: f32,
-    people: u32,
-    round_up: bool,
+state! {
+    struct Split {
+        bill: f64 = 84.5,
+        tip: f32 = 15.0,
+        people: u32 = 2,
+        round_up: bool,
+    }
 }
 
 impl Split {
@@ -32,9 +34,9 @@ fn view(s: &Split) -> impl View<Act<Split>> {
         stepper(at!(s.people)).min(1).labelled("People"),
         check("Round each share up", at!(s.round_up)),
         col![
-            format!("Tip: ${:.2}", s.tip_amount()),
-            format!("Total: ${:.2}", s.bill + s.tip_amount()),
-            heading(format!("Each pays ${:.2}", s.share())),
+            format!("Tip: {}", money(s.tip_amount())),
+            format!("Total: {}", money(s.bill + s.tip_amount())),
+            heading(format!("Each pays {}", money(s.share()))),
         ]
         .card(),
     ]
@@ -42,11 +44,5 @@ fn view(s: &Split) -> impl View<Act<Split>> {
 }
 
 fn main() {
-    let split = Split {
-        bill: 84.5,
-        tip: 15.0,
-        people: 2,
-        round_up: false,
-    };
-    sketch(split, view).run_sized("Split the bill", 480.0, 520.0)
+    sketch(Split::default(), view).run_sized("Split the bill", 480.0, 520.0)
 }
