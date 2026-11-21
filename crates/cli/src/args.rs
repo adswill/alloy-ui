@@ -17,6 +17,8 @@ COMMANDS:
     bundle    Build, then package (default formats depend on the host OS)
     new       Create a starter app: alloy new <name> [--template <T>]
     dev       Run the app, rebuild and restart on every save (F12 = inspector)
+    test      Run cargo test; failing snapshots land as expected|actual|diff images
+              in target/alloy-diff (--update accepts the new look). Also: `cargo alloy test`
     check     Validate [package.metadata.alloy], icons and the capability config
     keygen    Create an update-signing key: alloy keygen [--out FILE]
     release   Merge bundle fragments into a signed latest.json: alloy release --dir DIR
@@ -31,7 +33,8 @@ OPTIONS:
                              `ios-sim`) build the mobile library and write the native
                              project (Gradle / XcodeGen) next to it
     --format <LIST>          Comma list of: app, dmg, deb, rpm, appimage, exe, nsis, msi
-    --out <DIR>              Output directory (default: <target>/alloy-bundle); keygen: key file
+    --out <DIR>              Output directory (default: <target>/alloy-bundle); keygen: key file;
+                             test: where failing snapshots go (default: target/alloy-diff)
     --dir <DIR>              (release) folder holding the *.update.json fragments
     --notes-file <FILE>      (release) release notes to put in latest.json
     --binary <PATH>          Bundle this prebuilt binary instead of building
@@ -40,6 +43,7 @@ OPTIONS:
     --alloy-path <DIR>       (new) depend on a local Alloy checkout instead of git
     --release                (dev) run the release build
     --once                   (dev) run once, do not watch for changes
+    --update                 (test) rewrite snapshots instead of comparing (UPDATE_GOLDEN=1)
     --skip-build             Bundle the existing release binary without building
 
 TEMPLATES (alloy new --template):
@@ -84,6 +88,8 @@ pub enum Command {
     New,
     /// `alloy dev`
     Dev,
+    /// `alloy test`
+    Test,
     /// `alloy help`
     Help,
     /// `alloy version`
@@ -121,6 +127,8 @@ pub struct Args {
     pub template: Option<String>,
     /// `--release` (dev).
     pub release: bool,
+    /// `--update` (test): accept new snapshots.
+    pub update: bool,
     /// `--once` (dev): run once instead of rebuilding when files change.
     pub once: bool,
     /// Arguments after `--`: forwarded to cargo (`build`, `bundle`) or to the
@@ -141,6 +149,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
         Some("release") => Command::Release,
         Some("new") => Command::New,
         Some("dev") => Command::Dev,
+        Some("test") => Command::Test,
         Some(other) => {
             return Err(Error::Usage(format!(
                 "unknown command `{other}`; try `alloy help`"
@@ -163,6 +172,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
         template: None,
         release: false,
         once: false,
+        update: false,
         cargo_args: vec![],
     };
     let value = |it: &mut std::slice::Iter<String>, flag: &str| -> Result<String> {
@@ -183,6 +193,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--notes-file" => a.notes_file = Some(value(&mut it, arg)?.into()),
             "--release" => a.release = true,
             "--once" => a.once = true,
+            "--update" => a.update = true,
             "--identifier" => a.identifier = Some(value(&mut it, arg)?),
             "-t" | "--template" => a.template = Some(value(&mut it, arg)?),
             "--alloy-path" => a.alloy_path = Some(value(&mut it, arg)?.into()),

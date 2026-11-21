@@ -123,6 +123,11 @@ mod records;
 mod resource;
 mod rich;
 mod router;
+/// Deliver a deep link the way the shell does at launch; for tests of launch-time links.
+#[doc(hidden)]
+pub fn router_deliver_for_tests(url: &str) -> bool {
+    router::deliver_link(url)
+}
 pub mod testing;
 mod tone;
 pub mod valid;
@@ -190,7 +195,7 @@ pub use rich::{
     badge, bar_chart, color_picker, line_chart, sparkline, swatch, tree, Badge, Chart, Picker,
     Series, Spark, Swatch, Tone, Tree, TreeItem,
 };
-pub use router::{router, Router};
+pub use router::{link_path, router, router_saved, router_saved_at, Router};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use viz::{
     calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph, object,
@@ -214,15 +219,15 @@ pub mod prelude {
     pub use crate::{
         animated, animated_with, app, attempt, badge, bar_chart, bars, browse, browse_of, button,
         caption, check, choose, color_picker, context_menu, crud, crud_app, custom, editor, every,
-        fade, field, field_after, filter_by, gap, heading, icon, input, line_chart, list, local,
-        markdown, menu_item, menu_rule, nav, number, options, palette, pick, popover, progress,
-        radio, radio_list, radio_list_with, radios, records, records_in, resource, resource_for,
-        reveal, router, rule, scroll, secs, section, series, set_accent, set_dark, set_icon_pack,
-        set_look, shell, sketch, sleep, slider, space, sparkline, split, spring, stat, stats,
-        stepper, store, store_as, swatch, tab_bar, table, table_of, tabs, tally, text,
-        theme_switch, toggle, tree, vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
-        FlagCell, Icon, IconPack, Item, Live, Local, Look, Node, Place, Record, Records, Resource,
-        Router, Stamp, TextCell, TreeItem, View, Wizard,
+        fade, field, field_after, filter_by, gap, heading, icon, input, line_chart, link_path,
+        list, local, markdown, menu_item, menu_rule, nav, number, options, palette, pick, popover,
+        progress, radio, radio_list, radio_list_with, radios, records, records_in, resource,
+        resource_for, reveal, router, router_saved, router_saved_at, rule, scroll, secs, section,
+        series, set_accent, set_dark, set_icon_pack, set_look, shell, sketch, sleep, slider, space,
+        sparkline, split, spring, stat, stats, stepper, store, store_as, swatch, tab_bar, table,
+        table_of, tabs, tally, text, theme_switch, toggle, tree, vlist, vspace, wizard, Act, App,
+        Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack, Item, Live, Local, Look, Node,
+        Place, Record, Records, Resource, Router, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
         at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,
@@ -307,6 +312,7 @@ where
             tasks: TaskRunner::new(move || {
                 task_proxy.wake();
             }),
+            keyed: HashMap::new(),
             proxy,
             start: Instant::now(),
             tick_due: Arc::new(AtomicBool::new(false)),
@@ -363,6 +369,8 @@ struct Host<A: Application> {
     /// Last published accessibility nodes per window, to resolve requests back to widgets.
     access: HashMap<WindowId, Vec<platform::access::AccessNode>>,
     tasks: TaskRunner<A::Message>,
+    /// Handles of keyed tasks, so a newer one (or `Cmd::cancel`) can stop the older.
+    keyed: HashMap<u64, alloy_ui_ipc::TaskHandle>,
     proxy: alloy_ui_platform::shell::ShellProxy,
     start: Instant,
     tick_due: Arc<AtomicBool>,
@@ -543,8 +551,22 @@ impl<A: Application + 'static> Host<A> {
             });
         }
         if let Some(rt) = self.runtime.as_mut() {
-            for fut in rt.take_futures() {
-                self.tasks.spawn(fut);
+            for req in rt.take_tasks() {
+                match req {
+                    alloy_ui_core::TaskRequest::Spawn(f) => {
+                        self.tasks.spawn(f);
+                    }
+                    alloy_ui_core::TaskRequest::Keyed(k, f) => {
+                        if let Some(old) = self.keyed.insert(k, self.tasks.spawn(f)) {
+                            old.cancel();
+                        }
+                    }
+                    alloy_ui_core::TaskRequest::Cancel(k) => {
+                        if let Some(old) = self.keyed.remove(&k) {
+                            old.cancel();
+                        }
+                    }
+                }
             }
         }
         self.sync_subscriptions();
@@ -625,8 +647,13 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         cx::register_window_ui(WindowId::MAIN, &ui);
         self.ui = Some(ui);
         let mut rt = Runtime::new(app, size, layouter);
-        for fut in rt.take_futures() {
-            self.tasks.spawn(fut);
+        for req in rt.take_tasks() {
+            match req {
+                alloy_ui_core::TaskRequest::Spawn(f) | alloy_ui_core::TaskRequest::Keyed(_, f) => {
+                    self.tasks.spawn(f);
+                }
+                alloy_ui_core::TaskRequest::Cancel(_) => {}
+            }
         }
         self.runtime = Some(rt);
         self.sync_subscriptions();

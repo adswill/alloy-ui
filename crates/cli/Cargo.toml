@@ -18,6 +18,11 @@ path = "src/lib.rs"
 name = "alloy"
 path = "src/main.rs"
 
+# `cargo alloy <command>` is the same tool, so `cargo alloy test` works once installed.
+[[bin]]
+name = "cargo-alloy"
+path = "src/main.rs"
+
 [dependencies]
 alloy-ui-ipc.workspace = true
 alloy-ui-ship = { path = "../ship", version = "0.0.1", default-features = false }

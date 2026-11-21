@@ -19,6 +19,7 @@ pub mod mobile;
 pub mod pe;
 pub mod project;
 pub mod scaffold;
+pub mod testcmd;
 
 pub use error::{Error, Result};
 
@@ -65,6 +66,7 @@ pub fn run(argv: &[String]) -> Result<()> {
             Ok(())
         }
         Command::Dev => dev::run_dev(&a),
+        Command::Test => testcmd::run_test(&a),
         Command::Keygen => {
             let path = a.out.clone().unwrap_or_else(|| "alloy-update.key".into());
             let public = bundle::release::keygen(&path)?;

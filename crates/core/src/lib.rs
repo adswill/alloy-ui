@@ -18,7 +18,7 @@ pub use event::{Event, Key, Modifiers, MouseButton};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
 pub use host::{HostConfig, HostEvent, WindowEffect};
 pub use runtime::{
-    Application, Command, Layouter, Outcome, Runtime, Subscription, SubscriptionKind, WindowId,
+    Application, Command, Layouter, Outcome, Runtime, Subscription, TaskRequest, SubscriptionKind, WindowId,
     WindowRequest, WindowSpec,
 };
 pub use widget::{Element, Layout, Widget};
