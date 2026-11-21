@@ -490,6 +490,9 @@ where
                 let id = 0x7_1c4 + i as u64;
                 Sub(Subscription::every(id, t.period, move || act.clone()))
             });
-        ticks.chain(crate::resource::pump_sub()).collect()
+        ticks
+            .chain(crate::resource::pump_sub())
+            .chain(crate::live::poll_sub())
+            .collect()
     }
 }

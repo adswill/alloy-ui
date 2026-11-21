@@ -61,6 +61,7 @@ Read this as: **about 2.9x fewer lines on everyday apps, 9 to 14x when the app i
 * **Finished-app details.** Shortcuts, a `mod+k` command palette, toasts with Undo, undo and redo, persisted state, multi-window.
 * **Looks designed.** One teal-green accent, cool neutrals, small radii, WCAG AA contrast, light and dark following the system. See [DESIGN.md](DESIGN.md).
 * **Small and quiet.** Counter binary 7.5 MB (`.deb` and `.rpm` 3.2 MB), 0% CPU when idle, first paint 87 to 106 ms under Xvfb (Linux, measured; see BENCHMARKS.md).
+* **Hot reload without a restart.** Write a screen in a small live markup file and `alloy dev` swaps it in the moment you save, keeping state. See the [dev loop](docs/guide/12-dev-loop.md). Also built in: [routing](docs/guide/14-navigation.md), cancellable async data, [text-based test helpers](docs/guide/15-testing.md) and a [guide for iced and egui users](docs/guide/16-coming-from-iced-and-egui.md).
 * **Speaks your users' language.** `t!("items", n = 3)` with plain-text catalogs, CLDR plurals, live language switching and right-to-left layouts that mirror on their own. See the [localization guide](docs/guide/13-localization.md).
 * **Errors that explain themselves.** `state!`, `at!` and `derive(Record)` mistakes are reported on the exact token, with a suggestion.
 * **Accessible.** An accessibility tree with AT-SPI on Linux.
