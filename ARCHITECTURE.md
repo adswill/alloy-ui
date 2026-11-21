@@ -17,7 +17,7 @@ Widgets never see wgpu or a window. They emit `DrawCommand`s into a `DrawList`; 
 ## Current shape
 - `alloy-ui` (facade) hosts one `Runtime` and, per window, a `WindowRenderer`; it is the only place shell, runtime, renderer, tasks and accessibility meet.
 - The runtime is multi-window: `WindowId`, `Application::view_window`, `Command::open_window`; each window keeps its own view, layout, cursor and last frame, and only changed windows are redrawn.
-- Text is shaped by one shared `TextSystem` (bundled IBM Plex Sans/Mono, system fonts as per-glyph fallback), so `TextMeasurer` sizes match drawn glyphs.
+- Text is shaped by one shared `TextSystem` (bundled Alloy Sans/Mono, renamed IBM Plex subsets, system fonts as per-glyph fallback), so `TextMeasurer` sizes match drawn glyphs.
 - Widgets publish an accessibility tree while drawing; the facade maps it to the platform's AT-SPI / NSAccessibility / UI Automation adapter and replays screen-reader requests as ordinary input.
 
 ## Frame loop
