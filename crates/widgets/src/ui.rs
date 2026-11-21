@@ -136,6 +136,10 @@ struct Inner {
     order: Vec<u64>,
     /// Same ids as `order`, for O(1) duplicate checks while registering.
     order_seen: std::collections::HashSet<u64>,
+    /// Where each focusable widget drew this frame, for arrow-key navigation.
+    rects: HashMap<u64, Rectangle>,
+    /// Focusable ids that are text fields, drawn this frame.
+    text_ids: std::collections::HashSet<u64>,
     cursor: Point,
     pressed: Option<(i32, i32)>,
     scroll: HashMap<u64, f64>,
@@ -153,6 +157,10 @@ struct Inner {
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
+    /// Topmost open modal layer drawn this frame (it gets wheel events anywhere).
+    modal: Option<u64>,
+    /// Focusable ids (tab order) of the topmost modal layer drawn this frame.
+    trap: Option<Vec<u64>>,
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
@@ -329,6 +337,8 @@ impl Ui {
             focused: None,
             order: Vec::new(),
             order_seen: Default::default(),
+            rects: Default::default(),
+            text_ids: Default::default(),
             // Off-screen until the first pointer event, so nothing starts hovered.
             cursor: Point::new(-1.0e6, -1.0e6),
             pressed: None,
@@ -347,6 +357,8 @@ impl Ui {
             overlay: Vec::new(),
             regions: Vec::new(),
             hit: None,
+            modal: None,
+            trap: None,
             clip: None,
             histories: HashMap::new(),
             slots: HashMap::new(),
@@ -417,20 +429,22 @@ impl Ui {
     }
     fn step_focus(&self, dir: i32) {
         let mut s = self.0.borrow_mut();
-        let n = s.order.len() as i32;
+        // Inside a modal layer, Tab cycles through that layer's widgets only.
+        let order = s.trap.clone().unwrap_or_else(|| s.order.clone());
+        let n = order.len() as i32;
         if n == 0 {
             return;
         }
         let cur = s
             .focused
-            .and_then(|f| s.order.iter().position(|&x| x == f))
+            .and_then(|f| order.iter().position(|&x| x == f))
             .map(|i| i as i32);
         let next = match cur {
             Some(i) => (i + dir).rem_euclid(n),
             None if dir > 0 => 0,
             None => n - 1,
         };
-        s.focused = Some(s.order[next as usize]);
+        s.focused = Some(order[next as usize]);
     }
     /// Record an accessibility node for the widget being drawn; `f` fills in
     /// the details. Focus state is filled from `Ui`.
@@ -460,13 +474,85 @@ impl Ui {
             s.order.push(id);
         }
     }
+    /// Like [`register`](Self::register), remembering where the widget is so arrow keys can
+    /// move focus to its neighbours ([`focus_toward`](Self::focus_toward)).
+    pub(crate) fn register_at(&self, id: u64, bounds: Rectangle) {
+        self.register(id);
+        self.0.borrow_mut().rects.insert(id, bounds);
+    }
+    /// Like [`register`](Self::register) for a widget that takes typed text, so
+    /// [`text_focused`](Self::text_focused) knows to leave plain keys to it.
+    pub(crate) fn register_text(&self, id: u64) {
+        self.register(id);
+        self.0.borrow_mut().text_ids.insert(id);
+    }
+    /// True while keyboard focus is in a text field (input, editor, number box): plain keys
+    /// then belong to the field, not to shortcuts or navigation.
+    pub fn text_focused(&self) -> bool {
+        let s = self.0.borrow();
+        s.focused.is_some_and(|f| s.text_ids.contains(&f))
+    }
+    /// Move focus to the nearest focusable widget in the direction `(dx, dy)` (each -1, 0 or
+    /// 1) among those drawn inside `within`, starting from the focused one. Returns whether
+    /// focus moved; at the edge it stays put.
+    pub fn focus_toward(&self, dx: i32, dy: i32, within: Rectangle) -> bool {
+        let mut s = self.0.borrow_mut();
+        let Some(cur) = s.focused.and_then(|f| s.rects.get(&f).map(|r| (f, *r))) else {
+            return false;
+        };
+        let centre = |r: &Rectangle| {
+            (
+                r.origin.x + r.size.width / 2.0,
+                r.origin.y + r.size.height / 2.0,
+            )
+        };
+        let (cx, cy) = centre(&cur.1);
+        if !within.contains(Point::new(cx, cy)) {
+            return false;
+        }
+        let mut best: Option<(f32, u64)> = None;
+        for &id in &s.order {
+            let Some(r) = s.rects.get(&id) else { continue };
+            if id == cur.0 {
+                continue;
+            }
+            let (x, y) = centre(r);
+            if !within.contains(Point::new(x, y)) {
+                continue;
+            }
+            let (along, across) = if dx != 0 {
+                ((x - cx) * dx as f32, (y - cy).abs())
+            } else {
+                ((y - cy) * dy as f32, (x - cx).abs())
+            };
+            if along < 1.0 {
+                continue;
+            }
+            // Prefer the neighbour in line with the current one over a nearer one off to the side.
+            let score = along + 2.0 * across;
+            if best.is_none_or(|(b, _)| score < b) {
+                best = Some((score, id));
+            }
+        }
+        match best {
+            Some((_, id)) => {
+                s.focused = Some(id);
+                true
+            }
+            None => false,
+        }
+    }
     pub(crate) fn begin_frame(&self) {
         let mut s = self.0.borrow_mut();
         s.frame += 1;
         s.order.clear();
         s.order_seen.clear();
+        s.rects.clear();
+        s.text_ids.clear();
         s.overlay.clear();
         s.regions.clear();
+        s.modal = None;
+        s.trap = None;
         s.a11y.clear();
     }
 
@@ -757,6 +843,60 @@ impl Ui {
             .rev()
             .find(|(_, r)| r.contains(p))
             .map(|(o, _)| *o)
+    }
+    /// Make `region` clickable for `owner` without drawing anything (call before drawing the
+    /// layer's content, so overlays inside the content are found first).
+    pub(crate) fn claim(&self, owner: u64, region: Rectangle) {
+        self.0.borrow_mut().regions.push((owner, region));
+    }
+    /// True while an overlay press is being delivered: the pointer is parked off-screen and
+    /// containers must forward the event to their children instead of testing the cursor.
+    pub(crate) fn hit_pending(&self) -> bool {
+        self.0.borrow().hit.is_some()
+    }
+    /// The overlay press in flight, without consuming it.
+    pub(crate) fn peek_hit(&self) -> Option<(u64, Point)> {
+        self.0.borrow().hit
+    }
+    /// Mark `owner` as the open modal layer; it receives wheel events wherever they land.
+    pub(crate) fn set_modal(&self, owner: u64) {
+        self.0.borrow_mut().modal = Some(owner);
+    }
+    fn modal_owner(&self) -> Option<u64> {
+        self.0.borrow().modal
+    }
+    /// Start recording which widgets register while a modal layer draws; returns a mark.
+    pub(crate) fn trap_begin(&self) -> usize {
+        self.0.borrow().order.len()
+    }
+    /// Keep Tab / Shift+Tab inside the widgets registered since `mark`.
+    pub(crate) fn trap_end(&self, mark: usize) {
+        let mut s = self.0.borrow_mut();
+        let v: Vec<u64> = s.order[mark.min(s.order.len())..].to_vec();
+        s.trap = Some(v);
+    }
+    /// Whether `id` is among the widgets Tab is confined to.
+    pub(crate) fn in_trap(&self, id: u64) -> bool {
+        self.0
+            .borrow()
+            .trap
+            .as_ref()
+            .is_some_and(|t| t.contains(&id))
+    }
+    /// Focus the first widget of the modal layer, if it has any.
+    pub(crate) fn focus_first_in_trap(&self) {
+        let mut s = self.0.borrow_mut();
+        let first = s.trap.as_ref().and_then(|t| t.first().copied());
+        if first.is_some() {
+            s.focused = first;
+        }
+    }
+    pub(crate) fn region_count(&self) -> usize {
+        self.0.borrow().regions.len()
+    }
+    /// Whether Tab is currently confined to a modal layer.
+    pub fn focus_trapped(&self) -> bool {
+        self.0.borrow().trap.is_some()
     }
     fn set_hit(&self, hit: Option<(u64, Point)>) {
         self.0.borrow_mut().hit = hit;
@@ -1129,6 +1269,14 @@ impl<M: 'static> Widget<M> for Root<M> {
                 self.ui.set_hit(None);
                 return true;
             }
+        }
+        // The wheel over an open modal layer goes to the layer, never to the page under it.
+        if let (Event::Scrolled { .. }, Some(owner)) = (event, self.ui.modal_owner()) {
+            self.ui.set_hit(Some((owner, cursor)));
+            let off = Point::new(-1.0e6, -1.0e6);
+            util::dispatch(&mut self.child, event, layout, off, out);
+            self.ui.set_hit(None);
+            return true;
         }
         match event {
             Event::KeyPressed(_, m) | Event::KeyReleased(_, m) => self.ui.set_modifiers(*m),

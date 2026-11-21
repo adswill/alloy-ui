@@ -49,6 +49,8 @@ pub struct Harness<A: App> {
     tasks: alloy_ui_ipc::TaskRunner<A::Msg>,
     running: Vec<alloy_ui_ipc::TaskHandle>,
     keyed: std::collections::HashMap<u64, alloy_ui_ipc::TaskHandle>,
+    /// When each subscription last fired on the scripted clock.
+    sub_last: std::collections::HashMap<u64, u64>,
 }
 
 impl<A: App> Harness<A> {
@@ -75,6 +77,7 @@ impl<A: App> Harness<A> {
             tasks: alloy_ui_ipc::TaskRunner::new(|| {}),
             running: Vec::new(),
             keyed: Default::default(),
+            sub_last: Default::default(),
         }
     }
     /// Start the futures `update` asked for (`Cmd::perform`, `perform_keyed`, `cancel`).
@@ -233,6 +236,26 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::MousePressed(MouseButton::Right));
         self.rt
             .handle_event(&Event::MouseReleased(MouseButton::Right));
+        self
+    }
+    /// Right-click at window position `(x, y)`.
+    pub fn right_click_at(&mut self, x: f32, y: f32) -> &mut Self {
+        self.move_to(x, y);
+        self.press_release(MouseButton::Right)
+    }
+    /// Middle-click (wheel click) the first widget showing exactly `text`. Panics if there is none.
+    pub fn middle_click(&mut self, text: &str) -> &mut Self {
+        self.hover(text);
+        self.press_release(MouseButton::Middle)
+    }
+    /// Middle-click at window position `(x, y)`.
+    pub fn middle_click_at(&mut self, x: f32, y: f32) -> &mut Self {
+        self.move_to(x, y);
+        self.press_release(MouseButton::Middle)
+    }
+    fn press_release(&mut self, b: MouseButton) -> &mut Self {
+        self.rt.handle_event(&Event::MousePressed(b));
+        self.rt.handle_event(&Event::MouseReleased(b));
         self
     }
     /// Move the pointer onto the first widget showing exactly `text`. Panics if there is none.
@@ -416,12 +439,7 @@ impl<A: App> Harness<A> {
     }
     /// Press a named key such as `"ArrowDown"`, `"PageDown"`, `"Enter"` or `"Escape"`.
     pub fn key(&mut self, name: &str) -> &mut Self {
-        self.press(match name {
-            "Enter" => Key::Enter,
-            "Escape" => Key::Escape,
-            "Tab" => Key::Tab,
-            n => Key::Named(n.into()),
-        })
+        self.press(Key::from_name(name))
     }
     /// Press a shortcut such as `"mod+s"` or `"mod+shift+z"`.
     pub fn chord(&mut self, keys: &str) -> &mut Self {
@@ -462,8 +480,59 @@ impl<A: App> Harness<A> {
     }
     /// Let `ms` milliseconds pass: animations and toasts progress.
     pub fn advance(&mut self, ms: u64) -> &mut Self {
+        let from = self.now;
         self.now += ms;
         self.ticking = self.rt.handle_event(&Event::Tick(self.now)).tick;
+        self.fire_subscriptions(from);
+        self
+    }
+    /// Fire the app's timers (`.tick`, `every`, `tick_while_shown`) that fell due since `from`.
+    fn fire_subscriptions(&mut self, from: u64) {
+        let mut msgs = Vec::new();
+        let mut live = Vec::new();
+        for sub in self.rt.subscriptions() {
+            live.push(sub.id);
+            let alloy_ui_core::SubscriptionKind::Every { interval_ms, make } = sub.kind;
+            let last = self.sub_last.entry(sub.id).or_insert(from);
+            for _ in 0..100 {
+                if *last + interval_ms > self.now {
+                    break;
+                }
+                *last += interval_ms;
+                msgs.push(make());
+            }
+        }
+        // A timer that stopped starts over if it comes back.
+        self.sub_last.retain(|id, _| live.contains(id));
+        if !msgs.is_empty() {
+            let o = self.rt.dispatch_all(msgs);
+            self.ticking |= o.tick;
+        }
+    }
+    /// Advance the clock in frame-sized steps until nothing animates any more: route
+    /// transitions, fades and toasts have finished. Gives up after about ten seconds of
+    /// scripted time (an endless animation such as a spinner never goes idle).
+    pub fn settle_motion(&mut self) -> &mut Self {
+        for _ in 0..600 {
+            self.advance(16);
+            if !self.ticking {
+                break;
+            }
+        }
+        self
+    }
+    /// Turn reduced motion on or off for the window, as the OS setting does: animations jump
+    /// to their end and transitions switch instantly.
+    pub fn reduce_motion(&mut self, on: bool) -> &mut Self {
+        self.rt.app().ui.set_reduced_motion(on);
+        self.rt.dispatch_all(Vec::new());
+        self
+    }
+    /// Pretend the OS applied `effect` (Mica, Blur, ...): the page and `.surface()` regions
+    /// become translucent the way they do in a real window with that material. `None` undoes it.
+    pub fn window_effect(&mut self, effect: alloy_ui_core::WindowEffect) -> &mut Self {
+        crate::cx::set_page_alpha(effect.page_alpha());
+        self.rt.dispatch_all(Vec::new());
         self
     }
     /// True if the last [`advance`](Self::advance) left something animating, i.e. the app would

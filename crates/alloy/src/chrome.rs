@@ -26,7 +26,7 @@ const INPUT_H: f32 = 52.0;
 pub(crate) struct Chrome<M> {
     ui: Ui,
     child: Vec<Element<M>>,
-    keys: Vec<(Shortcut, M)>,
+    keys: Vec<(Shortcut, M, bool)>,
     /// Everything the command palette lists: title, the keys that trigger it, what it sends.
     entries: Vec<(String, Option<String>, M)>,
     undo: Option<M>,
@@ -72,7 +72,7 @@ impl<M: Clone + 'static> Chrome<M> {
                 .collect(),
             keys: keys
                 .into_iter()
-                .filter_map(|h| Shortcut::parse(&h.keys).map(|s| (s, h.msg)))
+                .filter_map(|h| Shortcut::parse(&h.keys).map(|s| (s, h.msg, h.typing)))
                 .collect(),
             undo,
         }
@@ -303,7 +303,15 @@ impl<M: Clone + 'static> Chrome<M> {
             }
         }
         if let Event::KeyPressed(key, mods) = event {
-            if let Some((_, msg)) = self.keys.iter().find(|(s, _)| s.matches(key, mods)) {
+            // A plain printable key belongs to a focused text field, not to a shortcut.
+            let typing = matches!(key, Key::Character(_))
+                && !(mods.ctrl || mods.alt || mods.logo)
+                && self.ui.text_focused();
+            if let Some((_, msg, _)) = self
+                .keys
+                .iter()
+                .find(|(s, _, always)| (*always || !typing) && s.matches(key, mods))
+            {
                 out.push(msg.clone());
                 return true;
             }

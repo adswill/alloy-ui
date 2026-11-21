@@ -71,6 +71,14 @@ mod guide {
     struct G19;
     #[doc = include_str!("../../../docs/guide/21-mobile.md")]
     struct G20;
+    #[doc = include_str!("../../../docs/guide/23-window-app.md")]
+    struct GWindowApp;
+    #[doc = include_str!("../../../docs/guide/27-lists-layout.md")]
+    struct GListsLayout;
+    #[doc = include_str!("../../../docs/guide/24-input-focus.md")]
+    struct GInputFocus;
+    #[doc = include_str!("../../../docs/guide/25-overlays-dialogs.md")]
+    struct GOverlays;
 }
 
 /// `AGENTS.md` teaches coding agents the API; its snippets are compiled too.
@@ -124,12 +132,15 @@ pub mod fs;
 mod fx;
 pub mod i18n;
 mod icons;
+mod input;
 mod inputs;
 mod keys;
+mod lists;
 mod live;
 mod mock;
 mod modules;
 mod motion;
+mod overlay;
 mod palette;
 mod persist;
 pub mod plugin;
@@ -152,7 +163,7 @@ pub mod web;
 
 pub use alloy_ui_macros::{at, state};
 pub use alloy_ui_platform::safe_area::Insets;
-pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
+pub use app::{every, secs, sketch, subscribe, tick_while_shown, App, Closing, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
     app, field, field_after, local, shell, store, store_as, table, theme_switch, wizard, Local,
@@ -164,7 +175,8 @@ pub use collections::{
     Prop, TextCell,
 };
 pub use cx::{
-    files_hovering, palette, safe_area, set_accent, set_dark, set_look, system, theme, ui, Look,
+    app_focused, files_hovering, palette, safe_area, set_accent, set_dark, set_look, system, theme,
+    ui, Look,
 };
 pub use declare::{clock, money};
 
@@ -179,7 +191,8 @@ pub use desktop::{files, notify, Desktop, DesktopSpec, FileDialog, MenuBuilder, 
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
     options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll,
-    scroll_touch, section, slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
+    scroll_bottom, scroll_touch, section, slider, space, tabs, text, toggle, vspace, Act, Choice,
+    Variant,
 };
 pub use editors::{
     code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
@@ -192,15 +205,20 @@ pub use fx::{
     Rolling, RouteKind,
 };
 pub use icons::{icon, icon_named, set_icon_pack, Ico, Icon, IconPack};
+pub use input::{hovered, hovered_for, text_focused, Hover, Interact, InteractMsg};
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
+pub use lists::{carousel, vgrid, Carousel, VGrid};
 pub use live::{live_file, Live};
 pub use mock::{series, Mock};
 pub use modules::*;
-pub use motion::{animated, fade, reveal, spring};
+pub use motion::{
+    animated, fade, fade_appear, image, keyed, presence_list, reveal, reveal_appear, spring, Pic,
+};
+pub use overlay::{modal, portal, Modal};
 pub use pro::{
-    context_menu, markdown, menu_item, menu_rule, popover, split, tab_bar, vlist, Markdown, Menu,
-    MenuEntry, Popover, Split, TabBar, VList,
+    context_menu, markdown, menu_item, menu_rule, popover, split, split_handle, tab_bar, vlist,
+    Markdown, Menu, MenuEntry, Popover, Split, SplitHandle, TabBar, VList,
 };
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
@@ -236,20 +254,22 @@ pub mod prelude {
     pub use crate::{
         animated, animated_with, app, attempt, badge, bar_chart, bars, browse, browse_of, button,
         caption, check, choose, color_picker, context_menu, crud, crud_app, custom, editor, every,
-        fade, field, field_after, filter_by, gap, heading, icon, icon_named, input, line_chart,
-        link_path, list, local, markdown, menu_item, menu_rule, nav, number, options, palette,
-        pick, popover, progress, radio, radio_list, radio_list_with, radios, records, records_in,
-        resource, resource_for, reveal, router, router_saved, router_saved_at, rule, scroll,
-        scroll_touch, secs, section, series, set_accent, set_dark, set_icon_pack, set_look, shell,
-        sketch, sleep, slider, space, sparkline, split, spring, stat, stats, stepper, store,
-        store_as, swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree,
-        vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack,
-        Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router, Stamp, TextCell,
-        TreeItem, View, Wizard,
+        fade, fade_appear, field, field_after, filter_by, gap, heading, icon, icon_named, image,
+        input, keyed, line_chart, link_path, list, local, markdown, menu_item, menu_rule, nav,
+        number, options, palette, pick, popover, presence_list, progress, radio, radio_list,
+        radio_list_with, radios, records, records_in, resource, resource_for, reveal,
+        reveal_appear, router, router_saved, router_saved_at, rule, scroll, scroll_touch, secs,
+        section, series, set_accent, set_dark, set_icon_pack, set_look, shell, sketch, sleep,
+        slider, space, sparkline, split, spring, stat, stats, stepper, store, store_as, subscribe,
+        swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, tick_while_shown,
+        toggle, tree, vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell,
+        Icon, IconPack, Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router,
+        Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,
-        state, system, t, toast, undo, vals, Hotkey, Shortcuts, WindowEffect,
+        app_focused, at, choices, clipboard, clock, col, files, files_hovering, modal, money,
+        notify, portal, quit, redo, row, state, system, t, toast, undo, vals, Hotkey, Shortcuts,
+        WindowEffect,
     };
     pub use crate::{
         calendar, candle, candles, canvas, card, counter, dots, enter, enter_after, entry, glide,
@@ -258,7 +278,9 @@ pub mod prelude {
         skeleton_circle, skeleton_text, spinner, spinner_sized, stack, stagger, stream, timeline,
         viewport3d, weighted, Anchor, Layer, RouteKind,
     };
+    pub use crate::{carousel, scroll_bottom, split_handle, vgrid, Carousel, SplitHandle, VGrid};
     pub use crate::{code_editor, data_grid, rich_editor, GridCell, Lang, RichText, Tone};
+    pub use crate::{hovered, hovered_for, text_focused, Hover, Interact, InteractMsg};
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::{Density, Easing, Preset};
     pub use alloy_ui_widgets::{Keyframes, Timeline};

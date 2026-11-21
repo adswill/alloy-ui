@@ -153,9 +153,14 @@ impl<M: 'static> Boxed<M> {
         self.shadow = Some(cx::theme().elevation.medium);
         self
     }
-    /// The theme's panel colour as background.
+    /// The theme's panel colour as background. While the window has a [`WindowEffect`]
+    /// (Mica, Blur, ...) the colour is as see-through as the page, so the material shows
+    /// behind sidebars and headers; use [`card`](Self::card) or `bg` for a region that must
+    /// stay solid.
     pub fn surface(self) -> Self {
-        self.bg(cx::palette().surface)
+        let a = cx::page_alpha();
+        let c = cx::palette().surface;
+        self.bg(if a < 1.0 { c.with_alpha(c.a * a) } else { c })
     }
     /// Corner radius.
     pub fn round(mut self, r: f32) -> Self {
@@ -170,7 +175,7 @@ impl<M: 'static> Boxed<M> {
     /// A raised panel: surface, outline, rounded, padded.
     pub fn card(self) -> Self {
         let r = cx::theme().radii.large;
-        self.surface().outline().round(r).pad(16.0)
+        self.bg(cx::palette().surface).outline().round(r).pad(16.0)
     }
     #[track_caller]
     fn layer(mut self, l: w::Layer) -> Self {

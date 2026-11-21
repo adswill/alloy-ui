@@ -63,6 +63,37 @@ impl<M: 'static> Split<M> {
         self
     }
 }
+/// A name for one [`split`], so the view can read how big its first pane is. See
+/// [`split_handle`].
+#[derive(Clone, Copy)]
+pub struct SplitHandle(u64);
+
+/// Make a handle for a split: `let side = split_handle();`, give it to the split with
+/// `split(a, b).handle(side)` and read `side.width()` anywhere in the view, for a sidebar whose
+/// content depends on its width. Make it once per split, at the call site, like any widget.
+#[track_caller]
+pub fn split_handle() -> SplitHandle {
+    SplitHandle(auto_id(562))
+}
+
+impl SplitHandle {
+    /// The first pane's size in pixels (its width, or its height for a
+    /// [`vertical`](Split::vertical) split) as of the last frame; `0.0` while the very first
+    /// frame is still being laid out. The view is rebuilt when it changes (a drag, a window
+    /// resize), so what you build from it never lags behind.
+    pub fn width(&self) -> f32 {
+        w::SplitPane::<()>::first_len_of(&cx::ui(), self.0)
+    }
+}
+
+impl<M: 'static> Split<M> {
+    /// Let the view read this split's pane size through `handle`.
+    pub fn handle(mut self, handle: SplitHandle) -> Self {
+        self.id = handle.0;
+        self
+    }
+}
+
 impl<M: 'static> From<Split<M>> for Node<M> {
     fn from(s: Split<M>) -> Self {
         let mut e = w::SplitPane::new(&cx::ui(), s.id, s.a, s.b)

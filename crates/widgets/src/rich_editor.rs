@@ -735,7 +735,7 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
         let l = self.laid(&b);
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.editable();
-        self.ui.register(self.id);
+        self.ui.register_text(self.id);
         self.ui
             .describe(Role::TextEditor, "Rich text editor", &b, |n| {
                 n.id = Some(self.id);

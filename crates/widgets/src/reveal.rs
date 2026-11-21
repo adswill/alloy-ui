@@ -1,7 +1,11 @@
 //! Enter and exit transitions: fade, slide and collapse a child as it is
 //! shown or hidden, then stop drawing it once the exit has played.
 
-use crate::{motion::Presence, ui::Ui, util};
+use crate::{
+    motion::{Presence, Transition},
+    ui::Ui,
+    util,
+};
 use alloy_ui_core::{
     style::Style, DrawCommand, DrawList, Element, Event, Layout, Point, Rectangle, Size, Widget,
 };
@@ -20,6 +24,7 @@ pub struct Reveal<M> {
     ms: u32,
     slide: f32,
     collapse: bool,
+    appear: bool,
     child: Vec<Element<M>>,
 }
 
@@ -35,6 +40,7 @@ impl<M: 'static> Reveal<M> {
             ms,
             slide: 0.0,
             collapse: false,
+            appear: false,
             child: vec![child],
         }
     }
@@ -49,6 +55,12 @@ impl<M: 'static> Reveal<M> {
         self.collapse = on;
         self
     }
+    /// Also play the enter transition the first time it is built, when `show`
+    /// is already true (default: content that starts shown simply is shown).
+    pub fn appear(mut self, on: bool) -> Self {
+        self.appear = on;
+        self
+    }
     /// Duration in milliseconds (default: the theme's normal motion).
     pub fn duration(mut self, ms: u32) -> Self {
         self.ms = ms;
@@ -59,6 +71,16 @@ impl<M: 'static> Reveal<M> {
         Element::new(self)
     }
     fn presence(&self) -> Presence {
+        if self.appear {
+            // Seed the animation at hidden once, so the first `show = true` eases in.
+            let mk = self.key ^ 0xA99E_A200;
+            if self.ui.memo(mk)[0] == 0.0 {
+                self.ui.set_memo(mk, [1.0, 0.0, 0.0, 0.0]);
+                if self.show {
+                    self.ui.animate(self.key, 0.0f32, Transition::ms(self.ms));
+                }
+            }
+        }
         self.ui.presence(self.key, self.show, self.ms)
     }
     fn natural(&self) -> Size {
