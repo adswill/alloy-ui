@@ -193,10 +193,11 @@ pub use rich::{
 pub use router::{router, Router};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use viz::{
-    calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph, object,
-    pie, pt, rgb, stream, viewport3d, CalAction, CalView, Candle, Candles, Card, Entry, Frame,
-    GraphAction, GraphNode, Lane, MediaAction, MediaSource, Mesh, Move, Object, Orbit, Path, Pie,
-    Playback, Pointer, Ring, Slice, Stream, TestCard, Wire,
+    calendar, candle, candles, canvas, card, entry, gpu_view, kanban, lane, media, node,
+    node_graph, object, pie, pt, rgb, stream, viewport3d, CalAction, CalView, Candle, Candles,
+    Card, Entry, Frame, GpuInput, GpuView, GraphAction, GraphNode, Lane, MediaAction, MediaSource,
+    Mesh, Move, Object, Orbit, Path, Pie, Playback, Pointer, Ring, SizeProbe, Slice, Stream,
+    TestCard, Wire,
 };
 pub use {serde, serde_json};
 
@@ -230,7 +231,7 @@ pub mod prelude {
     };
     pub use crate::{
         calendar, candle, candles, canvas, card, counter, dots, enter, enter_after, entry, glide,
-        grow, kanban, keyframes, lane, loading_bar, media, node, node_graph, object, pie,
+        gpu_view, grow, kanban, keyframes, lane, loading_bar, media, node, node_graph, object, pie,
         progress_ring, pt, route, route_with, shared, skeleton, skeleton_bar, skeleton_circle,
         skeleton_text, spinner, spinner_sized, stack, stagger, stream, timeline, viewport3d,
         Anchor, Layer, RouteKind,
@@ -245,6 +246,10 @@ pub mod prelude {
 pub use alloy_ui_core::*;
 pub use alloy_ui_ipc as ipc;
 pub use alloy_ui_layout as layout;
+/// Real audio and video sources for [`media`]: `codecs::open("clip.mp4")`. Needs the `media`
+/// feature.
+#[cfg(feature = "media")]
+pub use alloy_ui_media as codecs;
 pub use alloy_ui_platform as platform;
 pub use alloy_ui_render as render;
 pub use alloy_ui_theme as theme;

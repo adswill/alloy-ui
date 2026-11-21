@@ -27,6 +27,7 @@ pub use w::{
     CalAction, CalView, Candle, Card, Entry, Frame, GraphAction, GraphNode, Lane, MediaAction,
     MediaSource, Mesh, Move, Object, Orbit, Path, Playback, Pointer, Ring, Slice, TestCard, Wire,
 };
+pub use w::{GpuInput, SizeProbe};
 
 /// A state-mutating callback taking the widget's event.
 type Cb<S, T> = Arc<dyn Fn(&mut S, T) + Send + Sync>;
@@ -132,6 +133,7 @@ pub struct Candles {
     data: Vec<Candle>,
     height: Option<f32>,
     unit: String,
+    zoom: Option<u64>,
 }
 
 /// Candlesticks from [`Candle`]s, oldest first, with a price axis, optional volume bars and a
@@ -141,6 +143,7 @@ pub fn candles(data: impl IntoIterator<Item = Candle>) -> Candles {
         data: data.into_iter().collect(),
         height: None,
         unit: String::new(),
+        zoom: None,
     }
 }
 
@@ -160,6 +163,13 @@ impl Candles {
         self.height = Some(px);
         self
     }
+    /// Scroll to zoom and drag to pan along the time axis; the price axis follows the visible
+    /// candles. A "Reset zoom" chip (or `0`) restores the full range.
+    #[track_caller]
+    pub fn zoom(mut self) -> Self {
+        self.zoom = Some(auto_id(71));
+        self
+    }
 }
 
 impl<M: 'static> From<Candles> for Node<M> {
@@ -167,6 +177,9 @@ impl<M: 'static> From<Candles> for Node<M> {
         let mut e = w::CandleChart::new(&cx::ui(), c.data).unit(c.unit);
         if let Some(h) = c.height {
             e = e.height(h);
+        }
+        if let Some(id) = c.zoom {
+            e = e.zoomable(id);
         }
         Node(e.into_element())
     }
@@ -436,6 +449,7 @@ pub struct NodeGraph<S> {
     id: u64,
     selected: Option<u64>,
     height: Option<Length>,
+    minimap: bool,
     on: Option<Cb<S, GraphAction>>,
 }
 
@@ -455,6 +469,7 @@ pub fn node_graph<S>(nodes: &[GraphNode], wires: &[Wire]) -> NodeGraph<S> {
         id: auto_id(64),
         selected: None,
         height: None,
+        minimap: false,
         on: None,
     }
 }
@@ -470,6 +485,11 @@ impl<S: 'static> NodeGraph<S> {
         self.height = Some(Length::Fixed(px));
         self
     }
+    /// Show a minimap of the whole graph in the corner; click or drag it to move the view.
+    pub fn minimap(mut self) -> Self {
+        self.minimap = true;
+        self
+    }
     /// Called for every edit: move, select, connect, disconnect, delete.
     pub fn act(mut self, f: impl Fn(&mut S, GraphAction) + Send + Sync + 'static) -> Self {
         self.on = Some(Arc::new(f));
@@ -479,8 +499,9 @@ impl<S: 'static> NodeGraph<S> {
 
 impl<S: 'static> From<NodeGraph<S>> for Node<Act<S>> {
     fn from(g: NodeGraph<S>) -> Self {
-        let mut e =
-            w::NodeGraph::<Act<S>>::new(&cx::ui(), g.id, g.nodes, g.wires).selected(g.selected);
+        let mut e = w::NodeGraph::<Act<S>>::new(&cx::ui(), g.id, g.nodes, g.wires)
+            .selected(g.selected)
+            .minimap(g.minimap);
         if let Some(h) = g.height {
             e = e.height(h);
         }
@@ -615,6 +636,84 @@ impl<M: 'static> From<Viewport3d> for Node<M> {
         }
         if let Some(o) = v.orbit {
             e = e.orbit(o);
+        }
+        Node(e.into_element())
+    }
+}
+
+// ---------------------------------------------------------------- wgpu viewport
+
+/// A shared GPU texture under construction. See [`gpu_view`].
+pub struct GpuView<S> {
+    texture: u64,
+    height: Option<f32>,
+    live: bool,
+    probe: Option<SizeProbe>,
+    paint: Option<Rc<dyn Fn(alloy_ui_core::Size)>>,
+    on: Option<Cb<S, GpuInput>>,
+}
+
+/// Show a texture that your own wgpu code renders into, with no copy. Get the device from
+/// `alloy_ui::render::shared_gpu()`, make a target with `create_target`, draw into it each
+/// frame, and pass its id here. Pointer input arrives through `.act`; `.probe` reports the
+/// laid-out size so you can resize the texture. See `examples/src/gpu_scene.rs`.
+pub fn gpu_view<S>(texture: u64) -> GpuView<S> {
+    GpuView {
+        texture,
+        height: None,
+        live: false,
+        probe: None,
+        paint: None,
+        on: None,
+    }
+}
+
+impl<S: 'static> GpuView<S> {
+    /// Height in pixels (default 280).
+    pub fn height(mut self, px: f32) -> Self {
+        self.height = Some(px);
+        self
+    }
+    /// Redraw every frame, for a scene that animates itself. Off by default so an idle scene
+    /// costs nothing.
+    pub fn live(mut self) -> Self {
+        self.live = true;
+        self
+    }
+    /// Report the laid-out size through `probe`.
+    pub fn probe(mut self, probe: &SizeProbe) -> Self {
+        self.probe = Some(probe.clone());
+        self
+    }
+    /// Render your scene into the texture. Runs every time the view is drawn, with its size.
+    pub fn paint(mut self, f: impl Fn(alloy_ui_core::Size) + 'static) -> Self {
+        self.paint = Some(Rc::new(f));
+        self
+    }
+    /// Called for presses, drags, releases and scrolls over the view.
+    pub fn act(mut self, f: impl Fn(&mut S, GpuInput) + Send + Sync + 'static) -> Self {
+        self.on = Some(Arc::new(f));
+        self
+    }
+}
+
+impl<S: 'static> From<GpuView<S>> for Node<Act<S>> {
+    fn from(v: GpuView<S>) -> Self {
+        let mut e = w::GpuView::<Act<S>>::new(v.texture).live(v.live);
+        if let Some(h) = v.height {
+            e = e.height(Length::Fixed(h));
+        }
+        if let Some(p) = &v.probe {
+            e = e.probe(p);
+        }
+        if let Some(f) = v.paint {
+            e = e.paint(move |sz| f(sz));
+        }
+        if let Some(f) = v.on {
+            e = e.on_input(move |i| {
+                let f = f.clone();
+                Act::new(move |s: &mut S| f(s, i))
+            });
         }
         Node(e.into_element())
     }

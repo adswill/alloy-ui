@@ -165,6 +165,9 @@ pub(crate) struct Painter {
     scratch: Option<Scratch>,
     atlas: Atlas,
     images: HashMap<u64, GpuImage>,
+    /// Streamed pixel surfaces already uploaded: id to (version, width, height).
+    streamed: HashMap<u64, (u64, u32, u32)>,
+    shared: std::sync::Arc<crate::shared::SharedGpu>,
     next_id: u64,
     pub(crate) text: TextSystem,
 }
@@ -300,6 +303,12 @@ impl Painter {
         };
         let instance_cap = 1024;
         let instances = make_instance_buffer(&device, instance_cap);
+        let shared = crate::shared::SharedGpu::new(
+            device.clone(),
+            queue.clone(),
+            tex_layout.clone(),
+            sampler.clone(),
+        );
         Self {
             device,
             queue,
@@ -314,8 +323,66 @@ impl Painter {
             scratch: None,
             atlas,
             images: HashMap::new(),
+            streamed: HashMap::new(),
+            shared,
             next_id: 1,
             text,
+        }
+    }
+
+    /// The shared-texture registry for this painter's device.
+    pub(crate) fn shared(&self) -> std::sync::Arc<crate::shared::SharedGpu> {
+        self.shared.clone()
+    }
+
+    /// Make sure the streamed surface `id` (if it is one) has its latest frame on the GPU.
+    /// True when `id` can be drawn: a registered image, a streamed surface, or neither (false).
+    fn sync_streamed(&mut self, id: u64) -> bool {
+        let Some(d) = crate::pixels::get(id) else {
+            return self.images.contains_key(&id);
+        };
+        match self.streamed.get(&id) {
+            Some(&(v, w, h)) if v == d.version && (w, h) == (d.width, d.height) => return true,
+            Some(&(_, w, h)) if (w, h) == (d.width, d.height) => {
+                if let Some(img) = self.images.get(&id) {
+                    upload(&self.queue, &img.texture, [0, 0], w, h, &d.rgba);
+                    self.streamed.insert(id, (d.version, w, h));
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        // New surface, or the size changed: make a fresh texture.
+        if let Some(old) = self.images.remove(&id) {
+            old.texture.destroy();
+        }
+        let tex = make_texture(&self.device, d.width, d.height, "streamed surface");
+        upload(&self.queue, &tex, [0, 0], d.width, d.height, &d.rgba);
+        let bind_group = make_bind_group(&self.device, &self.tex_layout, &tex, &self.sampler);
+        self.images.insert(
+            id,
+            GpuImage {
+                texture: tex,
+                bind_group,
+            },
+        );
+        self.streamed.insert(id, (d.version, d.width, d.height));
+        true
+    }
+
+    /// Free the textures of surfaces that have been dropped.
+    fn sweep_streamed(&mut self) {
+        let gone: Vec<u64> = self
+            .streamed
+            .keys()
+            .copied()
+            .filter(|id| !crate::pixels::exists(*id))
+            .collect();
+        for id in gone {
+            self.streamed.remove(&id);
+            if let Some(img) = self.images.remove(&id) {
+                img.texture.destroy();
+            }
         }
     }
 
@@ -439,7 +506,7 @@ impl Painter {
                 }
                 Source::None => (None, [0.0, 0.0, 1.0, 1.0]),
                 Source::Image(id) => {
-                    if !self.images.contains_key(&id) {
+                    if !self.shared.contains(id) && !self.sync_streamed(id) {
                         continue;
                     }
                     (Some(Binding::Image(id)), [0.0, 0.0, 1.0, 1.0])
@@ -553,6 +620,7 @@ impl Painter {
         scale: f32,
         clear: Color,
     ) {
+        self.sweep_streamed();
         let prims = flatten(list, scale, width, height, &mut self.text);
         let can_copy = target.is_some();
         let (mut inst, mut batches, overflow) = self.build(&prims, can_copy);
@@ -679,11 +747,18 @@ impl Painter {
     }
 
     fn draw_batch(&self, pass: &mut wgpu::RenderPass<'_>, b: &Batch) {
+        let shared_bg = match b.binding {
+            Binding::Image(id) if !self.images.contains_key(&id) => self.shared.bind_group(id),
+            _ => None,
+        };
         let bg = match b.binding {
             Binding::Atlas => &self.atlas.bind_group,
             Binding::Image(id) => match self.images.get(&id) {
                 Some(i) => &i.bind_group,
-                None => return,
+                None => match &shared_bg {
+                    Some(b) => b,
+                    None => return,
+                },
             },
             Binding::Snap => match &self.scratch {
                 Some(s) => &s.snap_bg,

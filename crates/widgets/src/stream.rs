@@ -379,17 +379,21 @@ impl<M> Widget<M> for StreamChart {
                     )
                 })
                 .collect();
-            if self.area && pts.len() > 1 {
+            // Far more samples than pixels: draw each pixel column's extremes, not every sample,
+            // so the draw list (and the GPU instance buffer) stays bounded by the width.
+            let dense = pts.len() as f32 > plot.size.width * 1.5;
+            let shown = if dense { decimate(&pts) } else { pts.clone() };
+            if self.area && shown.len() > 1 {
                 let base = plot.origin.y + plot.size.height;
-                let mut poly = pts.clone();
-                poly.push(Point::new(pts[pts.len() - 1].x, base));
-                poly.push(Point::new(pts[0].x, base));
+                let mut poly = shown.clone();
+                poly.push(Point::new(shown[shown.len() - 1].x, base));
+                poly.push(Point::new(shown[0].x, base));
                 out.push(DrawCommand::Polygon {
                     points: poly,
                     fill: c.with_alpha(if li == 0 { 0.12 } else { 0.07 }),
                 });
             }
-            for w in pts.windows(2) {
+            for w in shown.windows(2) {
                 out.push(DrawCommand::Line {
                     from: w[0],
                     to: w[1],
@@ -533,5 +537,62 @@ impl<M> Widget<M> for StreamChart {
             }
             self.ui.overlay(None, None, cmds);
         }
+    }
+}
+
+/// Reduce a dense polyline (x ascending) to at most about three points per pixel column: the
+/// first, lowest and highest points of the column, in x order. The envelope looks identical at
+/// that scale and costs a fixed number of draw commands however many samples there are.
+pub(crate) fn decimate(pts: &[Point]) -> Vec<Point> {
+    let mut out = Vec::with_capacity(pts.len().min(4096));
+    let mut i = 0;
+    while i < pts.len() {
+        let col = pts[i].x.floor();
+        let mut j = i;
+        let (mut lo, mut hi) = (i, i);
+        while j < pts.len() && pts[j].x.floor() == col {
+            if pts[j].y < pts[lo].y {
+                lo = j;
+            }
+            if pts[j].y > pts[hi].y {
+                hi = j;
+            }
+            j += 1;
+        }
+        let mut keep = [i, lo, hi, j - 1];
+        keep.sort_unstable();
+        let mut prev = usize::MAX;
+        for k in keep {
+            if k != prev {
+                out.push(pts[k]);
+                prev = k;
+            }
+        }
+        i = j;
+    }
+    out
+}
+
+#[cfg(test)]
+mod decimate_tests {
+    use super::*;
+
+    #[test]
+    fn keeps_the_extremes_of_every_column_and_bounds_the_count() {
+        // 10,000 samples over 100 px with a spike at sample 5,000.
+        let pts: Vec<Point> = (0..10_000)
+            .map(|i| {
+                Point::new(
+                    i as f32 * 0.01,
+                    if i == 5000 { -50.0 } else { (i % 7) as f32 },
+                )
+            })
+            .collect();
+        let d = decimate(&pts);
+        assert!(d.len() <= 100 * 4, "{} points", d.len());
+        assert!(d.iter().any(|p| p.y == -50.0), "the spike survives");
+        assert!(d.windows(2).all(|w| w[0].x <= w[1].x), "x stays ascending");
+        assert_eq!(d[0], pts[0]);
+        assert_eq!(*d.last().unwrap(), pts[9_999]);
     }
 }

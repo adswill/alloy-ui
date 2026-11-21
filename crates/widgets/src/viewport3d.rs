@@ -4,10 +4,9 @@
 //! painter's-algorithm depth sort, flat lighting) that emits anti-aliased
 //! [`DrawCommand::Polygon`]s, so it runs on every back end and in headless
 //! tests with identical output. It suits product previews, CAD-style
-//! gizmos and data visualisation, not a game scene. For an app that renders
-//! its own GPU texture, [`Canvas`](crate::Canvas) can place a registered image
-//! with `Frame::image`; sharing a live wgpu texture with the window renderer is
-//! not implemented yet.
+//! gizmos and data visualisation, not a game scene. For a real GPU scene, render
+//! into a shared wgpu texture and show it with [`GpuView`](crate::GpuView): the window
+//! renderer samples your texture directly (see `alloy_ui_render::SharedGpu`).
 
 use crate::util;
 use crate::{a11y::Role, ui::Ui};

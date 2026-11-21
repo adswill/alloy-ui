@@ -251,6 +251,7 @@ impl GpuWindow {
         let text = crate::take_text_system();
         crate::perf_mark("text-system", &mut t);
         let painter = Painter::new(ctx.device.clone(), ctx.queue.clone(), format, text);
+        crate::shared::set_global(&painter.shared());
         crate::perf_mark("gpu.pipeline", &mut t);
         Ok(Self {
             surface,

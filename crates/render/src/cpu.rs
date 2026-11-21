@@ -330,13 +330,18 @@ impl CpuRenderer {
             Source::Glyph(k) => self.text.bitmap(k),
             _ => None,
         };
+        let streamed = match p.source {
+            Source::Image(id) if !self.images.contains_key(&id) => crate::pixels::get(id),
+            _ => None,
+        };
         let tex: Option<(&[u8], u32, u32)> = match p.source {
             Source::None => None,
             Source::Glyph(_) => glyph.as_ref().map(|g| (&g.rgba[..], g.width, g.height)),
             Source::Image(id) => self
                 .images
                 .get(&id)
-                .map(|s| (&s.rgba[..], s.width, s.height)),
+                .map(|s| (&s.rgba[..], s.width, s.height))
+                .or_else(|| streamed.as_ref().map(|s| (&s.rgba[..], s.width, s.height))),
         };
         if p.source != Source::None && tex.is_none() {
             return;

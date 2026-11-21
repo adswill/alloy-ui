@@ -18,6 +18,7 @@ alloy-ui-widgets = { path = "crates/widgets", version = "0.0.1" }
 alloy-ui-platform = { path = "crates/platform", version = "0.0.1" }
 alloy-ui-ipc = { path = "crates/ipc", version = "0.0.1" }
 alloy-ui-ship = { path = "crates/ship", version = "0.0.1" }
+alloy-ui-media = { path = "crates/media", version = "0.0.1" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

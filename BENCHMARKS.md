@@ -467,3 +467,17 @@ Slim build, all examples, first paint and idle: counter 25 ms, todo 32, settings
 ### Plugins
 
 `docs/PLUGINS.md`, `alloy_ui::plugin` (`Plugin`, `install`, `installed`) and `alloy_ui::ext` (focus, press, state, a11y, colour helpers). Worked example: `examples/plugin-rating` (238 lines for a keyboard-, mouse- and screen-reader-aware star rating plus its translations; 5 tests and a doc-test, all passing headless).
+
+## Live charts, media and shared textures (roadmap 26 to 30)
+
+Linux x86_64 cloud container, **debug build** of the test suite (a regression guard, not a speed claim; release is several times faster), software Vulkan (llvmpipe) where a GPU is mentioned.
+
+| Check | Result |
+| --- | --- |
+| `StreamChart`, 4 lines x 2,000 samples, widget draw only | about 1 ms per frame, 4,948 draw commands |
+| `StreamChart`, 1 line x 100,000 samples (dense, drawn as pixel-column envelopes) | about 4 ms per frame, 1,394 draw commands. Before the envelope step it was one command per sample |
+| Video, 320x180 test clip through ffmpeg | decodes, plays forward and seeks both ways; the picture at 0 ms after a seek to 1.5 s and back is byte-identical to the first frame |
+| Audio engine, WAV decoded by symphonia | duration, seek to 2 s, 8 kHz to 16 kHz resample, mono and 6 channel mixes, volume, end of stream: all tested without a sound card |
+| Shared wgpu texture, llvmpipe | app clears the texture red, then blue; the renderer shows each with the same id and no re-registration |
+
+Not measured: output through a real sound card, video on macOS or Windows (needs `ffmpeg` installed there), the shared texture on a hardware GPU, frame rate of 1080p video (the decode worker is bounded to 960 px wide).

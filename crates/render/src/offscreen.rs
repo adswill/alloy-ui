@@ -53,6 +53,12 @@ impl GpuHeadlessRenderer {
         })
     }
 
+    /// The shared-texture registry of this renderer's device, for rendering your own wgpu
+    /// scene into a texture that this renderer can draw.
+    pub fn shared_gpu(&self) -> std::sync::Arc<crate::shared::SharedGpu> {
+        self.painter.shared()
+    }
+
     /// Set the colour the target is cleared to before drawing.
     pub fn set_background(&mut self, color: Color) {
         self.background = color;

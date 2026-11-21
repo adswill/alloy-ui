@@ -24,6 +24,7 @@ default = ["gpu", "soft-window"]
 gpu = ["alloy-ui/gpu"]
 soft-window = ["alloy-ui/soft-window"]
 gles = ["alloy-ui/gles"]
+media = ["alloy-ui/media"]
 
 [dependencies]
 alloy-ui = { path = "../crates/alloy", default-features = false }
@@ -46,6 +47,14 @@ path = "src/bin/gallery.rs"
 [[bin]]
 name = "desk"
 path = "src/bin/desk.rs"
+[[bin]]
+name = "media_player"
+path = "src/bin/media_player.rs"
+required-features = ["media"]
+[[bin]]
+name = "gpu_scene"
+path = "src/bin/gpu_scene.rs"
+required-features = ["gpu"]
 [[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
