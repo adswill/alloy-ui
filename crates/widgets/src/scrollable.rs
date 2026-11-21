@@ -6,11 +6,16 @@ use crate::{
 };
 use alloy_ui_core::{
     style::{Axis, Style},
-    DrawCommand, DrawList, Element, Event, Layout, Point, Rectangle, Size, Widget,
+    DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point, Rectangle, Size,
+    Widget,
 };
 use alloy_ui_layout::Length;
 
 const BAR: f32 = 6.0;
+/// Width of the strip at the right edge that grabs the scrollbar.
+const BAR_ZONE: f32 = 14.0;
+/// Slot (in [`Ui`]) holding where on the thumb a drag took hold, in 1/16 px.
+const K_DRAG: u64 = 0x5C02_0000_0000;
 
 /// Scrolls one child vertically. Give the child `Fill` width and `Shrink`
 /// height so it is as wide as the viewport and as tall as its content.
@@ -68,14 +73,41 @@ impl<M: 'static> Scrollable<M> {
             .clamp(0.0, Self::max_offset(layout))
     }
     /// The child layout, shifted by the scroll offset and positioned at the viewport top.
+    /// Where the content is drawn: the target followed by the scroll spring.
     fn shown(&self, layout: &Layout) -> f32 {
-        let m = self.ui.theme().motion;
-        self.ui.ease_with(
-            0x5C01_0000_0000 ^ self.id,
-            self.offset(layout),
-            m.normal_ms as u64,
-            m.easing,
-        )
+        self.ui.scroll_shown(self.id, Self::max_offset(layout))
+    }
+    /// The scrollbar thumb for the current drawn offset, if the content overflows.
+    fn thumb(&self, layout: &Layout) -> Option<Rectangle> {
+        let b = layout.bounds;
+        let content = Self::content_height(layout);
+        if content <= b.size.height + 0.5 || b.size.height <= 0.0 {
+            return None;
+        }
+        let thumb_h = (b.size.height * b.size.height / content)
+            .max(24.0)
+            .min(b.size.height);
+        let travel = b.size.height - thumb_h;
+        let max = Self::max_offset(layout);
+        let y = if max > 0.0 {
+            b.origin.y + travel * self.shown(layout).clamp(0.0, max) / max
+        } else {
+            b.origin.y
+        };
+        Some(Rectangle::new(
+            Point::new(b.origin.x + b.size.width - BAR - 2.0, y),
+            Size::new(BAR, thumb_h),
+        ))
+    }
+    /// Put the thumb's top at `y - grab` and scroll to match, with no glide.
+    fn drag_to(&self, layout: &Layout, y: f32, grab: f32) {
+        if let Some(th) = self.thumb(layout) {
+            let b = layout.bounds;
+            let travel = (b.size.height - th.size.height).max(1.0);
+            let top = (y - grab - b.origin.y).clamp(0.0, travel);
+            let max = Self::max_offset(layout);
+            self.ui.scroll_jump(self.id, top / travel * max, max);
+        }
     }
     fn shifted(&self, layout: &Layout) -> Layout {
         let off = self.shown(layout);
@@ -113,18 +145,49 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         out: &mut Vec<M>,
     ) -> bool {
         let inside = layout.bounds.contains(cursor);
+        let b = layout.bounds;
+        let max = Self::max_offset(layout);
+        // Dragging the scrollbar thumb owns the pointer until release.
+        if let Some(grab) = self.ui.slot(self.id ^ K_DRAG) {
+            match event {
+                Event::CursorMoved(p) => {
+                    self.drag_to(layout, p.y, grab as f32 / 16.0);
+                    return true;
+                }
+                Event::MouseReleased(MouseButton::Left) => {
+                    self.ui.set_slot(self.id ^ K_DRAG, None);
+                    return true;
+                }
+                _ => {}
+            }
+        }
+        if let (Event::MousePressed(MouseButton::Left), Some(th)) = (event, self.thumb(layout)) {
+            if inside && cursor.x >= b.origin.x + b.size.width - BAR_ZONE {
+                if th.contains(Point::new(th.origin.x + 1.0, cursor.y)) {
+                    let grab = cursor.y - th.origin.y;
+                    self.ui
+                        .set_slot(self.id ^ K_DRAG, Some((grab * 16.0) as i64));
+                } else {
+                    // A click on the track pages toward the pointer, gliding.
+                    let page = (b.size.height * 0.9).max(1.0);
+                    let dir = if cursor.y < th.origin.y { -1.0 } else { 1.0 };
+                    self.ui
+                        .scroll_to(self.id, self.offset(layout) + dir * page, max);
+                }
+                return true;
+            }
+        }
         if let Event::Scrolled { dy, .. } = event {
             if inside {
                 let before = self.offset(layout);
-                let next = (before - dy).clamp(0.0, Self::max_offset(layout));
-                self.ui.set_scroll_offset(self.id, next);
+                let moved = self.ui.scroll_wheel(self.id, *dy, max);
                 // Let nested scrollables go first; consume only if we moved.
                 let shifted = self.shifted(layout);
                 if util::dispatch(&mut self.child, event, &shifted, cursor, out) {
                     self.ui.set_scroll_offset(self.id, before);
                     return true;
                 }
-                return next != before;
+                return moved;
             }
             return false;
         }
@@ -140,7 +203,24 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         }
         let shifted = self.shifted(layout);
         // Pointer presses outside the viewport must not reach clipped children.
-        util::dispatch(&mut self.child, event, &shifted, cursor, out)
+        if util::dispatch(&mut self.child, event, &shifted, cursor, out) {
+            return true;
+        }
+        // Paging keys scroll the area under the pointer when nothing else wanted them.
+        if let (Event::KeyPressed(Key::Named(k), _), true) = (event, inside && max > 0.0) {
+            let page = (b.size.height * 0.9).max(1.0);
+            let target = self.offset(layout);
+            let to = match k.as_str() {
+                "PageDown" => target + page,
+                "PageUp" => target - page,
+                "Home" => 0.0,
+                "End" => max,
+                _ => return false,
+            };
+            self.ui.scroll_to(self.id, to, max);
+            return true;
+        }
+        false
     }
     fn animating(&self) -> bool {
         util::any_animating(&self.child)
@@ -155,24 +235,17 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         self.ui.set_clip(outer);
         out.push(DrawCommand::PopClip);
 
-        let content = Self::content_height(layout);
-        if content > b.size.height + 0.5 && b.size.height > 0.0 {
+        if let Some(th) = self.thumb(layout) {
             let t = self.ui.theme();
-            let frac = b.size.height / content;
-            let thumb_h = (b.size.height * frac).max(24.0).min(b.size.height);
-            let travel = b.size.height - thumb_h;
-            let max = Self::max_offset(layout);
-            let y = if max > 0.0 {
-                b.origin.y + travel * self.shown(layout).clamp(0.0, max) / max
-            } else {
-                b.origin.y
-            };
+            let dragging = self.ui.slot(self.id ^ K_DRAG).is_some();
+            let near = dragging
+                || (b.contains(self.ui.cursor())
+                    && self.ui.cursor().x >= b.origin.x + b.size.width - BAR_ZONE);
+            // The thumb firms up when the pointer is over the scrollbar strip.
+            let k = self.ui.ease(0x5C03_0000_0000 ^ self.id, near as u8 as f32);
             out.push(DrawCommand::Quad {
-                bounds: Rectangle::new(
-                    Point::new(b.origin.x + b.size.width - BAR - 2.0, y),
-                    Size::new(BAR, thumb_h),
-                ),
-                fill: t.palette.border_strong.with_alpha(0.55),
+                bounds: th,
+                fill: t.palette.border_strong.with_alpha(0.55 + 0.30 * k),
                 radius: BAR / 2.0,
                 border: None,
                 shadow: None,

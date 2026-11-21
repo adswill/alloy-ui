@@ -118,6 +118,12 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
+/// Spring that carries scroll offsets: critically damped, so it never overshoots.
+const SCROLL_SPRING: Spring = Spring {
+    stiffness: 620.0,
+    damping: 49.8, // 2 * sqrt(620)
+};
+
 struct Inner {
     theme: Rc<Theme>,
     metrics: Rc<dyn TextMetrics>,
@@ -134,6 +140,7 @@ struct Inner {
     now: u64,
     anims: HashMap<u64, Anim>,
     reduced_motion: bool,
+    icon_pack: crate::IconPack,
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
@@ -233,6 +240,7 @@ impl Ui {
             popup: None,
             now: 0,
             anims: HashMap::new(),
+            icon_pack: crate::IconPack::default(),
             reduced_motion: std::env::var("ALLOY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
             overlay: Vec::new(),
             regions: Vec::new(),
@@ -456,6 +464,14 @@ impl Ui {
     pub fn reduced_motion(&self) -> bool {
         self.0.borrow().reduced_motion
     }
+    /// The icon pack icons are drawn from unless they name one.
+    pub fn icon_pack(&self) -> crate::IconPack {
+        self.0.borrow().icon_pack
+    }
+    /// Choose the window's icon pack.
+    pub fn set_icon_pack(&self, pack: crate::IconPack) {
+        self.0.borrow_mut().icon_pack = pack;
+    }
     /// Turn reduced motion on or off. It starts on when the environment
     /// variable `ALLOY_REDUCE_MOTION` is set to anything but `0`.
     pub fn set_reduced_motion(&self, on: bool) {
@@ -543,6 +559,37 @@ impl Ui {
     /// Set the scroll offset of `id` (clamped when next used).
     pub fn set_scroll_offset(&self, id: u64, offset: f32) {
         self.0.borrow_mut().scroll.insert(id, offset.max(0.0));
+    }
+
+    fn scroll_key(id: u64) -> u64 {
+        0x5C01_0000_0000 ^ id
+    }
+    /// Where the scrollable `id` is *drawn*: its target offset followed by a critically
+    /// damped spring (about 150 ms to rest, no overshoot), so wheel notches, keys and
+    /// jumps glide. A burst of wheel events retargets the spring without resetting its
+    /// velocity, which is what makes quick successive notches feel like momentum.
+    /// Jumps at once under reduced motion.
+    pub fn scroll_shown(&self, id: u64, max: f32) -> f32 {
+        let target = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        self.spring(Self::scroll_key(id), target, SCROLL_SPRING)
+    }
+    /// Apply a wheel delta (positive scrolls toward the top) to the target offset of `id`.
+    /// Returns true if the target moved, i.e. the event was used.
+    pub fn scroll_wheel(&self, id: u64, dy: f32, max: f32) -> bool {
+        let before = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        let next = (before - dy).clamp(0.0, max.max(0.0));
+        self.set_scroll_offset(id, next);
+        next != before
+    }
+    /// Glide to `offset` (clamped to `0..=max`).
+    pub fn scroll_to(&self, id: u64, offset: f32, max: f32) {
+        self.set_scroll_offset(id, offset.clamp(0.0, max.max(0.0)));
+    }
+    /// Move to `offset` immediately, with no glide: for dragging a scrollbar thumb, where the
+    /// content must stay under the pointer.
+    pub fn scroll_jump(&self, id: u64, offset: f32, max: f32) {
+        self.scroll_to(id, offset, max);
+        self.0.borrow_mut().anims.remove(&Self::scroll_key(id));
     }
 
     /// Id of the widget whose popup (e.g. an open pick list) is showing.

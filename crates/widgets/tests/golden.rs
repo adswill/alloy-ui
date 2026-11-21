@@ -336,3 +336,71 @@ fn rich_dark_accent() {
     );
     check("rich_dark_accent", &img);
 }
+
+fn gallery(ui: &Ui) -> Element<()> {
+    page(
+        ui,
+        vec![
+            Row::new(vec![
+                Button::new(ui, "Save")
+                    .variant(Variant::Primary)
+                    .on_press(())
+                    .id(1)
+                    .into_element(),
+                Button::new(ui, "Cancel").on_press(()).id(2).into_element(),
+                Badge::new(ui, "Live")
+                    .tone(Tone::Success)
+                    .dot()
+                    .into_element(),
+                Badge::new(ui, "Beta")
+                    .tone(Tone::Accent)
+                    .outline()
+                    .into_element(),
+            ])
+            .spacing(10.0)
+            .into_element(),
+            Row::new(vec![
+                Checkbox::new(ui, "On", true)
+                    .on_toggle(|_| ())
+                    .id(3)
+                    .into_element(),
+                Toggle::new(ui, "Sync", true)
+                    .on_toggle(|_| ())
+                    .id(4)
+                    .into_element(),
+                Slider::new(ui, 0.0, 100.0, 60.0)
+                    .on_change(|_| ())
+                    .id(5)
+                    .into_element(),
+            ])
+            .spacing(16.0)
+            .into_element(),
+            TextInput::new(ui, 7, "release")
+                .on_input(|_| ())
+                .into_element(),
+            Chart::line(ui, vec![Series::new("A", vec![3.0, 5.0, 4.0, 8.0, 6.0])])
+                .area()
+                .height(80.0)
+                .into_element(),
+        ],
+    )
+}
+
+#[test]
+fn theme_presets_light_and_dark() {
+    use alloy_ui_theme::{Appearance, Preset};
+    for p in Preset::PREMIUM {
+        for a in [Appearance::Light, Appearance::Dark] {
+            let name = format!(
+                "preset_{}_{}",
+                p.name().to_lowercase(),
+                if a == Appearance::Dark {
+                    "dark"
+                } else {
+                    "light"
+                }
+            );
+            check(&name, &render(Theme::preset(p, a), gallery, |_| {}));
+        }
+    }
+}

@@ -43,6 +43,7 @@ pub struct Txt {
     color: Option<Color>,
     wrap: bool,
     width: Length,
+    italic: bool,
 }
 
 /// Body text. Roles: `.heading()`, `.caption()`, ...
@@ -54,6 +55,7 @@ pub fn text(s: impl Into<String>) -> Txt {
         color: None,
         wrap: true,
         width: Length::Shrink,
+        italic: false,
     }
 }
 /// A section heading.
@@ -89,6 +91,11 @@ impl Txt {
     /// Small caption size.
     pub fn caption(mut self) -> Self {
         self.role = w::TextRole::Caption;
+        self
+    }
+    /// True italic (IBM Plex Sans Italic).
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
         self
     }
     /// Secondary (dimmed) colour.
@@ -167,6 +174,9 @@ impl Txt {
         }
         if !self.wrap {
             t = t.no_wrap();
+        }
+        if self.italic {
+            t = t.italic();
         }
         Node(t.into_element())
     }
