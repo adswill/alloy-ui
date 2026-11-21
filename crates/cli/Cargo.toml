@@ -1,6 +1,6 @@
 [package]
 name = "alloy-ui-cli"
-description = "Alloy build and bundle tool: .app/.dmg, .deb/AppImage, .exe/NSIS installer"
+description = "Alloy build and bundle tool: .app/.dmg, .deb/AppImage/Flatpak, .exe/NSIS/MSI/MSIX installer, release signing"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -20,6 +20,7 @@ path = "src/main.rs"
 
 [dependencies]
 alloy-ui-ipc.workspace = true
+alloy-ui-ship = { path = "../ship", version = "0.0.1", default-features = false }
 flate2 = "1.1.11"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"

@@ -1,0 +1,25 @@
+[package]
+name = "alloy-ui-ship"
+description = "Alloy release plumbing: signed update manifests, self-update and crash reports"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version = "1.81" # std::panic::PanicHookInfo
+
+[lints]
+workspace = true
+
+[features]
+default = ["http"]
+# Built-in HTTPS transport (`UreqFetch`). Turn it off to supply your own `Fetch`.
+http = ["dep:ureq"]
+
+[dependencies]
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+getrandom = "0.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.10"
+thiserror = "2.0.21"
+ureq = { version = "3", optional = true }

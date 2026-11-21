@@ -9,7 +9,15 @@
 //! category     = "Utility"               # freedesktop main category
 //! icons        = ["assets/icon-256.png", "assets/icon-512.png"]
 //! capabilities = "alloy.capabilities.toml"
+//! update-url   = "https://example.com/counter"   # where releases are published
+//! mac-entitlements = "mac.entitlements"          # optional, hardened runtime
+//! msix-publisher = "CN=Example Inc., O=Example Inc., C=US"  # = certificate subject
+//! flatpak-runtime-version = "24.08"              # optional
+//! flatpak-finish-args = ["--share=network"]      # optional, else from capabilities
 //! ```
+//!
+//! Signing keys and certificates never live here; they come from environment
+//! variables (see `bundle::sign`).
 
 use crate::error::{io, Error, Result};
 use alloy_ui_ipc::{Capability, CapabilitySet};
@@ -51,6 +59,11 @@ struct RawMeta {
     deb_depends: Option<Vec<String>>,
     #[serde(default)]
     rpm_requires: Option<Vec<String>>,
+    update_url: Option<String>,
+    mac_entitlements: Option<String>,
+    flatpak_runtime_version: Option<String>,
+    flatpak_finish_args: Option<Vec<String>>,
+    msix_publisher: Option<String>,
 }
 
 /// Validated app metadata plus package facts from Cargo.
@@ -94,6 +107,16 @@ pub struct Project {
     pub deb_depends: Vec<String>,
     /// RPM `Requires` entries (Fedora-style package names by default).
     pub rpm_requires: Vec<String>,
+    /// Directory URL where release artifacts and `latest.json` are published.
+    pub update_url: Option<String>,
+    /// macOS entitlements plist to sign with (hardened runtime).
+    pub mac_entitlements: Option<PathBuf>,
+    /// Flatpak runtime version (default `24.08`).
+    pub flatpak_runtime_version: String,
+    /// Flatpak `finish-args`; `None` derives them from the capabilities.
+    pub flatpak_finish_args: Option<Vec<String>>,
+    /// MSIX `Identity/@Publisher`; must equal the signing certificate subject.
+    pub msix_publisher: Option<String>,
 }
 
 /// Which package/binary to act on.
@@ -288,6 +311,13 @@ impl Project {
             rpm_requires: raw
                 .rpm_requires
                 .unwrap_or_else(|| ["libxkbcommon", "vulkan-loader"].map(String::from).to_vec()),
+            update_url: raw.update_url.map(|u| u.trim_end_matches('/').to_string()),
+            mac_entitlements: raw.mac_entitlements.map(|e| base.join(e)),
+            flatpak_runtime_version: raw
+                .flatpak_runtime_version
+                .unwrap_or_else(|| "24.08".into()),
+            flatpak_finish_args: raw.flatpak_finish_args,
+            msix_publisher: raw.msix_publisher,
             manifest_path,
         })
     }

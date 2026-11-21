@@ -1,8 +1,8 @@
 //! macOS `.app` and `.dmg`.
 
-use super::{copy_executable, remove_if_exists, run, which, write_file, Ctx, CAPABILITIES_FILE};
+use super::{copy_executable, remove_if_exists, run, write_file, Ctx, CAPABILITIES_FILE};
 use crate::error::{io, Error, Result};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 fn esc(s: &str) -> String {
@@ -93,24 +93,8 @@ pub fn app(ctx: &Ctx<'_>) -> Result<PathBuf> {
         info_plist(ctx, icns.is_some()).as_bytes(),
     )?;
     write_file(&contents.join("PkgInfo"), b"APPL????")?;
-    sign(&app)?;
+    super::sign::mac_sign_and_notarize(ctx, &app)?;
     Ok(app)
-}
-
-/// Ad-hoc (or `ALLOY_SIGN_IDENTITY`) sign when running on macOS.
-fn sign(app: &Path) -> Result<()> {
-    if !cfg!(target_os = "macos") {
-        eprintln!("note: .app not code-signed (not building on macOS)");
-        return Ok(());
-    }
-    if which("codesign").is_none() {
-        eprintln!("note: codesign not found; .app left unsigned");
-        return Ok(());
-    }
-    let id = std::env::var("ALLOY_SIGN_IDENTITY").unwrap_or_else(|_| "-".into());
-    run(Command::new("codesign")
-        .args(["--force", "--deep", "--sign", &id])
-        .arg(app))
 }
 
 /// Build a compressed `.dmg` containing the app and an Applications link.
@@ -140,6 +124,9 @@ pub fn dmg(ctx: &Ctx<'_>) -> Result<PathBuf> {
         .arg(&out));
     remove_if_exists(&stage)?;
     r?;
+    // The notarised, stapled .app inside is what Gatekeeper checks; the disk
+    // image itself only needs a signature.
+    super::sign::mac_sign_and_notarize(ctx, &out)?;
     Ok(out)
 }
 

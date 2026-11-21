@@ -42,6 +42,7 @@ pub fn portable(ctx: &Ctx<'_>) -> Result<PathBuf> {
     remove_if_exists(&dir)?;
     let exe = dir.join(format!("{}.exe", ctx.project.bin_name));
     write_file(&exe, &exe_with_icon(ctx)?)?;
+    super::sign::win_sign_file(&exe)?;
     if let Some(c) = &ctx.capabilities {
         write_file(&dir.join(CAPABILITIES_FILE), c.as_bytes())?;
     }
@@ -188,6 +189,7 @@ pub fn nsis(ctx: &Ctx<'_>) -> Result<PathBuf> {
     remove_if_exists(&stage)?;
     let exe = stage.join(format!("{}.exe", ctx.project.bin_name));
     write_file(&exe, &exe_with_icon(ctx)?)?;
+    super::sign::win_sign_file(&exe)?;
     let caps = match &ctx.capabilities {
         Some(c) => {
             let f = stage.join(CAPABILITIES_FILE);
@@ -217,6 +219,7 @@ pub fn nsis(ctx: &Ctx<'_>) -> Result<PathBuf> {
     write_file(&nsi, script.as_bytes())?;
     run(Command::new(tool).arg("-V2").arg(&nsi))?;
     remove_if_exists(&stage)?;
+    super::sign::win_sign_file(&out)?;
     Ok(out)
 }
 

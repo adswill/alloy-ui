@@ -55,6 +55,8 @@ mod guide {
     struct G11;
     #[doc = include_str!("../../../docs/guide/13-localization.md")]
     struct G12;
+    #[doc = include_str!("../../../docs/guide/14-shipping.md")]
+    struct G13;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.

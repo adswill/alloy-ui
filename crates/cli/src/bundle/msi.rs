@@ -122,6 +122,7 @@ pub fn msi(ctx: &Ctx<'_>) -> Result<PathBuf> {
     remove_if_exists(&stage)?;
     let exe = stage.join(format!("{}.exe", ctx.project.bin_name));
     write_file(&exe, &exe_with_icon(ctx)?)?;
+    super::sign::win_sign_file(&exe)?;
     let caps = match &ctx.capabilities {
         Some(c) => {
             let f = stage.join(CAPABILITIES_FILE);
@@ -155,6 +156,7 @@ pub fn msi(ctx: &Ctx<'_>) -> Result<PathBuf> {
         .arg(&out)
         .arg(&wxs_path))?;
     remove_if_exists(&stage)?;
+    super::sign::win_sign_file(&out)?;
     Ok(out)
 }
 

@@ -28,3 +28,5 @@ alloy-ui-macros = { path = "../macros", version = "0.0.1" }
 
 [dev-dependencies]
 trybuild = "1"
+# Only so the guide chapter on updates and crash reports compiles as a doc-test.
+alloy-ui-ship.workspace = true
