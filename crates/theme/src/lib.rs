@@ -28,7 +28,9 @@
 //!   (4.5:1 body, 3:1 large text and UI components) in the unit tests.
 #![warn(missing_docs)]
 
+mod presets;
 mod variants;
+pub use presets::Preset;
 pub use variants::{mix, Density};
 
 use alloy_ui_core::{Color, Point, Shadow};

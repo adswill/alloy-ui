@@ -242,6 +242,7 @@ enum Item {
         line_h: f32,
         weight: u16,
         mono: bool,
+        italic: bool,
         color: Color,
         code: bool,
         link: Option<String>,
@@ -261,8 +262,7 @@ struct Laid {
 
 /// Static, wrapped, read-only Markdown. It lays out to a fixed `width` (default 640 px) so it
 /// has a definite height inside a [`Scrollable`](crate::Scrollable). Links are clickable and
-/// reported through `on_link`. Italic is drawn as a medium weight until a bundled italic face
-/// exists. Not supported: tables, images, HTML, nested block quotes.
+/// reported through `on_link`. Emphasis uses the bundled true italic face. Not supported: tables, images, HTML, nested block quotes.
 pub struct Markdown<M> {
     ui: Ui,
     blocks: Vec<Block>,
@@ -351,14 +351,9 @@ impl<M: 'static> Markdown<M> {
                     text: (*word).to_owned(),
                     size: if mono { size * 0.92 } else { size },
                     line_h,
-                    weight: if s.bold {
-                        700
-                    } else if s.emph {
-                        weight.max(500)
-                    } else {
-                        weight
-                    },
+                    weight: if s.bold { 700 } else { weight },
                     mono,
+                    italic: s.emph,
                     color: if s.link.is_some() {
                         t.palette.accent
                     } else {
@@ -504,6 +499,7 @@ impl<M: 'static> Markdown<M> {
                             line_h: lh,
                             weight: 400,
                             mono: false,
+                            italic: false,
                             color: p.text_secondary,
                             code: false,
                             link: None,
@@ -538,6 +534,7 @@ impl<M: 'static> Markdown<M> {
                                 line_h: lh,
                                 weight: 400,
                                 mono: true,
+                                italic: false,
                                 color: p.text,
                                 code: false,
                                 link: None,
@@ -635,6 +632,7 @@ impl<M: 'static> Widget<M> for Markdown<M> {
                     line_h,
                     weight,
                     mono,
+                    italic,
                     color,
                     code,
                     link,
@@ -670,10 +668,11 @@ impl<M: 'static> Widget<M> for Markdown<M> {
                         },
                         max_width: None,
                         weight: *weight,
-                        family: if *mono {
-                            FontFamily::Mono
-                        } else {
-                            FontFamily::Sans
+                        family: match (*mono, *italic) {
+                            (true, false) => FontFamily::Mono,
+                            (true, true) => FontFamily::MonoItalic,
+                            (false, false) => FontFamily::Sans,
+                            (false, true) => FontFamily::SansItalic,
                         },
                         line_height: Some(*line_h),
                     });

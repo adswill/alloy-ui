@@ -118,6 +118,7 @@ pub struct Look {
     accent: Option<alloy_ui_core::Color>,
     high_contrast: bool,
     density: alloy_ui_theme::Density,
+    preset: alloy_ui_theme::Preset,
 }
 
 impl Look {
@@ -143,6 +144,10 @@ impl Look {
             ..self
         }
     }
+    /// A named preset from the theme gallery (`Preset::Graphite`, `Preset::Ember`, ...).
+    pub fn preset(self, preset: alloy_ui_theme::Preset) -> Self {
+        Self { preset, ..self }
+    }
     /// 7:1 text, solid borders.
     pub fn high_contrast(self, on: bool) -> Self {
         Self {
@@ -156,10 +161,15 @@ impl Look {
     }
     /// The theme this look describes.
     pub fn theme(self) -> Theme {
-        let mut t = if self.dark {
-            Theme::dark()
+        let appearance = if self.dark {
+            alloy_ui_theme::Appearance::Dark
         } else {
-            Theme::light()
+            alloy_ui_theme::Appearance::Light
+        };
+        let mut t = if self.preset == alloy_ui_theme::Preset::Alloy {
+            Theme::for_appearance(appearance)
+        } else {
+            Theme::preset(self.preset, appearance)
         };
         if let Some(c) = self.accent {
             t = t.with_accent(c);

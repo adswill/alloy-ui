@@ -38,6 +38,9 @@ fn hundred_thousand_rows_render_and_select() {
     assert!(h.has_text("item 0") && !h.has_text("item 99999"));
     h.click("item 2");
     h.key("End");
+    for _ in 0..90 {
+        h.advance(16); // the list glides to the end on the scroll spring
+    }
     assert!(h.has_text("item 99999"));
 }
 
