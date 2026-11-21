@@ -1,0 +1,37 @@
+[package]
+name = "alloy-ui-mobile-counter"
+description = "Touch-first counter: the Alloy mobile (Android and iOS) starter"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# `cdylib` is what Android loads, `staticlib` is what the Xcode project links,
+# `rlib` lets the desktop binary and tests share the code.
+[lib]
+name = "alloy_counter"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[[bin]]
+name = "mobile-counter"
+path = "src/main.rs"
+
+[package.metadata.alloy]
+identifier = "dev.alloyui.counter"
+product-name = "Alloy Counter"
+publisher = "Alloy"
+
+# Read by `alloy bundle --target android|ios`.
+[package.metadata.alloy.mobile]
+orientation = "portrait"    # portrait | landscape | any
+android-min-sdk = 26
+android-target-sdk = 35
+ios-deployment-target = "15.0"
+
+[dependencies]
+alloy-ui = { path = "../../crates/alloy" }

@@ -72,6 +72,24 @@ pub fn theme() -> Rc<Theme> {
     ui().theme()
 }
 
+thread_local! {
+    static SAFE_AREA: std::cell::Cell<alloy_ui_platform::safe_area::Insets> =
+        const { std::cell::Cell::new(alloy_ui_platform::safe_area::Insets::ZERO) };
+}
+
+/// Parts of the window that system chrome (notch, status and navigation
+/// bars, home indicator) may cover, in logical pixels; all zero on desktop.
+/// Read it in `view` and keep content clear of it, or use
+/// [`View::pad_safe`](crate::View::pad_safe). The view is rebuilt when it
+/// changes (rotation, bars hiding).
+pub fn safe_area() -> alloy_ui_platform::safe_area::Insets {
+    SAFE_AREA.with(std::cell::Cell::get)
+}
+
+pub(crate) fn set_safe_area(i: alloy_ui_platform::safe_area::Insets) {
+    SAFE_AREA.with(|c| c.set(i));
+}
+
 /// The current theme's colours, for the odd custom colour.
 pub fn palette() -> Palette {
     theme().palette.clone()
