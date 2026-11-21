@@ -3,6 +3,7 @@
 use crate::{
     a11y::{A11yNode, Role},
     motion::{Animatable, Presence, Spring, Transition},
+    physics,
     text_edit::{Edit, History},
     util,
 };
@@ -160,6 +161,40 @@ struct Inner {
     a11y: Vec<A11yNode>,
     viewport: Rectangle,
     drag: Option<crate::dnd::DragState>,
+    /// Gesture physics of each scrollable: overscroll and coasting.
+    phys: HashMap<u64, Body>,
+    /// Use the tick clock as wall time (tests); otherwise the real clock.
+    tick_clock: bool,
+    epoch: std::time::Instant,
+    /// Rubber-band small (trackpad-sized) wheel deltas past the edges.
+    elastic: bool,
+    /// Shared elements ([`crate::Hero`]) drawn so far by the page being recorded.
+    hero_collect: Option<Vec<HeroRec>>,
+}
+
+/// A shared element recorded while a page was drawn: where it was and what it drew.
+#[derive(Clone)]
+pub(crate) struct HeroRec {
+    pub key: u64,
+    pub rect: Rectangle,
+    pub cmds: Rc<Vec<DrawCommand>>,
+}
+
+/// Gesture state of one scrollable. `raw` is how far (px, signed) the pointer
+/// has pulled past an edge; what is drawn is [`physics::rubber_band`] of it.
+#[derive(Clone, Copy, Default)]
+struct Body {
+    /// Velocity of the content position, px/s, while coasting.
+    v: f32,
+    /// Coasting on friction or springing back from an edge.
+    flying: bool,
+    raw: f32,
+    /// Wall time of the last wheel or drag input, ms.
+    last_input: u64,
+    /// Largest legal offset and viewport length as of the last draw.
+    max: f32,
+    dim: f32,
+    last_tick: u64,
 }
 
 /// One value (up to four components) moving toward a target, by timed tween
@@ -229,11 +264,47 @@ impl Anim {
     }
 }
 
+impl Inner {
+    /// Advance every coasting scrollable to `now`.
+    fn step_bodies(&mut self, now: u64) {
+        let reduced = self.reduced_motion;
+        let ids: Vec<u64> = self
+            .phys
+            .iter()
+            .filter(|(_, b)| b.flying)
+            .map(|(i, _)| *i)
+            .collect();
+        for id in ids {
+            let b = self.phys[&id];
+            let dt = (now.saturating_sub(b.last_tick)) as f32 / 1000.0;
+            let off = self.scroll.get(&id).copied().unwrap_or(0.0) as f32;
+            let x = off + b.raw;
+            let (x, v, rest) = if reduced {
+                (x.clamp(0.0, b.max), 0.0, true)
+            } else if dt > 0.0 {
+                physics::fling_step(x, b.v, 0.0, b.max, dt.min(0.05))
+            } else {
+                (x, b.v, false)
+            };
+            let off = x.clamp(0.0, b.max);
+            self.scroll.insert(id, off as f64);
+            self.anims.remove(&(0x5C01_0000_0000 ^ id));
+            let b = self.phys.get_mut(&id).expect("listed above");
+            b.last_tick = now;
+            b.raw = if rest { 0.0 } else { x - off };
+            b.v = if rest { 0.0 } else { v };
+            b.flying = !rest;
+        }
+    }
+}
+
 /// A page's recorded draw commands, kept so it can be drawn on its way out.
 #[derive(Clone)]
 pub(crate) struct Snapshot {
     pub page: u64,
     pub cmds: Rc<Vec<DrawCommand>>,
+    /// Shared elements the page held, drawn apart from `cmds` so they can fly.
+    pub heroes: Rc<Vec<HeroRec>>,
 }
 
 /// A one-shot timer started the first time its key is seen.
@@ -287,6 +358,11 @@ impl Ui {
                 Size::new(f32::INFINITY, f32::INFINITY),
             ),
             drag: None,
+            phys: HashMap::new(),
+            tick_clock: false,
+            epoch: std::time::Instant::now(),
+            elastic: true,
+            hero_collect: None,
         })))
     }
 
@@ -426,11 +502,13 @@ impl Ui {
         for c in s.clocks.values_mut() {
             c.start.get_or_insert(now);
         }
+        s.step_bodies(now);
     }
     /// True while any transition is still running; the runtime then keeps ticking.
     pub fn animating(&self) -> bool {
         let s = self.0.borrow();
         s.anims.values().any(|a| a.running(s.now))
+            || s.phys.values().any(|b| b.flying || b.raw != 0.0)
             || s.clocks
                 .values()
                 .any(|c| c.start.map_or(true, |st| s.now < st + c.dur))
@@ -489,6 +567,25 @@ impl Ui {
     pub fn spring(&self, key: u64, target: f32, spring: Spring) -> f32 {
         self.animate(key, target, Transition::Spring(spring))
     }
+    /// Put the spring `key` at `value` moving at `velocity` (units/s), so the next
+    /// [`Ui::spring`] call toward a new target carries on from there. This is how a
+    /// drag hands over to a spring on release.
+    pub fn spring_release(&self, key: u64, value: f32, velocity: f32, spring: Spring) {
+        let mut s = self.0.borrow_mut();
+        let now = s.now;
+        s.anims.insert(
+            key,
+            Anim {
+                from: [value, 0.0, 0.0, 0.0],
+                to: [value, 0.0, 0.0, 0.0],
+                cur: [value, 0.0, 0.0, 0.0],
+                vel: [velocity, 0.0, 0.0, 0.0],
+                start: Some(now),
+                last: now,
+                tr: Transition::Spring(spring),
+            },
+        );
+    }
     /// Enter and exit progress for something that appears and disappears.
     /// `present` flips the target; `progress` eases 0 to 1 over `ms`, and
     /// `mounted` stays true until an exit has fully played, so the caller can
@@ -504,6 +601,25 @@ impl Ui {
     /// knows it has just appeared.
     pub fn frame(&self) -> u64 {
         self.0.borrow().frame
+    }
+    /// Start collecting shared elements for a page; returns the collector it replaced.
+    pub(crate) fn hero_begin(&self) -> Option<Vec<HeroRec>> {
+        self.0.borrow_mut().hero_collect.replace(Vec::new())
+    }
+    /// Stop collecting, restore `outer`, and return what the page held.
+    pub(crate) fn hero_end(&self, outer: Option<Vec<HeroRec>>) -> Vec<HeroRec> {
+        std::mem::replace(&mut self.0.borrow_mut().hero_collect, outer).unwrap_or_default()
+    }
+    /// Hand a shared element to the page being recorded. False if there is none, and
+    /// the element should simply draw itself.
+    pub(crate) fn hero_push(&self, rec: HeroRec) -> bool {
+        match self.0.borrow_mut().hero_collect.as_mut() {
+            Some(v) => {
+                v.push(rec);
+                true
+            }
+            None => false,
+        }
     }
     /// Store `snap` as the latest snapshot for `key`, returning the previous one.
     pub(crate) fn swap_snapshot(&self, key: u64, snap: Snapshot) -> Option<Snapshot> {
@@ -760,6 +876,134 @@ impl Ui {
     pub fn scroll_jump_f64(&self, id: u64, offset: f64, max: f64) {
         self.set_scroll_offset_f64(id, offset.clamp(0.0, max.max(0.0)));
         self.0.borrow_mut().anims.remove(&Self::scroll_key(id));
+    }
+
+    /// Wall-clock milliseconds, for gesture timing. It follows the tick clock when
+    /// [`Ui::use_tick_clock`] is on (tests), so velocities are deterministic.
+    pub fn wall_ms(&self) -> u64 {
+        let s = self.0.borrow();
+        if s.tick_clock {
+            s.now
+        } else {
+            s.epoch.elapsed().as_millis() as u64
+        }
+    }
+    /// Make [`Ui::wall_ms`] follow `Event::Tick`, so tests control gesture time.
+    pub fn use_tick_clock(&self) {
+        self.0.borrow_mut().tick_clock = true;
+    }
+    /// Turn edge rubber-banding of wheel scrolling on or off (default on). Only
+    /// small deltas, as trackpads send, stretch past an edge; mouse-wheel
+    /// notches always stop at it.
+    pub fn set_elastic_scroll(&self, on: bool) {
+        self.0.borrow_mut().elastic = on;
+    }
+    /// Where the scrollable `id` is drawn, including any rubber-band stretch
+    /// past its edges (negative at the top, beyond `max` at the bottom). `dim`
+    /// is the viewport length, which sets how far the band can stretch.
+    pub fn scroll_view(&self, id: u64, max: f32, dim: f32) -> f32 {
+        self.phys_sync(id, max, dim);
+        let flying = self.0.borrow().phys.get(&id).is_some_and(|b| b.flying);
+        let base = if flying {
+            self.scroll_offset(id).clamp(0.0, max.max(0.0))
+        } else {
+            self.scroll_shown(id, max)
+        };
+        base + self.scroll_overshoot(id)
+    }
+    /// The drawn stretch past an edge for `id`: zero when inside.
+    pub fn scroll_overshoot(&self, id: u64) -> f32 {
+        let s = self.0.borrow();
+        s.phys
+            .get(&id)
+            .map_or(0.0, |b| physics::rubber_band(b.raw, b.dim.max(1.0)))
+    }
+    /// Remember the geometry for coasting, and hand a released stretch to the
+    /// integrator once the wheel or pointer has been quiet for a moment.
+    fn phys_sync(&self, id: u64, max: f32, dim: f32) {
+        let wall = self.wall_ms();
+        let mut s = self.0.borrow_mut();
+        let now = s.now;
+        let Some(b) = s.phys.get_mut(&id) else { return };
+        b.max = max.max(0.0);
+        b.dim = dim;
+        if !b.flying && b.raw != 0.0 && wall.saturating_sub(b.last_input) > physics::GESTURE_GAP_MS
+        {
+            b.flying = true;
+            b.v = 0.0;
+            b.last_tick = now;
+        }
+    }
+    /// The phase of the scroll gesture on `id`, inferred from input timing.
+    pub fn scroll_phase(&self, id: u64) -> physics::Phase {
+        let wall = self.wall_ms();
+        let s = self.0.borrow();
+        let Some(b) = s.phys.get(&id) else {
+            return physics::Phase::Idle;
+        };
+        if b.flying {
+            physics::Phase::Coasting
+        } else if wall.saturating_sub(b.last_input) <= physics::GESTURE_GAP_MS {
+            physics::Phase::Changed
+        } else {
+            physics::Phase::Idle
+        }
+    }
+    /// Like [`Ui::scroll_wheel`] but the content can be pulled past an edge,
+    /// resisting, and springs back when input stops. `force` stretches for any
+    /// delta size (touch-style dragging); otherwise only trackpad-sized deltas
+    /// (under 30 px) do. Returns true if anything moved.
+    pub fn scroll_wheel_elastic(&self, id: u64, dy: f32, max: f32, dim: f32, force: bool) -> bool {
+        let wall = self.wall_ms();
+        let mut s = self.0.borrow_mut();
+        let max = max.max(0.0);
+        let elastic = (force || (s.elastic && dy.abs() < 30.0)) && !s.reduced_motion;
+        let off = s
+            .scroll
+            .get(&id)
+            .copied()
+            .unwrap_or(0.0)
+            .clamp(0.0, max as f64) as f32;
+        let b = s.phys.entry(id).or_default();
+        let old_raw = b.raw;
+        b.flying = false;
+        b.v = 0.0;
+        let virt = off + b.raw - dy;
+        let (noff, raw) = if virt < 0.0 {
+            (0.0, virt)
+        } else if virt > max {
+            (max, virt - max)
+        } else {
+            (virt, 0.0)
+        };
+        b.raw = if elastic { raw } else { 0.0 };
+        b.last_input = wall;
+        b.max = max;
+        b.dim = dim;
+        let raw_changed = b.raw != old_raw;
+        s.scroll.insert(id, noff as f64);
+        if force {
+            // Dragging: the content stays under the pointer, with no glide behind it.
+            s.anims.remove(&Self::scroll_key(id));
+        }
+        noff != off || raw_changed
+    }
+    /// Stop `id` coasting, keeping where it is (a finger landing on a moving list).
+    pub fn scroll_catch(&self, id: u64) {
+        if let Some(b) = self.0.borrow_mut().phys.get_mut(&id) {
+            b.flying = false;
+            b.v = 0.0;
+        }
+    }
+    /// Let go of `id` while moving at `velocity` px/s (positive scrolls toward
+    /// the bottom): it coasts on friction and is caught at the edges.
+    pub fn scroll_fling(&self, id: u64, velocity: f32) {
+        let now = self.0.borrow().now;
+        let mut s = self.0.borrow_mut();
+        let b = s.phys.entry(id).or_default();
+        b.flying = true;
+        b.v = velocity;
+        b.last_tick = now;
     }
 
     /// Id of the widget whose popup (e.g. an open pick list) is showing.

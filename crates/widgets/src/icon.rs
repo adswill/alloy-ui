@@ -37,10 +37,29 @@ impl IconPack {
     }
 }
 
+/// The glyph of the icon called `name` (`"heart"`, `"arrow-up-right"`) in `pack`, from the whole
+/// pack. Needs the `icons-lucide-full` or `icons-phosphor-full` feature for that pack; without it
+/// this finds nothing, and nothing of the full pack is compiled in.
+pub fn icon_glyph(pack: IconPack, name: &str) -> Option<char> {
+    let table: &[(&str, u32)] = match pack {
+        #[cfg(feature = "icons-lucide-full")]
+        IconPack::Lucide => crate::icon_names::LUCIDE,
+        #[cfg(feature = "icons-phosphor-full")]
+        IconPack::Phosphor => crate::icon_names::PHOSPHOR,
+        #[allow(unreachable_patterns)]
+        _ => &[],
+    };
+    table
+        .binary_search_by_key(&name, |(n, _)| n)
+        .ok()
+        .and_then(|i| char::from_u32(table[i].1))
+}
+
 /// One icon, square, in the text colour unless told otherwise. Size defaults to 16 px.
 pub struct IconView {
     ui: Ui,
     icon: Icon,
+    name: Option<String>,
     pack: Option<IconPack>,
     size: f32,
     color: Option<Color>,
@@ -52,10 +71,17 @@ impl IconView {
         Self {
             ui: ui.clone(),
             icon,
+            name: None,
             pack: None,
             size: 16.0,
             color: None,
         }
+    }
+    /// Draw the icon called `name` from the whole pack instead (see [`icon_glyph`]); an unknown
+    /// name, or a build without the full pack, draws the "help" icon so the gap is visible.
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
     }
     /// Edge length in logical pixels.
     pub fn size(mut self, px: f32) -> Self {
@@ -101,7 +127,18 @@ impl<M> Widget<M> for IconView {
         let pack = self.pack.unwrap_or_else(|| self.ui.icon_pack());
         out.push(DrawCommand::Text {
             origin: Point::new(b.origin.x, b.origin.y),
-            content: pack.glyph(self.icon).to_string(),
+            content: self
+                .name
+                .as_deref()
+                .and_then(|n| icon_glyph(pack, n))
+                .unwrap_or_else(|| {
+                    if self.name.is_some() {
+                        pack.glyph(Icon::Help)
+                    } else {
+                        pack.glyph(self.icon)
+                    }
+                })
+                .to_string(),
             size: self.size,
             color: self.color.unwrap_or(self.ui.theme().palette.text),
             max_width: None,

@@ -1,4 +1,4 @@
-//! The theme gallery: five original presets, each with a light and a dark face.
+//! The theme gallery: six original presets, each with a light and a dark face.
 //!
 //! A preset is a pure function `(Preset, Appearance) -> Theme`, so it composes with the other
 //! variants: `Theme::preset(Preset::Graphite, Appearance::Dark).density(Density::Compact)`.
@@ -28,26 +28,30 @@ pub enum Preset {
     Flux,
     /// Icy blue-greys with a cyan accent. Light and airy.
     Glacier,
+    /// Indigo-cast greys with an electric violet accent. Deep and a little futuristic.
+    Voltage,
 }
 
 impl Preset {
-    /// The five designed presets, in gallery order (the stock theme excluded).
-    pub const PREMIUM: [Preset; 5] = [
+    /// The designed presets, in gallery order (the stock theme excluded).
+    pub const PREMIUM: [Preset; 6] = [
         Preset::Graphite,
         Preset::Ember,
         Preset::Signal,
         Preset::Flux,
         Preset::Glacier,
+        Preset::Voltage,
     ];
 
     /// Every preset including the stock one.
-    pub const ALL: [Preset; 6] = [
+    pub const ALL: [Preset; 7] = [
         Preset::Alloy,
         Preset::Graphite,
         Preset::Ember,
         Preset::Signal,
         Preset::Flux,
         Preset::Glacier,
+        Preset::Voltage,
     ];
 
     /// Display name.
@@ -59,6 +63,7 @@ impl Preset {
             Preset::Signal => "Signal",
             Preset::Flux => "Flux",
             Preset::Glacier => "Glacier",
+            Preset::Voltage => "Voltage",
         }
     }
 
@@ -71,6 +76,7 @@ impl Preset {
             Preset::Signal => "Green-tinged greys, acid green.",
             Preset::Flux => "Magenta-cast greys, hot pink.",
             Preset::Glacier => "Icy blue-greys, cyan.",
+            Preset::Voltage => "Indigo-cast greys, electric violet.",
         }
     }
 
@@ -90,6 +96,8 @@ impl Preset {
             (Preset::Flux, true) => 0xFF6FB5,
             (Preset::Glacier, false) => 0x0B78A8,
             (Preset::Glacier, true) => 0x4CC9F0,
+            (Preset::Voltage, false) => 0x5B3FE0,
+            (Preset::Voltage, true) => 0xA48BFF,
         })
     }
 
@@ -102,6 +110,7 @@ impl Preset {
             Preset::Signal => (140.0, 0.07),
             Preset::Flux => (318.0, 0.08),
             Preset::Glacier => (198.0, 0.12),
+            Preset::Voltage => (252.0, 0.14),
         }
     }
 
@@ -132,6 +141,11 @@ impl Preset {
                 small: 3.0,
                 medium: 5.0,
                 large: 7.0,
+            },
+            Preset::Voltage => Radii {
+                small: 3.0,
+                medium: 7.0,
+                large: 10.0,
             },
         }
     }
