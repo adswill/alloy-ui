@@ -66,7 +66,7 @@ fn main() {
     let mut ui = Harness::new(app, 300.0, 160.0);
     ui.click("Add").click("Add");
     assert!(ui.has_text("n = 2"));
-    ui.chord("ctrl+z");
+    ui.chord("mod+z");
     assert!(ui.has_text("n = 1"));
 }
 ```

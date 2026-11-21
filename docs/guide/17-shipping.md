@@ -125,11 +125,12 @@ A panic on any thread writes a JSON report (message, location, backtrace, versio
 | thing | status |
 |---|---|
 | signed manifest: sign, verify, tamper, wrong key, wrong app, downgrade, replay of a changed file | unit-tested; the Ed25519 implementation matches RFC 8032 test vector 1, and `openssl` verified a manifest signed by `alloy` |
-| update check, download, hash check and file replacement | tested over a real local HTTP server on Linux |
-| crash hook and upload | tested (panic on a named thread, scrub, retention, upload over HTTP) on Linux |
-| MSIX | built on Linux; zip CRCs, block-map hashes and header sizes checked by an independent script; **never installed on Windows** |
-| Flatpak | manifest, metainfo and layout generated and tested; **`flatpak-builder` was not run** |
-| AppImage | AppDir layout tested; **`appimagetool` was not run** |
-| macOS signing and notarisation | command lines unit-tested; **never run against Apple's tools or service** |
+| update check, download, hash check and file replacement | tested over a real local HTTP server on Linux, and end to end in a real process on **Linux, macOS and Windows** runners (`update-e2e`, CI run on `main`, 2026-11-21) |
+| crash hook and upload | tested (panic on a named thread, scrub, retention, upload over HTTP) on Linux; the real-process crash report also ran on macOS and Windows runners (`update-e2e`) |
+| MSIX | built on Linux and checked by an independent script; **built with a throwaway self-signed certificate, installed with `Add-AppxPackage`, registered and removed on a Windows runner** (`windows-installers`). The certificate is not trusted outside that runner, so this proves the package format, not a store or user install |
+| Flatpak | manifest, metainfo and layout tested; **built with `flatpak-builder`, installed for the user, `/app/bin/counter` found inside the sandbox and uninstalled on an Ubuntu runner** (`linux-packages`). A headless frame from inside the sandbox is a soft check, reported not required |
+| AppImage | AppDir layout tested; **built with `appimagetool`, extracted and run, it rendered a frame, on an Ubuntu runner** (`linux-packages`) |
+| macOS bundle (`.app` and `.dmg`), ad hoc signature | **built on a macOS runner: the ad hoc signature verifies, the plist lints, the `.dmg` mounts and the app inside it renders a frame** (`macos-bundle`) |
+| macOS signing with a Developer ID and notarisation | command lines unit-tested; **never run against Apple's tools or service** (the `macos-notarize` job is skipped until Apple credentials are added as secrets) |
 | Windows signing | command lines for `signtool`, `osslsigncode` and custom commands unit-tested; **never run** |
-| MSI | `.wxs` generation tested; WiX not run here |
+| MSI and NSIS installers | `.wxs` generation tested; **WiX 5 and NSIS built them on a Windows runner, which silently installed and uninstalled both** (`windows-installers`) |

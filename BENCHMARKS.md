@@ -3,7 +3,7 @@
 Only numbers that were actually measured are listed. Everything below ran on one
 machine: the Linux cloud development container (shared CPU, software rendering
 through Mesa llvmpipe under Xvfb). Treat it as indicative, not as a GPU result.
-macOS and Windows have not been run yet; run the harness there and add a section.
+The section "Three-OS footprint (CI runners)" near the end has the first numbers from real macOS, Windows and Linux CI runners (2026-11-21); every other section is Linux only.
 
 ## Headless harness (Linux, software rendering)
 
@@ -34,7 +34,7 @@ The earlier wgpu-offscreen column was dropped when the examples moved to the fac
 
 ## Bundle sizes (counter, `alloy bundle -p alloy-ui-examples --bin counter`)
 
-Linux x86_64, run locally (the CI jobs that would record Windows and macOS sizes have not run yet, see `crates/cli/ci/`):
+Linux x86_64, run locally (the Windows and macOS installer jobs in `crates/cli/ci/` now run in CI and pass, but their size tables are only in the job summaries, not copied here):
 
 | Artifact | Bytes |
 |---|---|
@@ -42,7 +42,7 @@ Linux x86_64, run locally (the CI jobs that would record Windows and macOS sizes
 | .deb | 3,212,402 |
 | .rpm | 3,213,834 |
 
-Windows (exe, NSIS, MSI) and macOS (.app, .dmg) sizes: not measured. `verify-windows.ps1` and `verify-macos.sh` write them to the job summary when a runner is available.
+Windows (exe, NSIS, MSI) and macOS (.app, .dmg) installer sizes: the `ship` workflow builds them on real runners and writes the sizes to its job summaries (`verify-windows.ps1`, `verify-macos.sh`); they are not recorded here. The bare counter binary on each OS is under "Three-OS footprint".
 
 ## Windowed run (Linux, Xvfb, Mesa llvmpipe software rendering)
 
@@ -50,7 +50,7 @@ Windows (exe, NSIS, MSI) and macOS (.app, .dmg) sizes: not measured. `verify-win
 (needs `xvfb xdotool libxkbcommon-x11-0 mesa-vulkan-drivers libvulkan1` and `pip install python-xlib`).
 The shell's frame counter is read through `ALLOY_PERF=1` (`ctx.frame_stats()`), and the window is closed with `WM_DELETE_WINDOW` so the totals are printed.
 
-**These are Linux, software-rendered numbers, not GPU numbers.** There is no GPU in the container, and nothing here was run on macOS or Windows (CI has never completed a three-OS run).
+**These are Linux, software-rendered numbers, not GPU numbers.** There is no GPU in the container, and nothing in this section was run on macOS or Windows (the first three-OS CI run completed on 2026-11-21; its numbers are in "Three-OS footprint").
 
 - **First paint**: from entering the shell's `run` to the end of the first painted frame (the shell's own measure; excludes process start).
 - **Idle frames**: frames painted in a run of about 6.5 s with the window untouched. Idle apps should paint only a few at start; `dashboard` has a 1 s tick so it keeps painting.
@@ -69,7 +69,7 @@ Reading it: first paint is 90 to 110 ms and idle CPU is 0.00% for every example 
 
 ## Render and text path profile (Linux, llvmpipe)
 
-All numbers: Linux x86_64 cloud container, software Vulkan (Mesa llvmpipe), not a GPU. macOS and Windows not run.
+All numbers: Linux x86_64 cloud container, software Vulkan (Mesa llvmpipe), not a GPU. macOS and Windows: see "Three-OS footprint" for start-up only.
 
 `cargo run --release -p alloy-ui-bench --bin text` times `TextMeasurer::measure` and `TextSystem::layout` on 60 repeated short strings (the shape of a no-op re-layout or an unchanged frame):
 
@@ -119,7 +119,7 @@ Tried and not kept: removing winit's `wayland-csd-adwaita` feature changed the c
 ## Not measured yet
 
 - 120 fps on ProMotion, and any frame rate on a real GPU: the container has none.
-- Everything on macOS and Windows.
+- On macOS and Windows: everything except binary size and cold start of the counter (see "Three-OS footprint"). No frame rates, no memory, no idle CPU, no large-list timings.
 
 ## Developer experience: lines of code vs iced
 
@@ -543,3 +543,20 @@ Not measured: output through a real sound card, video on macOS or Windows (needs
 | Type one character at every caret | many carets, 200,000 lines | 0.60 s |
 
 Honest reading: drawing is cost-of-the-window (27 µs, 16 ms), which is what the virtualised views are for. Rebuilding a million-row view is a two second job, not an interactive one: it pulls every cell through a `String` callback, so it should run on a background task and be applied when it finishes (debounce a filter box). Multi-caret edits on a 200k line file are sub-second, not instant. The grid has no filter row of its own; the model filters and the app supplies the text input.
+
+## Three-OS footprint (CI runners)
+
+First measurements from real macOS, Windows and Linux runners: the `footprint` job in `.github/workflows/mobile.yml`, run on `main` at commit 097c6e9 on 2026-11-21 (`tools/ci/footprint.sh`). It builds the counter example in release (`cargo build --release -p alloy-ui-examples --bin counter`, default features) and records the binary size and the median of 10 cold launches of "first paint" (from entering `run` to the end of the first painted frame). The same binary is run twice: with the default GPU renderer, and with `ALLOY_RENDERER=cpu`.
+
+| OS (runner) | binary | first paint, GPU renderer (median / min / max) | first paint, `ALLOY_RENDERER=cpu` (median / min / max) |
+|---|---|---|---|
+| Linux x86_64 (ubuntu-latest, Xvfb, Mesa llvmpipe) | 6.93 MB | 88.1 / 85.6 / 484.1 ms | 38.5 / 23.1 / 51.8 ms |
+| macOS arm64 (macos-latest) | 3.67 MB | 195.0 / 180.8 / 1178.8 ms | 162.4 / 130.9 / 559.2 ms |
+| Windows x86_64 (windows-latest) | 4.39 MB | 236.9 / 230.3 / 3892.5 ms | 63.0 / 56.3 / 67.8 ms |
+
+How to read this:
+- **These runners have no real GPU.** The "GPU renderer" column is wgpu on whatever adapter the runner offers (llvmpipe on Linux; which adapter macOS and Windows used was not recorded). It says nothing about a real graphics card. The CPU column is the renderer without wgpu start-up.
+- Targets: under 10 MB binary is met on all three. Under 200 ms start-up is met by the Linux and CPU-path numbers and by the macOS GPU-path median (195 ms) only barely; **the Windows GPU path (237 ms median) and the first launch (up to 3.9 s on Windows, 1.2 s on macOS) miss it.** The max column is the slowest of the 10 launches; the cause (for example cold file caches) was not investigated.
+- The binary differs by OS for the same source (3.67 MB macOS, 4.39 MB Windows, 6.93 MB Linux); the reason was not investigated. The macOS figure comes from the file size only; its job summary printed the size line garbled, so MiB is not recorded.
+- Shared CI runners vary run to run. Treat differences under about 30% as noise.
+- Not measured on any of the three: frame rate, idle CPU, memory.
