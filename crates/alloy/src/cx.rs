@@ -79,38 +79,11 @@ pub fn palette() -> Palette {
 
 /// Switch the window between the light and dark theme (an accent set with [`set_accent`] stays).
 pub fn set_dark(dark: bool) {
-    let accent = ACCENT.with(|a| a.get());
     let mut t = if dark { Theme::dark() } else { Theme::light() };
-    if let Some(c) = accent {
-        tint(&mut t, c);
+    if let Some(c) = ACCENT.with(|a| a.get()) {
+        t = t.with_accent(c);
     }
     ui().set_theme(t);
-}
-
-/// Use `color` as the accent in light and dark. Cheap to call every frame: nothing happens if
-/// the window already has that accent.
-pub fn set_accent(color: Color) {
-    ACCENT.with(|a| a.set(Some(color)));
-    let mut t = (*theme()).clone();
-    if t.palette.accent != color {
-        tint(&mut t, color);
-        ui().set_theme(t);
-    }
-}
-
-fn tint(t: &mut Theme, c: Color) {
-    let shade = |k: f32| Color {
-        r: c.r * k,
-        g: c.g * k,
-        b: c.b * k,
-        a: c.a,
-    };
-    let p = &mut t.palette;
-    p.accent = c;
-    p.accent_hover = shade(0.92);
-    p.accent_pressed = shade(0.82);
-    p.focus_ring = c;
-    p.selection = c.with_alpha(0.22);
 }
 
 thread_local! {
@@ -118,9 +91,14 @@ thread_local! {
 }
 
 /// Recolour the whole window with a brand accent, keeping light or dark. The accent is nudged
-/// until it passes WCAG AA on the theme's surfaces.
+/// until it passes WCAG AA on the theme's surfaces. Cheap to call every frame: nothing happens
+/// if the window already has that accent.
 pub fn set_accent(brand: alloy_ui_core::Color) {
-    ui().set_theme(theme().as_ref().clone().with_accent(brand));
+    ACCENT.with(|a| a.set(Some(brand)));
+    let t = theme().as_ref().clone().with_accent(brand);
+    if t.palette.accent != theme().palette.accent {
+        ui().set_theme(t);
+    }
 }
 
 /// A complete look: appearance, optional brand accent, contrast and density. Build one and
@@ -190,6 +168,7 @@ impl Look {
 
 /// Apply a [`Look`] to the window.
 pub fn set_look(look: Look) {
+    ACCENT.with(|a| a.set(look.accent));
     ui().set_theme(look.theme());
 }
 
