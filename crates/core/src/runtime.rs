@@ -357,6 +357,13 @@ impl<A: Application> Runtime<A> {
         win.view
             .0
             .on_event(event, &win.layout, win.cursor, &mut out);
+        if matches!(event, crate::event::Event::Tick(_)) && out.is_empty() {
+            // Views may read animated values (`animated`, `spring`, `reveal`),
+            // so a tick that moves something rebuilds the view. Ticks only
+            // arrive while something animates, so idle cost stays zero.
+            win.view = self.app.view_window(id);
+            return self.refresh(id);
+        }
         if out.is_empty() {
             // Widget-local state (hover, caret) may still have changed.
             return self.refresh(id);

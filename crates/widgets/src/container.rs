@@ -14,6 +14,7 @@ pub struct Container<M> {
     style: Style,
     child: Vec<Element<M>>,
     background: Option<Color>,
+    gradient: Option<(Color, Color, f32)>,
     border: Option<Border>,
     radius: f32,
     shadow: Option<Shadow>,
@@ -29,6 +30,7 @@ impl<M: 'static> Container<M> {
             },
             child: vec![child],
             background: None,
+            gradient: None,
             border: None,
             radius: 0.0,
             shadow: None,
@@ -42,6 +44,13 @@ impl<M: 'static> Container<M> {
     /// Fill colour.
     pub fn background(mut self, c: Color) -> Self {
         self.background = Some(c);
+        self
+    }
+    /// Fill with a linear gradient instead of a flat colour. `angle_deg` 0 runs
+    /// top to bottom, 90 left to right. Keep the two stops close: a gentle
+    /// tonal shift reads as depth, a loud one reads as decoration.
+    pub fn gradient(mut self, from: Color, to: Color, angle_deg: f32) -> Self {
+        self.gradient = Some((from, to, angle_deg));
         self
     }
     /// Border.
@@ -106,7 +115,17 @@ impl<M: 'static> Widget<M> for Container<M> {
         util::any_animating(&self.child)
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
-        if self.background.is_some() || self.border.is_some() || self.shadow.is_some() {
+        if let Some((from, to, angle_deg)) = self.gradient {
+            out.push(DrawCommand::GradientQuad {
+                bounds: layout.bounds,
+                from,
+                to,
+                angle_deg,
+                radius: self.radius,
+                border: self.border,
+                shadow: self.shadow,
+            });
+        } else if self.background.is_some() || self.border.is_some() || self.shadow.is_some() {
             out.push(DrawCommand::Quad {
                 bounds: layout.bounds,
                 fill: self.background.unwrap_or(Color::TRANSPARENT),

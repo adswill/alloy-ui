@@ -182,6 +182,186 @@ fn compare_detects_differences() {
     assert!(compare(&a, &Image::filled(2, 2, [0; 4]), Tolerance::CPU).is_none());
 }
 
+fn scene_gradients() -> DrawList {
+    let mut l = DrawList::default();
+    l.push(quad(rect(0.0, 0.0, 160.0, 120.0), 0xF2F2EE, 0.0));
+    l.push(DrawCommand::gradient_quad(
+        rect(10.0, 10.0, 60.0, 40.0),
+        Color::hex(0x2A6F97),
+        Color::hex(0xF4D35E),
+        0.0,
+        0.0,
+    ));
+    l.push(DrawCommand::gradient_quad(
+        rect(80.0, 10.0, 60.0, 40.0),
+        Color::hex(0xC8553D),
+        Color::hex(0x3B7A57).with_alpha(0.4),
+        90.0,
+        14.0,
+    ));
+    l.push(
+        DrawCommand::gradient_quad(
+            rect(10.0, 60.0, 60.0, 40.0),
+            Color::hex(0xFFFFFF),
+            Color::hex(0x222222),
+            45.0,
+            8.0,
+        )
+        .with_border(Color::hex(0x222222), 3.0)
+        .with_shadow(
+            Color::hex(0x000000).with_alpha(0.35),
+            Point::new(0.0, 4.0),
+            10.0,
+        ),
+    );
+    l
+}
+
+fn gradient_strip(angle: f32, radius: f32) -> Image {
+    let mut r = CpuRenderer::new(100, 20);
+    let mut l = DrawList::default();
+    l.push(DrawCommand::gradient_quad(
+        rect(0.0, 0.0, 100.0, 20.0),
+        Color::hex(0x000000),
+        Color::hex(0xFFFFFF),
+        angle,
+        radius,
+    ));
+    r.render_to_image(&l, 100, 20, 1.0)
+}
+
+#[test]
+fn cpu_gradient_endpoints_and_angle_90() {
+    let img = gradient_strip(90.0, 0.0);
+    let (l, m, r) = (px(&img, 0, 10), px(&img, 50, 10), px(&img, 99, 10));
+    assert!(l[0] <= 3, "start {l:?}");
+    assert!(r[0] >= 252, "end {r:?}");
+    assert!((120..=135).contains(&m[0]), "mid {m:?}");
+    // Monotonic left to right (allow dither jitter), constant down a column.
+    for x in 1..100 {
+        assert!(u16::from(px(&img, x, 10)[0]) + 3 >= u16::from(px(&img, x - 1, 10)[0]));
+    }
+    assert!(px(&img, 50, 2)[0].abs_diff(px(&img, 50, 17)[0]) <= 2);
+
+    // Angle 0 runs top to bottom.
+    let mut r0 = CpuRenderer::new(20, 100);
+    let mut list = DrawList::default();
+    list.push(DrawCommand::gradient_quad(
+        rect(0.0, 0.0, 20.0, 100.0),
+        Color::hex(0xFF0000),
+        Color::hex(0x0000FF),
+        0.0,
+        0.0,
+    ));
+    let v = r0.render_to_image(&list, 20, 100, 1.0);
+    assert!(px(&v, 10, 0)[0] >= 252 && px(&v, 10, 0)[2] <= 3);
+    assert!(px(&v, 10, 99)[2] >= 252 && px(&v, 10, 99)[0] <= 3);
+    assert!(px(&v, 2, 50)[0].abs_diff(px(&v, 17, 50)[0]) <= 2);
+}
+
+#[test]
+fn cpu_gradient_degenerate_equals_flat_and_dither_breaks_bands() {
+    let mut r = CpuRenderer::new(8, 8);
+    let mut l = DrawList::default();
+    let c = Color::hex(0x336699);
+    l.push(DrawCommand::gradient_quad(
+        rect(0.0, 0.0, 8.0, 8.0),
+        c,
+        c,
+        30.0,
+        0.0,
+    ));
+    let img = r.render_to_image(&l, 8, 8, 1.0);
+    for y in 0..8 {
+        for x in 0..8 {
+            let p = px(&img, x, y);
+            assert!(
+                p[0].abs_diff(0x33) <= 1 && p[1].abs_diff(0x66) <= 1 && p[2].abs_diff(0x99) <= 1
+            );
+        }
+    }
+    // A very shallow ramp (4 levels over 100px) must mix adjacent levels
+    // within a column band rather than switching at one hard edge.
+    let mut r = CpuRenderer::new(100, 8);
+    let mut l = DrawList::default();
+    l.push(DrawCommand::gradient_quad(
+        rect(0.0, 0.0, 100.0, 8.0),
+        Color::hex(0x808080),
+        Color::hex(0x848484),
+        90.0,
+        0.0,
+    ));
+    let img = r.render_to_image(&l, 100, 8, 1.0);
+    let mixed = (0..100)
+        .filter(|&x| {
+            (0..8)
+                .map(|y| px(&img, x, y)[0])
+                .collect::<std::collections::HashSet<_>>()
+                .len()
+                > 1
+        })
+        .count();
+    assert!(mixed >= 4, "dither columns {mixed}");
+}
+
+#[test]
+fn cpu_gradient_rounded_corners_clip_and_border() {
+    let mut r = CpuRenderer::new(40, 40);
+    let mut l = DrawList::default();
+    l.push(DrawCommand::gradient_quad(
+        rect(0.0, 0.0, 40.0, 40.0),
+        Color::hex(0xFF0000),
+        Color::hex(0x0000FF),
+        90.0,
+        16.0,
+    ));
+    let img = r.render_to_image(&l, 40, 40, 1.0);
+    assert_eq!(px(&img, 0, 0), [255, 255, 255, 255], "corner clipped");
+    assert_eq!(px(&img, 39, 39), [255, 255, 255, 255]);
+    assert!(px(&img, 20, 20)[0] < 255 && px(&img, 20, 20)[1] < 255);
+
+    let mut l = DrawList::default();
+    l.push(
+        DrawCommand::gradient_quad(
+            rect(0.0, 0.0, 40.0, 40.0),
+            Color::hex(0xFF0000),
+            Color::hex(0x0000FF),
+            90.0,
+            0.0,
+        )
+        .with_border(Color::hex(0x00FF00), 4.0),
+    );
+    let img = r.render_to_image(&l, 40, 40, 1.0);
+    assert_eq!(px(&img, 1, 20), [0, 255, 0, 255]);
+    assert!(px(&img, 10, 20)[0] > 150);
+}
+
+#[test]
+fn cpu_golden_gradients() {
+    let mut r = CpuRenderer::new(160, 120);
+    let img = r.render_to_image(&scene_gradients(), 160, 120, 1.0);
+    assert_golden(&default_golden_dir(), "gradients_1x", &img, Tolerance::CPU);
+}
+
+#[test]
+fn gpu_gradient_matches_cpu_reference() {
+    let Some(mut gpu) = gpu_or_skip(160, 120) else {
+        return;
+    };
+    let mut cpu = CpuRenderer::new(160, 120);
+    for scale in [1.0, 2.0] {
+        let (w, h) = ((160.0 * scale) as u32, (120.0 * scale) as u32);
+        let list = scene_gradients();
+        let a = gpu.render_to_image(&list, w, h, scale);
+        let b = cpu.render_to_image(&list, w, h, scale);
+        let d = compare(&a, &b, Tolerance::GPU).expect("same size");
+        assert!(
+            d.bad_fraction <= Tolerance::GPU.bad_fraction,
+            "GPU vs CPU gradient at {scale}x: {d:?}"
+        );
+    }
+}
+
 #[test]
 fn shader_validates() {
     let src = include_str!("../src/shader.wgsl");

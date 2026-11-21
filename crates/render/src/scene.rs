@@ -21,6 +21,8 @@ pub(crate) enum Kind {
     Mask = 2,
     /// Premultiplied texture (image or colour glyph) (3).
     Texture = 3,
+    /// Rounded rect filled with a linear gradient, optional border (4).
+    Gradient = 4,
 }
 
 /// Where a primitive's texels come from.
@@ -44,6 +46,10 @@ pub(crate) struct Prim {
     /// Straight RGBA.
     pub color: [f32; 4],
     pub border_color: [f32; 4],
+    /// Gradient end colour (straight RGBA); `color` is the start.
+    pub color2: [f32; 4],
+    /// Unit gradient direction in physical pixels (y down); gradients only.
+    pub dir: [f32; 2],
     pub blur: f32,
     pub source: Source,
     pub clip: IRect,
@@ -65,6 +71,75 @@ fn intersect(a: IRect, b: IRect) -> IRect {
     let x0 = a[0].max(b[0]);
     let y0 = a[1].max(b[1]);
     [x0, y0, a[2].min(b[2]).max(x0), a[3].min(b[3]).max(y0)]
+}
+
+/// Emit the shadow (if any) and body of a quad or gradient quad.
+#[allow(clippy::too_many_arguments)]
+fn push_box(
+    out: &mut Vec<Prim>,
+    bounds: Rectangle,
+    fill: Color,
+    gradient: Option<(Color, f32)>,
+    radius: f32,
+    border: &Option<alloy_ui_core::Border>,
+    shadow: &Option<alloy_ui_core::Shadow>,
+    scale: f32,
+    clip: IRect,
+) {
+    let rect = [
+        bounds.origin.x * scale,
+        bounds.origin.y * scale,
+        bounds.size.width * scale,
+        bounds.size.height * scale,
+    ];
+    let radius = radius.max(0.0) * scale;
+    if let Some(s) = shadow {
+        let blur = s.blur.max(0.0) * scale;
+        out.push(Prim {
+            kind: Kind::Shadow,
+            rect: [
+                rect[0] + s.offset.x * scale,
+                rect[1] + s.offset.y * scale,
+                rect[2],
+                rect[3],
+            ],
+            pad: blur * 0.5 + 1.0,
+            radius,
+            border_w: 0.0,
+            color: rgba(s.color),
+            border_color: [0.0; 4],
+            color2: [0.0; 4],
+            dir: [0.0; 2],
+            blur,
+            source: Source::None,
+            clip,
+        });
+    }
+    let (bw, bc) = match border {
+        Some(b) if b.width > 0.0 => (b.width * scale, rgba(b.color)),
+        _ => (0.0, rgba(fill)),
+    };
+    let (kind, color2, dir) = match gradient {
+        Some((to, deg)) => {
+            let a = deg.to_radians();
+            (Kind::Gradient, rgba(to), [a.sin(), a.cos()])
+        }
+        None => (Kind::Quad, [0.0; 4], [0.0; 2]),
+    };
+    out.push(Prim {
+        kind,
+        rect,
+        pad: 1.0,
+        radius,
+        border_w: bw,
+        color: rgba(fill),
+        border_color: bc,
+        color2,
+        dir,
+        blur: 0.0,
+        source: Source::None,
+        clip,
+    });
 }
 
 /// Flatten `list` for a `width`x`height` target at `scale`.
@@ -95,51 +170,28 @@ pub(crate) fn flatten(
                 radius,
                 border,
                 shadow,
-            } => {
-                let rect = [
-                    bounds.origin.x * scale,
-                    bounds.origin.y * scale,
-                    bounds.size.width * scale,
-                    bounds.size.height * scale,
-                ];
-                let radius = radius.max(0.0) * scale;
-                if let Some(s) = shadow {
-                    let blur = s.blur.max(0.0) * scale;
-                    out.push(Prim {
-                        kind: Kind::Shadow,
-                        rect: [
-                            rect[0] + s.offset.x * scale,
-                            rect[1] + s.offset.y * scale,
-                            rect[2],
-                            rect[3],
-                        ],
-                        pad: blur * 0.5 + 1.0,
-                        radius,
-                        border_w: 0.0,
-                        color: rgba(s.color),
-                        border_color: [0.0; 4],
-                        blur,
-                        source: Source::None,
-                        clip,
-                    });
-                }
-                let (bw, bc) = match border {
-                    Some(b) if b.width > 0.0 => (b.width * scale, rgba(b.color)),
-                    _ => (0.0, rgba(*fill)),
-                };
-                out.push(Prim {
-                    kind: Kind::Quad,
-                    rect,
-                    pad: 1.0,
-                    radius,
-                    border_w: bw,
-                    color: rgba(*fill),
-                    border_color: bc,
-                    blur: 0.0,
-                    source: Source::None,
-                    clip,
-                });
-            }
+            } => push_box(
+                &mut out, *bounds, *fill, None, *radius, border, shadow, scale, clip,
+            ),
+            DrawCommand::GradientQuad {
+                bounds,
+                from,
+                to,
+                angle_deg,
+                radius,
+                border,
+                shadow,
+            } => push_box(
+                &mut out,
+                *bounds,
+                *from,
+                Some((*to, *angle_deg)),
+                *radius,
+                border,
+                shadow,
+                scale,
+                clip,
+            ),
             DrawCommand::Image { bounds, id } => out.push(Prim {
                 kind: Kind::Texture,
                 rect: [
@@ -154,6 +206,8 @@ pub(crate) fn flatten(
                 color: [1.0; 4],
                 border_color: [0.0; 4],
                 blur: 0.0,
+                color2: [0.0; 4],
+                dir: [0.0; 2],
                 source: Source::Image(*id),
                 clip,
             }),
@@ -184,6 +238,8 @@ pub(crate) fn flatten(
                         color: rgba(*color),
                         border_color: rgba(*color),
                         blur: 0.0,
+                        color2: [0.0; 4],
+                        dir: [0.0; 2],
                         source: Source::None,
                         clip,
                     });
@@ -226,6 +282,8 @@ pub(crate) fn flatten(
                         color: if bm.color { [1.0; 4] } else { rgba(*color) },
                         border_color: [0.0; 4],
                         blur: 0.0,
+                        color2: [0.0; 4],
+                        dir: [0.0; 2],
                         source: Source::Glyph(g.key),
                         clip,
                     });

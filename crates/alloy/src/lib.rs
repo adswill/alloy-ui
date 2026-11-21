@@ -66,6 +66,7 @@ pub mod fs;
 mod inputs;
 mod keys;
 mod mock;
+mod motion;
 mod palette;
 mod persist;
 mod records;
@@ -96,6 +97,7 @@ pub use dsl::{
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use mock::{series, Mock};
+pub use motion::{animated, fade, reveal, spring};
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
     Stamp, Value,
@@ -107,14 +109,14 @@ pub use {serde, serde_json};
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::{
-        app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
-        custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
-        nav, number, options, palette, pick, progress, radio, radio_list, radio_list_with, radios,
-        records, records_in, resource, rule, scroll, secs, section, series, set_dark, shell,
-        sketch, sleep, slider, space, stat, stats, stepper, store, store_as, table, table_of, tabs,
-        tally, text, theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
-        FlagCell, Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View,
-        Wizard,
+        animated, app, attempt, bars, browse, browse_of, button, caption, check, choose, crud,
+        crud_app, custom, editor, every, fade, field, field_after, filter_by, gap, heading, input,
+        list, local, nav, number, options, palette, pick, progress, radio, radio_list,
+        radio_list_with, radios, records, records_in, resource, reveal, rule, scroll, secs,
+        section, series, set_dark, shell, sketch, sleep, slider, space, spring, stat, stats,
+        stepper, store, store_as, table, table_of, tabs, tally, text, theme_switch, toggle, vspace,
+        wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Local, Node, Place,
+        Record, Records, Resource, Stamp, TextCell, View, Wizard,
     };
     pub use crate::{
         at, choices, clock, col, money, redo, row, state, toast, undo, vals, Hotkey, Shortcuts,

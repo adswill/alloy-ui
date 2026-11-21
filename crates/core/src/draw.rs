@@ -49,6 +49,29 @@ pub enum DrawCommand {
         /// Optional shadow.
         shadow: Option<Shadow>,
     },
+    /// A rounded rectangle filled with a two-stop linear gradient, with the
+    /// same border and shadow behaviour as [`DrawCommand::Quad`].
+    ///
+    /// The gradient runs through the centre of `bounds` at `angle_deg`
+    /// (0 = top to bottom, 90 = left to right) and is sized so `from` sits
+    /// exactly on the start corner/edge and `to` on the opposite one (CSS
+    /// `linear-gradient` semantics). Interpolation is in premultiplied space.
+    GradientQuad {
+        /// Bounds.
+        bounds: Rectangle,
+        /// Colour at the start of the gradient.
+        from: Color,
+        /// Colour at the end of the gradient.
+        to: Color,
+        /// Gradient direction in degrees: 0 = top to bottom, 90 = left to right.
+        angle_deg: f32,
+        /// Corner radius.
+        radius: f32,
+        /// Optional border.
+        border: Option<Border>,
+        /// Optional shadow.
+        shadow: Option<Shadow>,
+    },
     /// A run of text; shaping happens in the renderer.
     Text {
         /// Top-left of the text box.
@@ -90,6 +113,51 @@ pub enum DrawCommand {
     PushClip(Rectangle),
     /// End the innermost clip.
     PopClip,
+}
+
+impl DrawCommand {
+    /// A [`DrawCommand::GradientQuad`] with no border or shadow.
+    pub fn gradient_quad(
+        bounds: Rectangle,
+        from: Color,
+        to: Color,
+        angle_deg: f32,
+        radius: f32,
+    ) -> Self {
+        Self::GradientQuad {
+            bounds,
+            from,
+            to,
+            angle_deg,
+            radius,
+            border: None,
+            shadow: None,
+        }
+    }
+
+    /// Add a border to a [`DrawCommand::GradientQuad`] or [`DrawCommand::Quad`];
+    /// other commands are returned unchanged.
+    #[must_use]
+    pub fn with_border(mut self, color: Color, width: f32) -> Self {
+        if let Self::Quad { border, .. } | Self::GradientQuad { border, .. } = &mut self {
+            *border = Some(Border { color, width });
+        }
+        self
+    }
+
+    /// Add a shadow to a [`DrawCommand::GradientQuad`] or [`DrawCommand::Quad`];
+    /// other commands are returned unchanged.
+    #[must_use]
+    pub fn with_shadow(mut self, color: Color, offset: Point, blur: f32) -> Self {
+        if let Self::Quad { shadow, .. } | Self::GradientQuad { shadow, .. } = &mut self {
+            *shadow = Some(Shadow {
+                color,
+                offset,
+                blur,
+            });
+        }
+        self
+    }
 }
 
 /// An ordered list of draw commands for one frame.

@@ -140,6 +140,23 @@ fn smooth(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// 4x4 ordered-dither threshold in `[0, 16)` for pixel `(x, y)` (bit-interleaved
+/// Bayer matrix; the WGSL shader computes the same value).
+fn bayer4(x: i32, y: i32) -> f32 {
+    let (x, y) = (x & 3, y & 3);
+    let xy = x ^ y;
+    (((y & 1) << 3) | ((xy & 1) << 2) | (((y >> 1) & 1) << 1) | ((xy >> 1) & 1)) as f32
+}
+
+/// Gradient parameter in `[0, 1]` at `pt` for a unit direction `dir` (y down)
+/// over `rect`; the gradient line is as long as the box's projection onto `dir`.
+fn gradient_t(pt: (f32, f32), rect: [f32; 4], dir: [f32; 2]) -> f32 {
+    let len = (dir[0].abs() * rect[2] + dir[1].abs() * rect[3]).max(1e-4);
+    let d =
+        (pt.0 - (rect[0] + rect[2] * 0.5)) * dir[0] + (pt.1 - (rect[1] + rect[3] * 0.5)) * dir[1];
+    (0.5 + d / len).clamp(0.0, 1.0)
+}
+
 /// Signed distance to a rounded rectangle `[x, y, w, h]`.
 fn sd_rrect(p: (f32, f32), rect: [f32; 4], r: f32) -> f32 {
     let hx = rect[2] * 0.5;
@@ -220,6 +237,7 @@ impl CpuRenderer {
             .min(height as i32);
         let fill = premul(p.color);
         let border = premul(p.border_color);
+        let fill2 = premul(p.color2);
         for y in y0..y1 {
             for x in x0..x1 {
                 let pt = (x as f32 + 0.5, y as f32 + 0.5);
@@ -250,6 +268,38 @@ impl CpuRenderer {
                         let mut o = [0.0; 4];
                         for k in 0..4 {
                             o[k] = outer * (border[k] + (fill[k] - border[k]) * inner);
+                        }
+                        o
+                    }
+                    Kind::Gradient => {
+                        let outer = cover(sd_rrect(pt, p.rect, p.radius));
+                        let inner = if p.border_w > 0.0 {
+                            let w = p.border_w;
+                            let r = [
+                                rx + w,
+                                ry + w,
+                                (rw - 2.0 * w).max(0.0),
+                                (rh - 2.0 * w).max(0.0),
+                            ];
+                            cover(sd_rrect(pt, r, (p.radius - w).max(0.0)))
+                        } else {
+                            1.0
+                        };
+                        let t = gradient_t(pt, p.rect, p.dir);
+                        let dither = ((bayer4(x, y) + 0.5) / 16.0 - 0.5) / 255.0;
+                        let mut g = [0.0; 4];
+                        for k in 0..4 {
+                            g[k] = fill[k] + (fill2[k] - fill[k]) * t;
+                        }
+                        // Dither premultiplied colour proportionally to alpha so
+                        // transparent regions stay transparent.
+                        let ga = g[3];
+                        for c in &mut g[..3] {
+                            *c = (*c + dither * ga).max(0.0);
+                        }
+                        let mut o = [0.0; 4];
+                        for k in 0..4 {
+                            o[k] = outer * (border[k] + (g[k] - border[k]) * inner);
                         }
                         o
                     }

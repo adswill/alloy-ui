@@ -145,7 +145,7 @@ pub trait App: Sized + 'static {
     /// Open a window of the given logical size and run until it closes.
     ///
     /// `--headless [file.png]` renders one frame to a PNG instead (after
-    /// pressing every `--click <text>`, `--chord <keys>` and `--type <text>` in order), for CI and docs.
+    /// pressing every `--click <text>`, `--chord <keys>`, `--type <text>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
     fn run_sized(self, title: &str, width: f32, height: f32) {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(at) = args.iter().position(|a| a == "--headless") {
@@ -158,12 +158,17 @@ pub trait App: Sized + 'static {
                     "--chord" => drop(h.chord(&pair[1])),
                     "--type" => drop(h.type_text(&pair[1])),
                     "--hover" => drop(h.hover(&pair[1])),
+                    "--advance" => drop(h.advance(16).advance(pair[1].parse().unwrap_or(0))),
                     _ => {}
                 }
             }
             h.settle();
             if args.iter().any(|a| a == "--inspect") {
                 h.inspect(true);
+            }
+            // Let transitions finish unless the script asked for a mid-flight frame.
+            if !args.iter().any(|a| a == "--advance") {
+                h.advance(16).advance(1000);
             }
             let out = args.get(at + 1).filter(|a| !a.starts_with("--"));
             let path = out
