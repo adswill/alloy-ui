@@ -120,6 +120,55 @@ pub fn route_with<M: 'static>(page: usize, kind: RouteKind, child: impl Into<Nod
         .into()
 }
 
+/// A shared element for [`route`] and `Router::show_with` transitions: give the same `id` to a
+/// widget on two pages and, when the page changes, it flies from where it was to where it now is,
+/// scaling and cross-fading between its two looks. The pages fade and slide around it. Outside a
+/// route it is just its child.
+///
+/// A hero is drawn above its page, so keep it to elements that sit on top anyway (cards, avatars,
+/// cover images, titles).
+pub fn hero<M: 'static>(id: impl Hash, child: impl Into<Node<M>>) -> Node<M> {
+    let key = hash_of(&("hero", id));
+    w::Hero::new(&ui(), key, child.into().into_element())
+        .into_element()
+        .into()
+}
+
+/// A bottom sheet over the area it is placed in (use inside [`stack`]): drag or flick the handle
+/// and it follows the pointer, resists past the ends, and settles on one of `snaps` (visible
+/// heights as fractions of the area, e.g. `[0.12, 0.5, 0.9]`) with the speed of the release.
+#[track_caller]
+pub fn sheet<M: 'static>(snaps: &[f32], content: impl Into<Node<M>>) -> Node<M> {
+    let id = auto_id(75);
+    w::Sheet::new(&ui(), id, snaps, content.into().into_element())
+        .scrim()
+        .into_element()
+        .into()
+}
+
+/// [`route`] with an explicit page number (larger moves forward).
+#[track_caller]
+pub(crate) fn route_page<M: 'static>(page: u64, kind: RouteKind, child: Node<M>) -> Node<M> {
+    let key = auto_id(74);
+    w::Route::new(&ui(), key, page, child.into_element())
+        .kind(kind)
+        .into_element()
+        .into()
+}
+
+/// Single-line text whose weight animates (400 to 700) when `weight` changes between rebuilds:
+/// a hovered tab label that firms up, a selected item that becomes bold.
+///
+/// Alloy Sans has four static weights, so the in-between weights are drawn by fading the
+/// heavier face over the lighter one; see `WeightText` for why.
+#[track_caller]
+pub fn weighted<M: 'static>(content: impl Into<String>, weight: u16) -> Node<M> {
+    let key = auto_id(76);
+    w::WeightText::new(&ui(), key, content, weight)
+        .into_element()
+        .into()
+}
+
 /// A shimmering placeholder block `width` x `height`.
 pub fn skeleton<M: 'static>(width: f32, height: f32) -> Node<M> {
     w::Skeleton::new(&ui(), height)
@@ -388,9 +437,25 @@ impl<M: 'static, T: Into<Node<M>>> From<T> for Layer<M> {
 /// ])
 /// ```
 pub fn stack<M: 'static>(layers: impl IntoIterator<Item = Layer<M>>) -> Node<M> {
-    let layers = layers
+    let layers: Vec<_> = layers
         .into_iter()
         .map(|l| (l.node.into_element(), l.place))
         .collect();
-    w::Stack::new(layers).into_element().into()
+    // A layer that fills (a sheet, a full-size page) makes the stack fill too.
+    let fills = |f: fn(&alloy_ui_core::style::Style) -> crate::view::Length| {
+        if layers
+            .iter()
+            .any(|(e, _)| matches!(f(&e.0.style()), crate::view::Length::Fill(_)))
+        {
+            crate::view::Length::Fill(1)
+        } else {
+            crate::view::Length::Shrink
+        }
+    };
+    let (wd, ht) = (fills(|s| s.width), fills(|s| s.height));
+    w::Stack::new(layers)
+        .width(wd)
+        .height(ht)
+        .into_element()
+        .into()
 }

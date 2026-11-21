@@ -18,3 +18,9 @@ unicode-segmentation = "1"
 
 [dev-dependencies]
 alloy-ui-render = { workspace = true }
+
+[features]
+# Look icons up by name in the whole pack (`icon_glyph`). Pair with the same feature on the
+# render crate, which embeds the font.
+icons-lucide-full = []
+icons-phosphor-full = []

@@ -4,7 +4,7 @@
 
 use crate::{
     motion::Transition,
-    ui::{Snapshot, Ui},
+    ui::{HeroRec, Snapshot, Ui},
     util,
     xform::{transform, Xf},
 };
@@ -344,7 +344,9 @@ impl<M: 'static> Widget<M> for Route<M> {
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         let mut tmp = DrawList::default();
+        let outer = self.ui.hero_begin();
         util::draw_children(&self.child, layout, &mut tmp);
+        let heroes = Rc::new(self.ui.hero_end(outer));
         let now_cmds = Rc::new(tmp.0);
         // Record this page; if the previous record was another page, it leaves.
         let prev = self.ui.swap_snapshot(
@@ -352,6 +354,7 @@ impl<M: 'static> Widget<M> for Route<M> {
             Snapshot {
                 page: self.page,
                 cmds: now_cmds.clone(),
+                heroes: heroes.clone(),
             },
         );
         if let Some(prev) = prev {
@@ -360,14 +363,20 @@ impl<M: 'static> Widget<M> for Route<M> {
                 self.ui.restart_clock(self.key ^ 0x77);
             }
         }
-        let Some(old) = self.ui.outgoing(self.key) else {
+        let rest = |out: &mut DrawList| {
             out.0.extend(now_cmds.iter().cloned());
+            for h in heroes.iter() {
+                out.0.extend(h.cmds.iter().cloned());
+            }
+        };
+        let Some(old) = self.ui.outgoing(self.key) else {
+            rest(out);
             return;
         };
         let (el, running) = self.ui.clock(self.key ^ 0x77, self.ms);
         if !running {
             self.ui.set_outgoing(self.key, None);
-            out.0.extend(now_cmds.iter().cloned());
+            rest(out);
             return;
         }
         let p = el as f32 / self.ms as f32;
@@ -433,6 +442,145 @@ impl<M: 'static> Widget<M> for Route<M> {
         for cmd in now_cmds.iter() {
             out.push(transform(cmd.clone(), &xn));
         }
+        // Shared elements: a key on both pages flies from one place to the other,
+        // cross-fading between the two renderings; the rest ride their page's motion.
+        for h in old.heroes.iter() {
+            if !heroes.iter().any(|n| n.key == h.key) {
+                out.0
+                    .extend(h.cmds.iter().map(|c| transform(c.clone(), &xo)));
+            }
+        }
+        for h in heroes.iter() {
+            match old.heroes.iter().find(|o| o.key == h.key) {
+                None => out
+                    .0
+                    .extend(h.cmds.iter().map(|c| transform(c.clone(), &xn))),
+                Some(o) => fly(out, o, h, e, p),
+            }
+        }
         out.push(DrawCommand::PopClip);
     }
+}
+
+// ---------------------------------------------------------------- Hero
+
+/// A shared element for [`Route`] transitions. Give the same `key` to a widget on two
+/// pages and, when the route changes, it flies from where it was to where it now is,
+/// scaling and cross-fading between its two looks, while the pages fade around it.
+///
+/// Inside a [`Route`] a hero is drawn on top of its page (so it can leave it); outside
+/// one it just draws its child.
+pub struct Hero<M> {
+    ui: Ui,
+    key: u64,
+    child: Vec<Element<M>>,
+}
+
+impl<M: 'static> Hero<M> {
+    /// Mark `child` as the shared element `key`.
+    pub fn new(ui: &Ui, key: u64, child: Element<M>) -> Self {
+        Self {
+            ui: ui.clone(),
+            key,
+            child: vec![child],
+        }
+    }
+    /// As an element.
+    pub fn into_element(self) -> Element<M> {
+        Element::new(self)
+    }
+}
+
+impl<M: 'static> Widget<M> for Hero<M> {
+    fn style(&self) -> Style {
+        let inner = self.child[0].0.style();
+        Style {
+            width: inner.width,
+            height: inner.height,
+            ..Style::default()
+        }
+    }
+    fn measure(&self, _available: Size) -> Size {
+        util::preferred(self)
+    }
+    fn children(&self) -> &[Element<M>] {
+        &self.child
+    }
+    fn arrange(&self, bounds: Rectangle) -> Layout {
+        Layout {
+            bounds,
+            children: vec![self.child[0].0.arrange(bounds)],
+        }
+    }
+    fn on_event(
+        &mut self,
+        event: &Event,
+        layout: &Layout,
+        cursor: Point,
+        out: &mut Vec<M>,
+    ) -> bool {
+        util::dispatch(&mut self.child, event, layout, cursor, out)
+    }
+    fn animating(&self) -> bool {
+        util::any_animating(&self.child)
+    }
+    fn draw(&self, layout: &Layout, out: &mut DrawList) {
+        let mut tmp = DrawList::default();
+        util::draw_children(&self.child, layout, &mut tmp);
+        let rec = HeroRec {
+            key: self.key,
+            rect: layout.bounds,
+            cmds: Rc::new(tmp.0),
+        };
+        if !self.ui.hero_push(rec.clone()) {
+            out.0.extend(rec.cmds.iter().cloned());
+        }
+    }
+}
+
+/// Draw one shared element in flight at progress `p` (`e` is the eased position).
+fn fly(out: &mut DrawList, old: &HeroRec, new: &HeroRec, e: f32, p: f32) {
+    let at = |a: f32, b: f32| a + (b - a) * e;
+    let (ox, oy, ow, oh) = (
+        old.rect.origin.x,
+        old.rect.origin.y,
+        old.rect.size.width,
+        old.rect.size.height,
+    );
+    let (nx, ny, nw, nh) = (
+        new.rect.origin.x,
+        new.rect.origin.y,
+        new.rect.size.width,
+        new.rect.size.height,
+    );
+    let (cx, cy, cw, ch) = (at(ox, nx), at(oy, ny), at(ow, nw), at(oh, nh));
+    let ratio = |now: f32, was: f32, now_h: f32, was_h: f32| {
+        if was > 1.0 {
+            now / was
+        } else if was_h > 1.0 {
+            now_h / was_h
+        } else {
+            1.0
+        }
+    };
+    let fade_out = 1.0 - Easing::SINE_IN_OUT.at(((p - 0.1) / 0.6).clamp(0.0, 1.0));
+    let fade_in = Easing::SINE_IN_OUT.at((p / 0.6).clamp(0.0, 1.0));
+    let xo = Xf {
+        alpha: fade_out,
+        scale: ratio(cw, ow, ch, oh),
+        origin: old.rect.origin,
+        dx: cx - ox,
+        dy: cy - oy,
+    };
+    let xn = Xf {
+        alpha: fade_in,
+        scale: ratio(cw, nw, ch, nh),
+        origin: new.rect.origin,
+        dx: cx - nx,
+        dy: cy - ny,
+    };
+    out.0
+        .extend(old.cmds.iter().map(|c| transform(c.clone(), &xo)));
+    out.0
+        .extend(new.cmds.iter().map(|c| transform(c.clone(), &xn)));
 }

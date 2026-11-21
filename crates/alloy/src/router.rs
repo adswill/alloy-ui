@@ -25,6 +25,8 @@ struct Stack<R> {
     past: Vec<R>,
     /// Routes that `back` stepped over, nearest first, for `forward`.
     future: Vec<R>,
+    /// Bumped by `replace` and `reset`, so those count as moving on.
+    rev: u64,
 }
 
 /// The history of screens for one window. A small `Copy` handle made by [`router`], so any
@@ -45,6 +47,7 @@ pub fn router<R: Send + 'static>(home: R) -> Router<R> {
     Router(local(Stack {
         past: vec![home],
         future: Vec::new(),
+        rev: 0,
     }))
 }
 
@@ -62,6 +65,7 @@ impl<R: Clone + Send + 'static> Router<R> {
     pub fn replace(self, route: R) {
         self.0.with(|s| {
             *s.past.last_mut().expect("never empty") = route;
+            s.rev += 1;
         });
     }
     /// Return to the previous screen. Does nothing at the first one.
@@ -87,6 +91,7 @@ impl<R: Clone + Send + 'static> Router<R> {
         self.0.with(|s| {
             s.past = vec![route];
             s.future.clear();
+            s.rev += 1;
         });
     }
     /// The screen on top.
@@ -117,6 +122,21 @@ impl<R: Clone + Send + 'static> Router<R> {
         let page = screen(self.current());
         page.shortcut("alt+ArrowLeft", move |_: &mut S| self.back())
             .shortcut("alt+ArrowRight", move |_: &mut S| self.forward())
+    }
+
+    /// [`show`](Self::show) with page transitions: pushing slides forward, going back slides
+    /// the other way, and [`hero`](crate::hero) elements shared between the two screens fly from
+    /// one to the other. Idle once the transition ends; reduced motion switches instantly.
+    #[track_caller]
+    pub fn show_with<S: 'static>(
+        self,
+        kind: crate::RouteKind,
+        screen: impl FnOnce(R) -> Node<Act<S>>,
+    ) -> Node<Act<S>> {
+        let page = self
+            .0
+            .with(|s| ((s.past.len() as u64) << 20) | (s.rev & 0xF_FFFF));
+        crate::fx::route_page(page, kind, self.show(screen))
     }
 
     /// A "Back" button, disabled at the first screen.

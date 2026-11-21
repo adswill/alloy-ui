@@ -33,6 +33,8 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast
+      - name: Full icon packs
+        run: cargo test -p alloy-ui --features icons-full --test icons_full
   mobile:
     # Cross-compile checks only: nothing runs on a device. Catches breakage of the
     # Android and iOS code paths on every PR (Ubuntu is enough for both targets).

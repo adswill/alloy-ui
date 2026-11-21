@@ -45,6 +45,7 @@ pub struct Harness<A: App> {
     rt: Runtime<Shell<A>>,
     size: (f32, f32),
     now: u64,
+    ticking: bool,
 }
 
 impl<A: App> Harness<A> {
@@ -55,6 +56,8 @@ impl<A: App> Harness<A> {
     /// Like [`new`](Self::new) with an explicit theme.
     pub fn themed(app: A, width: f32, height: f32, theme: Theme) -> Self {
         let ui = Ui::new(theme);
+        // Gesture speeds follow the scripted clock, so tests are deterministic.
+        ui.use_tick_clock();
         ui.set_metrics(Rc::new(Metrics(TextMeasurer::new())));
         let rt = Runtime::new(
             Shell::new(app, ui),
@@ -65,6 +68,7 @@ impl<A: App> Harness<A> {
             rt,
             size: (width, height),
             now: 1000,
+            ticking: false,
         }
     }
     fn placed(&self) -> Vec<(Point, String)> {
@@ -407,8 +411,13 @@ impl<A: App> Harness<A> {
     /// Let `ms` milliseconds pass: animations and toasts progress.
     pub fn advance(&mut self, ms: u64) -> &mut Self {
         self.now += ms;
-        self.rt.handle_event(&Event::Tick(self.now));
+        self.ticking = self.rt.handle_event(&Event::Tick(self.now)).tick;
         self
+    }
+    /// True if the last [`advance`](Self::advance) left something animating, i.e. the app would
+    /// keep asking for frames. False means idle: the CPU sleeps until the next input.
+    pub fn animating(&self) -> bool {
+        self.ticking
     }
     /// The current frame's draw commands, for renderers and benchmarks.
     pub fn draw_list(&self) -> alloy_ui_core::DrawList {

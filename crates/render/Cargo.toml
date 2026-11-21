@@ -19,6 +19,10 @@ gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
 soft-window = ["dep:softbuffer"]
 # OpenGL backend for machines with no Vulkan (off by default: ~0.4 MB; the CPU path covers them).
 gles = ["gpu", "wgpu/gles"]
+# Embed the whole Lucide / Phosphor pack (about 1.0 / 0.5 MB) instead of the small built-in subset.
+# `ALLOY_ICONS_SUBSET=<dir>` (see tools/icons/shake.py) embeds only the icons an app names.
+icons-lucide-full = []
+icons-phosphor-full = []
 
 [dependencies]
 alloy-ui-core.workspace = true
