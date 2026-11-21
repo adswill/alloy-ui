@@ -22,7 +22,7 @@ pub fn email(v: &str) -> Option<&'static str> {
 
 /// A password of at least 8 characters.
 pub fn password(v: &str) -> Option<&'static str> {
-    (v.chars().count() < 8).then_some("Use at least 8 characters")
+    (v.chars().count() < 8).then_some("At least 8 characters")
 }
 
 /// A number above zero (amounts, counts).

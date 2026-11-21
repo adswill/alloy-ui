@@ -29,23 +29,18 @@ fn view(s: &Todo) -> impl View<Act<Todo>> {
     col![
         col![heading("Tasks"), caption(format!("{open} open")).dim()].gap(2.0),
         row![
-            input(&s.draft)
+            input(at!(s.draft))
                 .hint("What needs doing?")
-                .bind(|s: &mut Todo| &mut s.draft)
                 .submit(Todo::add)
                 .fill_w(),
             button("Add task").primary().act(Todo::add),
         ]
         .align_center()
         .fill_w(),
-        scroll(col(shown.map(|(i, t)| {
-            check(&t.0, t.1).act(move |s: &mut Todo, v| s.tasks[i].1 = v)
-        }))),
+        scroll(col(shown.map(|(i, t)| check(&t.0, at!(s.tasks[i].1))))),
         row![
             options(s.filter).bind(|s: &mut Todo| &mut s.filter),
-            button("Clear done")
-                .ghost()
-                .act(|s: &mut Todo| s.tasks.retain(|t| !t.1)),
+            button("Clear done").ghost().keep(at!(s.tasks), |t| !t.1),
         ],
     ]
     .gap(18.0)

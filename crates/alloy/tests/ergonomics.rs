@@ -108,3 +108,33 @@ fn table_keep_count_and_empty() {
     let ui = Harness::new(sketch((), v), 400.0, 300.0);
     assert!(ui.has_text("2 rows") && !ui.has_text("beta"));
 }
+
+mod vec_ops {
+    use alloy_ui::{prelude::*, testing::Harness};
+
+    state! {
+        struct S {
+            tags: Vec<u8>,
+            draft: String = "x".to_string(),
+        }
+    }
+
+    fn view(s: &S) -> impl View<Act<S>> {
+        col![
+            button("Push one").push(at!(s.tags), 1),
+            button("Push two").push(at!(s.tags), 2),
+            button("Drop ones").keep(at!(s.tags), |t| *t != 1),
+            button("Wipe").clear(at!(s.draft)),
+            format!("tags={:?} draft={:?}", s.tags, s.draft),
+        ]
+    }
+
+    #[test]
+    fn push_keep_clear() {
+        let mut ui = Harness::new(sketch(S::default(), view), 300.0, 300.0);
+        ui.click("Push one").click("Push two").click("Push one");
+        assert!(ui.has_text("tags=[1, 2, 1] draft=\"x\""));
+        ui.click("Drop ones").click("Wipe");
+        assert!(ui.has_text("tags=[2] draft=\"\""));
+    }
+}

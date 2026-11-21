@@ -293,6 +293,26 @@ brings a table, form fields, async resource and persistence as built-ins. Those 
 are worth 1.5x to 2x on ordinary apps and 9x or more on block-shaped ones. A claim of "10x fewer
 lines than iced" should say "for apps that are mostly a table, a form or a list".
 
+### Pass 7: declared state and fewer handlers
+
+Any-app features only: `state!` (struct plus starting values, so `main` needs no initialiser),
+`Wizard::step` (Next is gated by the `field` errors on the page, no separate valid flag),
+`radio_list`/`radio_list_with` (radios from a `choices!` enum), `valid::password`/`positive`,
+`clock`/`money`, and button list ops `.push/.keep/.clear` on `at!` bindings. Same `count.py`,
+same iced files.
+
+| App | iced | Alloy pass 6 | Alloy now | ratio now |
+|---|---|---|---|---|
+| `pomodoro` | 150 | 66 | 63 | 2.4x |
+| `files` | 222 | 69 | 66 | 3.4x |
+| `wizard` | 238 | 73 | 66 | 3.6x |
+| `split` | 100 | 47 | 43 | 2.3x |
+| all four | 710 | 255 | 238 | **3.0x** |
+| `todo` (moved to `at!` and `.keep`) | 127 | 66 | 61 | 2.1x |
+
+Still about 3x, not 10x: pass 7 trims about 7%. The remainder is domain code, `view` layout
+and rustfmt line breaks. Apps made of ready blocks stay at 9x to 14x.
+
 ### Pass 6: general ergonomics for everyday apps
 
 Goal from the audit: raise the ratio on apps no block was built for, with features any app can

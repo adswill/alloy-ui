@@ -107,6 +107,25 @@ impl<S: 'static> crate::dsl::Btn<Act<S>> {
     pub fn set<T: Clone + Send + Sync + 'static>(self, p: Place<'_, S, T>, value: T) -> Self {
         self.on(p.writer(value))
     }
+    /// Reset a field to its default (empty text, empty list) when pressed: `.clear(at!(s.draft))`.
+    pub fn clear<T: Default + 'static>(self, p: Place<'_, S, T>) -> Self {
+        let lens = p.lens;
+        self.act(move |s| *lens(s) = T::default())
+    }
+    /// Append `item` to a list field when pressed: `.push(at!(s.tags), "new".to_string())`.
+    pub fn push<T: Clone + Send + Sync + 'static>(self, p: Place<'_, S, Vec<T>>, item: T) -> Self {
+        let lens = p.lens;
+        self.act(move |s| lens(s).push(item.clone()))
+    }
+    /// Keep only the list items for which `f` is true when pressed: `.keep(at!(s.tasks), |t| !t.done)`.
+    pub fn keep<T: 'static>(
+        self,
+        p: Place<'_, S, Vec<T>>,
+        f: impl Fn(&T) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        let lens = p.lens;
+        self.act(move |s| lens(s).retain(|t| f(t)))
+    }
     /// Add `by` to a number field when pressed (negative `by` subtracts): `.add(at!(s.n), 1)`.
     pub fn add<T>(self, p: Place<'_, S, T>, by: T) -> Self
     where
