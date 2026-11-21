@@ -14,7 +14,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex,
     },
     task::{Context, Poll, Wake, Waker},
@@ -43,6 +43,37 @@ pub fn block_on<F: Future>(fut: F) -> F::Output {
     loop {
         if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
             return v;
+        }
+        std::thread::park();
+    }
+}
+
+/// Lets the UI thread stop a fetch: sets a flag and wakes the worker so it drops the future.
+struct Cancel {
+    flag: AtomicBool,
+    worker: Mutex<Option<std::thread::Thread>>,
+}
+
+impl Cancel {
+    fn cancel(&self) {
+        self.flag.store(true, Ordering::Release);
+        if let Some(t) = self.worker.lock_ok().as_ref() {
+            t.unpark();
+        }
+    }
+}
+
+/// Like [`block_on`], but returns `None` (dropping the future) once `cancel` fires.
+fn block_on_cancellable<F: Future>(fut: F, cancel: &Cancel) -> Option<F::Output> {
+    let mut fut = Box::pin(fut);
+    let waker = Waker::from(Arc::new(Parker(std::thread::current())));
+    let mut cx = Context::from_waker(&waker);
+    loop {
+        if cancel.flag.load(Ordering::Acquire) {
+            return None;
+        }
+        if let Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
+            return Some(v);
         }
         std::thread::park();
     }
@@ -114,6 +145,40 @@ struct Inner<T> {
     every: Option<(Duration, Instant)>,
     ticking: bool,
     auto: Option<crate::Local<bool>>,
+    /// Bumped by every cancel or restart; a finished fetch applies only if it still matches.
+    generation: u64,
+    running: Option<Arc<Cancel>>,
+    key: Option<Box<dyn std::any::Any + Send>>,
+}
+
+impl<T> Inner<T> {
+    fn new(fetch: Arc<dyn Fn() -> Fut<T> + Send + Sync>) -> Self {
+        Inner {
+            data: None,
+            error: None,
+            busy: false,
+            fetch,
+            every: None,
+            ticking: false,
+            auto: None,
+            generation: 0,
+            running: None,
+            key: None,
+        }
+    }
+}
+
+fn boxed<T, E, F, Fut2>(f: F) -> Arc<dyn Fn() -> Fut<T> + Send + Sync>
+where
+    E: std::fmt::Display,
+    F: Fn() -> Fut2 + Send + Sync + 'static,
+    Fut2: Future<Output = Result<T, E>> + Send + 'static,
+    T: 'static,
+{
+    Arc::new(move || {
+        let f = f();
+        Box::pin(async move { f.await.map_err(|e| e.to_string()) })
+    })
 }
 
 /// Data fetched in the background. Made by [`resource`].
@@ -138,18 +203,7 @@ where
     let fresh = std::cell::Cell::new(false);
     let slot = cx::slot(auto_id(30), || {
         fresh.set(true);
-        Inner::<T> {
-            data: None,
-            error: None,
-            busy: false,
-            fetch: Arc::new(move || {
-                let f = fetch();
-                Box::pin(async move { f.await.map_err(|e| e.to_string()) })
-            }),
-            every: None,
-            ticking: false,
-            auto: None,
-        }
+        Inner::<T>::new(boxed(fetch))
     });
     let r = Resource(slot);
     if fresh.get() {
@@ -158,34 +212,100 @@ where
     r
 }
 
+/// Like [`resource`], but the data depends on `key` (a search query, a selected id): whenever
+/// `key` differs from the last frame the running fetch is **cancelled** (its future is dropped,
+/// and a late result can never overwrite newer data) and `fetch(key)` starts. The previous data
+/// stays visible while the new fetch runs.
+///
+/// For search-as-you-type, begin the fetch with `sleep(secs(0.3)).await`: a key that changes
+/// again within that time cancels the fetch before it does any work, which is a debounce.
+#[track_caller]
+pub fn resource_for<K, T, E, F, Fut2>(key: K, fetch: F) -> Resource<T>
+where
+    K: PartialEq + Clone + Send + Sync + 'static,
+    T: Send + 'static,
+    E: std::fmt::Display,
+    F: Fn(K) -> Fut2 + Send + Sync + 'static,
+    Fut2: Future<Output = Result<T, E>> + Send + 'static,
+{
+    let slot = cx::slot(auto_id(31), || {
+        Inner::<T>::new(boxed(|| async { Err::<T, String>("no key".into()) }))
+    });
+    let r = Resource(slot);
+    let changed = {
+        let g = r.0.lock_ok();
+        g.key.as_ref().and_then(|k| k.downcast_ref::<K>()) != Some(&key)
+    };
+    if changed {
+        {
+            let mut g = r.0.lock_ok();
+            g.fetch = boxed({
+                let key = key.clone();
+                move || fetch(key.clone())
+            });
+            g.key = Some(Box::new(key));
+        }
+        r.restart();
+    }
+    r
+}
+
 impl<T: Send + 'static> Resource<T> {
     /// Fetch again now (ignored while a fetch is running). The old data stays visible meanwhile.
     pub fn reload(&self) {
-        let fut = {
+        let (fut, generation, cancel) = {
             let mut g = self.0.lock_ok();
             if g.busy {
                 return;
             }
             g.busy = true;
-            (g.fetch)()
+            let cancel = Arc::new(Cancel {
+                flag: AtomicBool::new(false),
+                worker: Mutex::new(None),
+            });
+            g.running = Some(cancel.clone());
+            ((g.fetch)(), g.generation, cancel)
         };
         INFLIGHT.fetch_add(1, Ordering::Relaxed);
         let inner = self.0.clone();
-        std::thread::spawn(move || {
-            let result = block_on(fut);
+        let token = cancel.clone();
+        let worker = std::thread::spawn(move || {
+            let result = block_on_cancellable(fut, &token);
             DONE.lock_ok().push(Box::new(move || {
                 let mut g = inner.lock_ok();
-                match result {
-                    Ok(v) => (g.data, g.error) = (Some(v), None),
-                    Err(e) => g.error = Some(e),
-                }
-                g.busy = false;
-                if let Some((d, next)) = &mut g.every {
-                    *next = Instant::now() + *d;
+                // A cancelled or superseded fetch applies nothing.
+                if let (Some(result), true) = (result, g.generation == generation) {
+                    match result {
+                        Ok(v) => (g.data, g.error) = (Some(v), None),
+                        Err(e) => g.error = Some(e),
+                    }
+                    g.busy = false;
+                    g.running = None;
+                    if let Some((d, next)) = &mut g.every {
+                        *next = Instant::now() + *d;
+                    }
                 }
                 INFLIGHT.fetch_sub(1, Ordering::Relaxed);
             }));
         });
+        *cancel.worker.lock_ok() = Some(worker.thread().clone());
+    }
+
+    /// Stop the running fetch, if any, and keep what was shown before. The future is dropped
+    /// at its next suspension point and its result, should it still arrive, is ignored.
+    pub fn cancel(&self) {
+        let mut g = self.0.lock_ok();
+        g.generation += 1;
+        g.busy = false;
+        if let Some(c) = g.running.take() {
+            c.cancel();
+        }
+    }
+
+    /// [`cancel`](Self::cancel) the running fetch and start a new one now.
+    pub fn restart(&self) {
+        self.cancel();
+        self.reload();
     }
 
     /// Refetch every `period` while `enabled`: `.every_if(auto.get(), secs(10.0))`.
