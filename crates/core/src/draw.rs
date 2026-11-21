@@ -102,6 +102,15 @@ pub enum DrawCommand {
         /// Colour.
         color: Color,
     },
+    /// A filled simple polygon (convex or concave, either winding), edges
+    /// anti-aliased. This is the primitive under pies, areas, canvas paths and
+    /// 3D meshes. Self-intersecting outlines are not supported.
+    Polygon {
+        /// Outline vertices in order; fewer than three draws nothing.
+        points: Vec<Point>,
+        /// Fill colour (include alpha).
+        fill: Color,
+    },
     /// An image by handle id registered with the renderer.
     Image {
         /// Destination bounds.

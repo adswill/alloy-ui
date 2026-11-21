@@ -109,6 +109,47 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::CursorMoved(Point::new(p.x + 3.0, p.y + 3.0)));
         self
     }
+    /// Move the pointer to window position `(x, y)`.
+    pub fn move_to(&mut self, x: f32, y: f32) -> &mut Self {
+        self.rt.handle_event(&Event::CursorMoved(Point::new(x, y)));
+        self
+    }
+    /// Press the left button where the pointer is.
+    pub fn mouse_down(&mut self) -> &mut Self {
+        self.rt
+            .handle_event(&Event::MousePressed(MouseButton::Left));
+        self
+    }
+    /// Release the left button where the pointer is.
+    pub fn mouse_up(&mut self) -> &mut Self {
+        self.rt
+            .handle_event(&Event::MouseReleased(MouseButton::Left));
+        self
+    }
+    /// Click at window position `(x, y)`.
+    pub fn click_at(&mut self, x: f32, y: f32) -> &mut Self {
+        self.move_to(x, y).mouse_down().mouse_up()
+    }
+    /// Drag the left button from one window position to another in a few steps,
+    /// releasing at the end.
+    pub fn drag(&mut self, from: (f32, f32), to: (f32, f32)) -> &mut Self {
+        self.drag_hold(from, to);
+        self.mouse_up()
+    }
+    /// Like [`drag`](Self::drag) but leave the button down, for a frame mid-drag.
+    pub fn drag_hold(&mut self, from: (f32, f32), to: (f32, f32)) -> &mut Self {
+        self.move_to(from.0, from.1).mouse_down();
+        for i in 1..=8 {
+            let t = i as f32 / 8.0;
+            self.move_to(from.0 + (to.0 - from.0) * t, from.1 + (to.1 - from.1) * t);
+        }
+        self
+    }
+    /// Scroll the wheel by `dy` logical pixels at the pointer (positive scrolls content up).
+    pub fn scroll(&mut self, dy: f32) -> &mut Self {
+        self.rt.handle_event(&Event::Scrolled { dx: 0.0, dy });
+        self
+    }
     /// Show or hide the layout inspector overlay (what F12 does in a running app).
     pub fn inspect(&mut self, on: bool) -> &mut Self {
         self.rt.set_inspector(on);

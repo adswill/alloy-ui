@@ -85,6 +85,7 @@ pub mod testing;
 mod tone;
 pub mod valid;
 pub mod view;
+mod viz;
 
 pub use alloy_ui_macros::{at, state};
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
@@ -123,6 +124,12 @@ pub use rich::{
     Series, Spark, Swatch, Tone, Tree, TreeItem,
 };
 pub use view::{col, row, Boxed, Flex, Node, View};
+pub use viz::{
+    calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph, object,
+    pie, pt, rgb, stream, viewport3d, CalAction, CalView, Candle, Candles, Card, Entry, Frame,
+    GraphAction, GraphNode, Lane, MediaAction, MediaSource, Mesh, Move, Object, Orbit, Path, Pie,
+    Playback, Pointer, Ring, Slice, Stream, TestCard, Wire,
+};
 pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
@@ -142,6 +149,10 @@ pub mod prelude {
     };
     pub use crate::{
         at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
+    };
+    pub use crate::{
+        calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph,
+        object, pie, pt, stream, viewport3d,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;
