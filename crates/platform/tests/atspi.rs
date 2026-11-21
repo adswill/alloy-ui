@@ -257,10 +257,17 @@ fn screen_reader_sees_and_drives_the_app() {
     assert_eq!(win.get("name").unwrap().as_str(), Some("Test window"));
     assert_eq!(win.get("role").unwrap().as_str(), Some("frame"));
     let save = find(win, "Save").expect("Save button");
-    assert_eq!(save.get("role").unwrap().as_str(), Some("push button"));
+    // libatspi 2.5x renamed some role names ("push button" became "button").
+    assert!(matches!(
+        save.get("role").unwrap().as_str(),
+        Some("push button" | "button")
+    ));
     assert!(save.get("states").unwrap().has_str("focusable"));
     let dark = find(win, "Dark mode").unwrap();
-    assert_eq!(dark.get("role").unwrap().as_str(), Some("check box"));
+    assert!(matches!(
+        dark.get("role").unwrap().as_str(),
+        Some("check box" | "checkbox")
+    ));
     assert!(dark.get("states").unwrap().has_str("checked"));
     let name = find(win, "Name").unwrap();
     assert_eq!(name.get("role").unwrap().as_str(), Some("entry"));
