@@ -33,6 +33,28 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast
+  desktop-smoke:
+    # Runtime smoke test of the desktop integration: a real window, native menu bar, tray icon,
+    # notification and file dialogs through the OS. Runs on all three OSes on every PR (it only
+    # builds the platform crate). Linux runs it under Xvfb with a session bus.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev xvfb dbus-x11
+      - name: Smoke test (Linux, Xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dbus-run-session -- cargo test -p alloy-ui-platform --test desktop_smoke -- --nocapture
+      - name: Smoke test
+        if: runner.os != 'Linux'
+        run: cargo test -p alloy-ui-platform --test desktop_smoke -- --nocapture
   mobile:
     # Cross-compile checks only: nothing runs on a device. Catches breakage of the
     # Android and iOS code paths on every PR (Ubuntu is enough for both targets).
