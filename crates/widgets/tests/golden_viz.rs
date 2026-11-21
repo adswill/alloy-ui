@@ -355,7 +355,12 @@ fn mesh_counts() {
 
 fn pixel(img: &alloy_ui_render::Image, x: u32, y: u32) -> [u8; 4] {
     let i = ((y * img.width + x) * 4) as usize;
-    [img.rgba[i], img.rgba[i + 1], img.rgba[i + 2], img.rgba[i + 3]]
+    [
+        img.rgba[i],
+        img.rgba[i + 1],
+        img.rgba[i + 2],
+        img.rgba[i + 3],
+    ]
 }
 
 /// A five-point star under both fill rules, frames with holes, caps and joins, a dashed
@@ -375,7 +380,11 @@ fn canvas_fill_rules_strokes_and_gradients() {
                     for i in 0..5 {
                         let a = (i as f32 * 144.0 - 90.0).to_radians();
                         let (x, y) = (cx + r * a.cos(), cy + r * a.sin());
-                        path = if i == 0 { path.move_to(x, y) } else { path.line_to(x, y) };
+                        path = if i == 0 {
+                            path.move_to(x, y)
+                        } else {
+                            path.line_to(x, y)
+                        };
                     }
                     path.close()
                 };
@@ -433,7 +442,9 @@ fn canvas_fill_rules_strokes_and_gradients() {
                     .cubic_to(100.0, 210.0, 190.0, 280.0, 270.0, 236.0);
                 f.stroke_with(
                     &curve,
-                    &Stroke::new(4.0).cap(LineCap::Round).dashed(&[10.0, 8.0], 0.0),
+                    &Stroke::new(4.0)
+                        .cap(LineCap::Round)
+                        .dashed(&[10.0, 8.0], 0.0),
                     p.accent,
                 );
                 f.fill_with(
@@ -455,12 +466,28 @@ fn canvas_fill_rules_strokes_and_gradients() {
     let at = |x: f32, y: f32| pixel(&img, ((x + 32.0) * 2.0) as u32, ((y + 32.0) * 2.0) as u32);
     let bg = at(3.0, 3.0);
     assert_ne!(at(60.0, 52.0), bg, "non-zero fills the star's centre");
-    assert_eq!(at(170.0, 52.0), bg, "even-odd leaves the star's centre empty");
+    assert_eq!(
+        at(170.0, 52.0),
+        bg,
+        "even-odd leaves the star's centre empty"
+    );
     assert_ne!(at(170.0, 22.0), bg, "even-odd still fills a tip");
-    assert_eq!(at(50.0, 150.0), bg, "opposite winding cuts a hole under non-zero");
+    assert_eq!(
+        at(50.0, 150.0),
+        bg,
+        "opposite winding cuts a hole under non-zero"
+    );
     assert_ne!(at(20.0, 150.0), bg, "the frame around the hole is filled");
-    assert_eq!(at(160.0, 150.0), bg, "even-odd cuts a hole whatever the winding");
-    assert_ne!(at(310.0, 170.0), at(460.0, 250.0), "the gradient changes along its axis");
+    assert_eq!(
+        at(160.0, 150.0),
+        bg,
+        "even-odd cuts a hole whatever the winding"
+    );
+    assert_ne!(
+        at(310.0, 170.0),
+        at(460.0, 250.0),
+        "the gradient changes along its axis"
+    );
     // No pinholes: every pixel inside the solid frame is the fill colour.
     let fill = at(20.0, 150.0);
     for y in 112..188 {

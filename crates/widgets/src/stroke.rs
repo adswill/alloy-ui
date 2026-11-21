@@ -357,12 +357,7 @@ mod tests {
         let zig = [(vec![p(0.0, 0.0), p(10.0, 0.0), p(0.5, 1.0)], false)];
         let long = pieces(&zig, &Stroke::new(2.0).miter_limit(100.0));
         let cut = pieces(&zig, &Stroke::new(2.0).miter_limit(1.5));
-        let far = |v: &Vec<Vec<Point>>| {
-            v.iter()
-                .flatten()
-                .map(|q| q.x)
-                .fold(f32::MIN, f32::max)
-        };
+        let far = |v: &Vec<Vec<Point>>| v.iter().flatten().map(|q| q.x).fold(f32::MIN, f32::max);
         assert!(far(&long) > far(&cut) + 1.0, "{} {}", far(&long), far(&cut));
     }
 
