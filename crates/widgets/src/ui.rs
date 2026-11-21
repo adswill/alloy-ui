@@ -118,6 +118,12 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
+/// Spring that carries scroll offsets: critically damped, so it never overshoots.
+const SCROLL_SPRING: Spring = Spring {
+    stiffness: 620.0,
+    damping: 49.8, // 2 * sqrt(620)
+};
+
 struct Inner {
     theme: Rc<Theme>,
     metrics: Rc<dyn TextMetrics>,
@@ -128,20 +134,29 @@ struct Inner {
     order_seen: std::collections::HashSet<u64>,
     cursor: Point,
     pressed: Option<(i32, i32)>,
-    scroll: HashMap<u64, f32>,
+    scroll: HashMap<u64, f64>,
     edits: HashMap<u64, Edit>,
     popup: Option<u64>,
     now: u64,
     anims: HashMap<u64, Anim>,
+    clocks: HashMap<u64, Clock>,
+    memo: HashMap<u64, [f32; 4]>,
+    frame: u64,
+    snaps: HashMap<u64, Snapshot>,
+    outgoing: HashMap<u64, Snapshot>,
     reduced_motion: bool,
+    icon_pack: crate::IconPack,
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
+    states: HashMap<u64, Box<dyn std::any::Any>>,
+    mods: alloy_ui_core::Modifiers,
     a11y: Vec<A11yNode>,
     viewport: Rectangle,
+    drag: Option<crate::dnd::DragState>,
 }
 
 /// One value (up to four components) moving toward a target, by timed tween
@@ -211,6 +226,21 @@ impl Anim {
     }
 }
 
+/// A page's recorded draw commands, kept so it can be drawn on its way out.
+#[derive(Clone)]
+pub(crate) struct Snapshot {
+    pub page: u64,
+    pub cmds: Rc<Vec<DrawCommand>>,
+}
+
+/// A one-shot timer started the first time its key is seen.
+#[derive(Clone, Copy)]
+struct Clock {
+    /// Set by the first tick after the clock is created, like tween starts.
+    start: Option<u64>,
+    dur: u64,
+}
+
 /// Cheaply clonable handle to per-window widget state.
 #[derive(Clone)]
 pub struct Ui(Rc<RefCell<Inner>>);
@@ -233,6 +263,12 @@ impl Ui {
             popup: None,
             now: 0,
             anims: HashMap::new(),
+            icon_pack: crate::IconPack::default(),
+            clocks: HashMap::new(),
+            memo: HashMap::new(),
+            frame: 0,
+            snaps: HashMap::new(),
+            outgoing: HashMap::new(),
             reduced_motion: std::env::var("ALLOY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
             overlay: Vec::new(),
             regions: Vec::new(),
@@ -240,11 +276,14 @@ impl Ui {
             clip: None,
             histories: HashMap::new(),
             slots: HashMap::new(),
+            states: HashMap::new(),
+            mods: Default::default(),
             a11y: Vec::new(),
             viewport: Rectangle::new(
                 Point::new(0.0, 0.0),
                 Size::new(f32::INFINITY, f32::INFINITY),
             ),
+            drag: None,
         })))
     }
 
@@ -344,6 +383,7 @@ impl Ui {
     }
     pub(crate) fn begin_frame(&self) {
         let mut s = self.0.borrow_mut();
+        s.frame += 1;
         s.order.clear();
         s.order_seen.clear();
         s.overlay.clear();
@@ -380,11 +420,17 @@ impl Ui {
         for a in s.anims.values_mut() {
             a.advance(now);
         }
+        for c in s.clocks.values_mut() {
+            c.start.get_or_insert(now);
+        }
     }
     /// True while any transition is still running; the runtime then keeps ticking.
     pub fn animating(&self) -> bool {
         let s = self.0.borrow();
         s.anims.values().any(|a| a.running(s.now))
+            || s.clocks
+                .values()
+                .any(|c| c.start.map_or(true, |st| s.now < st + c.dur))
     }
     /// Current value of the transition `key`, moving toward `target` over the
     /// theme's fast motion duration. The first call returns `target` at once.
@@ -451,10 +497,111 @@ impl Ui {
             mounted: present || progress > 0.002,
         }
     }
+    /// Frames drawn so far. A widget that notices it was not drawn last frame
+    /// knows it has just appeared.
+    pub fn frame(&self) -> u64 {
+        self.0.borrow().frame
+    }
+    /// Store `snap` as the latest snapshot for `key`, returning the previous one.
+    pub(crate) fn swap_snapshot(&self, key: u64, snap: Snapshot) -> Option<Snapshot> {
+        self.0.borrow_mut().snaps.insert(key, snap)
+    }
+    /// The page on its way out for `key`, if a transition is running.
+    pub(crate) fn outgoing(&self, key: u64) -> Option<Snapshot> {
+        self.0.borrow().outgoing.get(&key).cloned()
+    }
+    /// Set or clear (with `None`) the outgoing page for `key`.
+    pub(crate) fn set_outgoing(&self, key: u64, snap: Option<Snapshot>) {
+        let mut s = self.0.borrow_mut();
+        match snap {
+            Some(v) => s.outgoing.insert(key, v),
+            None => s.outgoing.remove(&key),
+        };
+    }
+
+    /// A choreographed sequence of `total_ms` that starts the first time it is
+    /// seen and starts over whenever `trigger` changes (pass anything that
+    /// identifies the state, e.g. the selected page).
+    pub fn timeline(&self, key: u64, trigger: u64, total_ms: u32) -> crate::motion::Timeline {
+        let packed = crate::motion::pack(trigger);
+        let mk = key ^ 0x7131;
+        if self.memo(mk) != packed {
+            self.set_memo(mk, packed);
+            self.restart_clock(key);
+        }
+        let (el, _) = self.clock(key, total_ms as u64);
+        crate::motion::Timeline {
+            elapsed_ms: el as f32,
+            total_ms: total_ms as f32,
+        }
+    }
+    /// A value travelling through `frames` over `ms`, replaying whenever
+    /// `trigger` changes (and once when first seen).
+    pub fn keyframes<T: Animatable>(
+        &self,
+        key: u64,
+        trigger: u64,
+        ms: u32,
+        frames: &crate::motion::Keyframes<T>,
+    ) -> T {
+        let tl = self.timeline(key, trigger, ms);
+        frames.sample(tl.progress())
+    }
+
+    /// A one-shot clock: milliseconds since `key` was first seen (or since
+    /// [`Ui::restart_clock`]), capped at `dur_ms`, plus whether it is still
+    /// running. Drives timelines, keyframes and staggered entrances. Under
+    /// reduced motion it is already finished.
+    pub fn clock(&self, key: u64, dur_ms: u64) -> (u64, bool) {
+        let mut s = self.0.borrow_mut();
+        if s.reduced_motion {
+            return (dur_ms, false);
+        }
+        let now = s.now;
+        let c = s.clocks.entry(key).or_insert(Clock {
+            start: None,
+            dur: dur_ms,
+        });
+        c.dur = c.dur.max(dur_ms);
+        match c.start {
+            // Not ticked yet: it starts at zero on the next tick.
+            None => (0, true),
+            Some(st) => (now.saturating_sub(st).min(dur_ms), now < st + dur_ms),
+        }
+    }
+    /// Start the clock `key` again from zero.
+    pub fn restart_clock(&self, key: u64) {
+        let mut s = self.0.borrow_mut();
+        s.clocks.insert(
+            key,
+            Clock {
+                start: None,
+                dur: 0,
+            },
+        );
+    }
+    /// Remembered four numbers for `key` (zeros if never set): per-widget
+    /// scratch such as the point a ripple started from.
+    pub fn memo(&self, key: u64) -> [f32; 4] {
+        self.0.borrow().memo.get(&key).copied().unwrap_or([0.0; 4])
+    }
+    /// Remember four numbers for `key`.
+    pub fn set_memo(&self, key: u64, v: [f32; 4]) {
+        self.0.borrow_mut().memo.insert(key, v);
+    }
+
     /// True when the user (or the app) asked for less motion: every
     /// transition then jumps to its end state, and nothing keeps ticking.
     pub fn reduced_motion(&self) -> bool {
         self.0.borrow().reduced_motion
+    }
+    /// The icon pack icons are drawn from unless they name one.
+    pub fn icon_pack(&self) -> crate::IconPack {
+        self.0.borrow().icon_pack
+    }
+    /// Choose the window's icon pack.
+    pub fn set_icon_pack(&self, pack: crate::IconPack) {
+        self.0.borrow_mut().icon_pack = pack;
     }
     /// Turn reduced motion on or off. It starts on when the environment
     /// variable `ALLOY_REDUCE_MOTION` is set to anything but `0`.
@@ -507,6 +654,18 @@ impl Ui {
         }
     }
 
+    pub(crate) fn drag_state<R>(
+        &self,
+        f: impl FnOnce(&mut Option<crate::dnd::DragState>) -> R,
+    ) -> R {
+        f(&mut self.0.borrow_mut().drag)
+    }
+    /// True while a drag started by [`Draggable`](crate::Draggable) is in progress
+    /// (the pointer has moved past the start threshold and the button is still down).
+    pub fn dragging(&self) -> bool {
+        self.0.borrow().drag.as_ref().is_some_and(|d| d.active)
+    }
+
     /// The window area of the last drawn frame, so popups can stay on screen.
     /// Unbounded until the first frame.
     pub fn viewport(&self) -> Rectangle {
@@ -538,11 +697,55 @@ impl Ui {
 
     /// Scroll offset of the scrollable `id`.
     pub fn scroll_offset(&self, id: u64) -> f32 {
-        self.0.borrow().scroll.get(&id).copied().unwrap_or(0.0)
+        self.scroll_offset_f64(id) as f32
     }
     /// Set the scroll offset of `id` (clamped when next used).
     pub fn set_scroll_offset(&self, id: u64, offset: f32) {
+        self.set_scroll_offset_f64(id, offset as f64);
+    }
+    /// Full-precision scroll offset. An `f32` stops resolving single pixels past 16.7 million,
+    /// which a list of a million 28-pixel rows passes.
+    pub fn scroll_offset_f64(&self, id: u64) -> f64 {
+        self.0.borrow().scroll.get(&id).copied().unwrap_or(0.0)
+    }
+    /// Set the full-precision scroll offset of `id`.
+    pub fn set_scroll_offset_f64(&self, id: u64, offset: f64) {
         self.0.borrow_mut().scroll.insert(id, offset.max(0.0));
+    }
+
+    fn scroll_key(id: u64) -> u64 {
+        0x5C01_0000_0000 ^ id
+    }
+    /// Where the scrollable `id` is *drawn*: its target offset followed by a critically
+    /// damped spring (about 150 ms to rest, no overshoot), so wheel notches, keys and
+    /// jumps glide. A burst of wheel events retargets the spring without resetting its
+    /// velocity, which is what makes quick successive notches feel like momentum.
+    /// Jumps at once under reduced motion.
+    pub fn scroll_shown(&self, id: u64, max: f32) -> f32 {
+        let target = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        self.spring(Self::scroll_key(id), target, SCROLL_SPRING)
+    }
+    /// Apply a wheel delta (positive scrolls toward the top) to the target offset of `id`.
+    /// Returns true if the target moved, i.e. the event was used.
+    pub fn scroll_wheel(&self, id: u64, dy: f32, max: f32) -> bool {
+        let before = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        let next = (before - dy).clamp(0.0, max.max(0.0));
+        self.set_scroll_offset(id, next);
+        next != before
+    }
+    /// Glide to `offset` (clamped to `0..=max`).
+    pub fn scroll_to(&self, id: u64, offset: f32, max: f32) {
+        self.set_scroll_offset(id, offset.clamp(0.0, max.max(0.0)));
+    }
+    /// Move to `offset` immediately, with no glide: for dragging a scrollbar thumb, where the
+    /// content must stay under the pointer.
+    pub fn scroll_jump(&self, id: u64, offset: f32, max: f32) {
+        self.scroll_jump_f64(id, offset as f64, max as f64);
+    }
+    /// [`Ui::scroll_jump`] at full precision, for lists taller than an `f32` can resolve.
+    pub fn scroll_jump_f64(&self, id: u64, offset: f64, max: f64) {
+        self.set_scroll_offset_f64(id, offset.clamp(0.0, max.max(0.0)));
+        self.0.borrow_mut().anims.remove(&Self::scroll_key(id));
     }
 
     /// Id of the widget whose popup (e.g. an open pick list) is showing.
@@ -569,6 +772,31 @@ impl Ui {
             Some(v) => s.slots.insert(id, v),
             None => s.slots.remove(&id),
         };
+    }
+
+    /// The modifier keys as of the last key event. Mouse events carry none, so widgets that
+    /// need Shift/Ctrl-click read it here. The platform shell sends a `KeyReleased` of the
+    /// pseudo key `Named("Modifiers")` whenever the modifier state changes.
+    pub fn modifiers(&self) -> alloy_ui_core::Modifiers {
+        self.0.borrow().mods
+    }
+    pub(crate) fn set_modifiers(&self, m: alloy_ui_core::Modifiers) {
+        self.0.borrow_mut().mods = m;
+    }
+    /// Run `f` on the typed state of widget `id` (created with `T::default()` on first use).
+    /// `f` must not call back into `Ui`. For state too rich for a slot: a grid's selection,
+    /// a find query, a rich-text caret.
+    pub(crate) fn state<T: std::any::Any + Default, R>(
+        &self,
+        id: u64,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> R {
+        let mut s = self.0.borrow_mut();
+        let b = s.states.entry(id).or_insert_with(|| Box::new(T::default()));
+        if !b.is::<T>() {
+            *b = Box::new(T::default());
+        }
+        f(b.downcast_mut::<T>().expect("type checked above"))
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {
@@ -638,6 +866,7 @@ impl<M: 'static> Widget<M> for Root<M> {
             }
         }
         match event {
+            Event::KeyPressed(_, m) | Event::KeyReleased(_, m) => self.ui.set_modifiers(*m),
             Event::CursorMoved(p) => self.ui.set_cursor(*p),
             Event::CursorLeft => self.ui.set_cursor(Point::new(-1.0e6, -1.0e6)),
             Event::MousePressed(_) => {
@@ -648,7 +877,11 @@ impl<M: 'static> Widget<M> for Root<M> {
         }
         let consumed = util::dispatch(&mut self.child, event, layout, cursor, out);
         match event {
-            Event::MouseReleased(_) => self.ui.set_pressed(None),
+            Event::MouseReleased(_) => {
+                self.ui.set_pressed(None);
+                // Every drop target has now seen the release: the drag is over.
+                self.ui.drag_state(|d| *d = None);
+            }
             Event::KeyPressed(Key::Tab, m) if !consumed => {
                 if m.shift {
                     self.ui.focus_prev();

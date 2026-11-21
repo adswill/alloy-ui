@@ -18,6 +18,8 @@ COMMANDS:
     new       Create a starter app: alloy new <name> [--template <T>]
     dev       Run the app, rebuild and restart on every save (F12 = inspector)
     check     Validate [package.metadata.alloy], icons and the capability config
+    keygen    Create an update-signing key: alloy keygen [--out FILE]
+    release   Merge bundle fragments into a signed latest.json: alloy release --dir DIR
     help      Show this text
     version   Show the version
 
@@ -25,9 +27,13 @@ OPTIONS:
     --manifest-path <PATH>   Cargo.toml of the app (default: current directory)
     -p, --package <NAME>     Package to use in a workspace
     --bin <NAME>             Binary target to bundle
-    --target <TRIPLE>        Cross-compile for this target
+    --target <TRIPLE>        Cross-compile for this target; `android` and `ios` (or
+                             `ios-sim`) build the mobile library and write the native
+                             project (Gradle / XcodeGen) next to it
     --format <LIST>          Comma list of: app, dmg, deb, rpm, appimage, exe, nsis, msi
-    --out <DIR>              Output directory (default: <target>/alloy-bundle)
+    --out <DIR>              Output directory (default: <target>/alloy-bundle); keygen: key file
+    --dir <DIR>              (release) folder holding the *.update.json fragments
+    --notes-file <FILE>      (release) release notes to put in latest.json
     --binary <PATH>          Bundle this prebuilt binary instead of building
     --identifier <ID>        (new) reverse-DNS app identifier
     -t, --template <NAME>    (new) starter app, see TEMPLATES (default: counter)
@@ -47,6 +53,13 @@ FORMATS:
     exe        Windows portable executable (icon embedded)
     nsis       Windows installer (needs `makensis`)
     msi        Windows MSI installer (needs WiX 4+: `wix`, or ALLOY_WIX)
+    msix       Windows MSIX package (built in pure Rust; signed with ALLOY_WIN_CERT)
+    flatpak    Flatpak (needs `flatpak-builder`; the builder directory is always written)
+
+SIGNING (environment, never Cargo.toml):
+    macOS      ALLOY_SIGN_IDENTITY, ALLOY_NOTARY_PROFILE (or _APPLE_ID/_TEAM_ID/_PASSWORD, or _KEY/_KEY_ID/_ISSUER)
+    Windows    ALLOY_WIN_CERT + ALLOY_WIN_CERT_PASSWORD, or ALLOY_WIN_CERT_SHA1, or ALLOY_WIN_SIGN_COMMAND
+    Updates    ALLOY_UPDATE_KEY (hex or @file) with `update-url` set in the app metadata
 ";
 
 /// The help text, with the template list filled in.
@@ -63,6 +76,10 @@ pub enum Command {
     Bundle,
     /// `alloy check`
     Check,
+    /// `alloy keygen`
+    Keygen,
+    /// `alloy release`
+    Release,
     /// `alloy new`
     New,
     /// `alloy dev`
@@ -90,6 +107,10 @@ pub struct Args {
     pub binary: Option<PathBuf>,
     /// `--skip-build`.
     pub skip_build: bool,
+    /// `--dir` (release).
+    pub dir: Option<PathBuf>,
+    /// `--notes-file` (release).
+    pub notes_file: Option<PathBuf>,
     /// `alloy new`: the app name.
     pub name: Option<String>,
     /// `--identifier`.
@@ -116,6 +137,8 @@ pub fn parse(args: &[String]) -> Result<Args> {
         Some("build") => Command::Build,
         Some("bundle") => Command::Bundle,
         Some("check") => Command::Check,
+        Some("keygen") => Command::Keygen,
+        Some("release") => Command::Release,
         Some("new") => Command::New,
         Some("dev") => Command::Dev,
         Some(other) => {
@@ -132,6 +155,8 @@ pub fn parse(args: &[String]) -> Result<Args> {
         out: None,
         binary: None,
         skip_build: false,
+        dir: None,
+        notes_file: None,
         name: None,
         identifier: None,
         alloy_path: None,
@@ -154,6 +179,8 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--out" => a.out = Some(value(&mut it, arg)?.into()),
             "--binary" => a.binary = Some(value(&mut it, arg)?.into()),
             "--skip-build" => a.skip_build = true,
+            "--dir" => a.dir = Some(value(&mut it, arg)?.into()),
+            "--notes-file" => a.notes_file = Some(value(&mut it, arg)?.into()),
             "--release" => a.release = true,
             "--once" => a.once = true,
             "--identifier" => a.identifier = Some(value(&mut it, arg)?),
@@ -225,6 +252,23 @@ mod tests {
         assert_eq!(d.cargo_args, vec!["--flag"]);
         assert!(p("bundle stray").is_err());
         assert!(p("new a b").is_err());
+    }
+
+    #[test]
+    fn release_commands() {
+        let k = p("keygen --out k.key").unwrap();
+        assert_eq!(
+            (k.command, k.out.as_deref()),
+            (Command::Keygen, Some(std::path::Path::new("k.key")))
+        );
+        let r = p("release --dir d --notes-file n.txt").unwrap();
+        assert_eq!(r.command, Command::Release);
+        assert_eq!(r.dir.as_deref(), Some(std::path::Path::new("d")));
+        assert_eq!(
+            p("bundle --format msix,flatpak").unwrap().formats,
+            vec![Format::Msix, Format::Flatpak]
+        );
+        assert!(usage().contains("ALLOY_WIN_CERT") && usage().contains("flatpak"));
     }
 
     #[test]

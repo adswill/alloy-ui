@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "examples", "tests/text-conformance"]
+members = ["crates/*", "examples", "examples/plugin-rating", "mobile/counter", "tests/text-conformance"]
 
 [workspace.package]
 version = "0.0.1"
@@ -12,11 +12,12 @@ rust-version = "1.80"
 [workspace.dependencies]
 alloy-ui-core = { path = "crates/core", version = "0.0.1" }
 alloy-ui-layout = { path = "crates/layout", version = "0.0.1" }
-alloy-ui-render = { path = "crates/render", version = "0.0.1" }
+alloy-ui-render = { path = "crates/render", version = "0.0.1", default-features = false }
 alloy-ui-theme = { path = "crates/theme", version = "0.0.1" }
 alloy-ui-widgets = { path = "crates/widgets", version = "0.0.1" }
 alloy-ui-platform = { path = "crates/platform", version = "0.0.1" }
 alloy-ui-ipc = { path = "crates/ipc", version = "0.0.1" }
+alloy-ui-ship = { path = "crates/ship", version = "0.0.1" }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

@@ -3,11 +3,15 @@
 mod appimage;
 mod archive;
 mod deb;
+mod flatpak;
 mod linux;
 mod macos;
 mod msi;
+mod msix;
+pub mod release;
 mod rpm;
 mod sha256;
+pub mod sign;
 mod windows;
 
 use crate::error::{io, Error, Result};
@@ -38,6 +42,10 @@ pub enum Format {
     Nsis,
     /// Windows MSI installer (WiX).
     Msi,
+    /// Windows MSIX package (written in Rust, signed when configured).
+    Msix,
+    /// Flatpak bundle (and `flatpak-builder` source directory).
+    Flatpak,
 }
 
 impl Format {
@@ -52,9 +60,11 @@ impl Format {
             "exe" => Format::Exe,
             "nsis" => Format::Nsis,
             "msi" => Format::Msi,
+            "msix" => Format::Msix,
+            "flatpak" => Format::Flatpak,
             other => {
                 return Err(Error::Usage(format!(
-                    "unknown format `{other}`; use app, dmg, deb, rpm, appimage, exe, nsis or msi"
+                    "unknown format `{other}`; use app, dmg, deb, rpm, appimage, flatpak, exe, nsis, msi or msix"
                 )))
             }
         })
@@ -71,6 +81,8 @@ impl Format {
             Format::Exe => "exe",
             Format::Nsis => "nsis",
             Format::Msi => "msi",
+            Format::Msix => "msix",
+            Format::Flatpak => "flatpak",
         }
     }
 
@@ -168,6 +180,8 @@ pub fn bundle(ctx: &Ctx<'_>, format: Format) -> Result<PathBuf> {
         Format::Exe => windows::portable(ctx),
         Format::Nsis => windows::nsis(ctx),
         Format::Msi => msi::msi(ctx),
+        Format::Msix => msix::msix(ctx),
+        Format::Flatpak => flatpak::flatpak(ctx),
     }
 }
 
@@ -252,6 +266,8 @@ mod tests {
             Format::Exe,
             Format::Nsis,
             Format::Msi,
+            Format::Msix,
+            Format::Flatpak,
         ] {
             assert_eq!(Format::parse(f.name()).unwrap(), f);
         }

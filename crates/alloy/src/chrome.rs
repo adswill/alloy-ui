@@ -30,6 +30,8 @@ pub(crate) struct Chrome<M> {
     /// Everything the command palette lists: title, the keys that trigger it, what it sends.
     entries: Vec<(String, Option<String>, M)>,
     undo: Option<M>,
+    /// Every command the desktop can call by name: menu items, tray items, global hotkeys.
+    named: Vec<(String, M)>,
 }
 
 impl<M: Clone + 'static> Chrome<M> {
@@ -42,8 +44,18 @@ impl<M: Clone + 'static> Chrome<M> {
     }
 
     pub(crate) fn new(ui: &Ui, page: Element<M>, keys: Vec<Hotkey<M>>, undo: Option<M>) -> Self {
+        let named = keys
+            .iter()
+            .filter_map(|h| {
+                let id =
+                    h.id.clone()
+                        .or_else(|| h.label.as_ref().map(|l| format!("cmd:{l}")))?;
+                Some((id, h.msg.clone()))
+            })
+            .collect();
         Self {
             ui: ui.clone(),
+            named,
             child: vec![page],
             entries: keys
                 .iter()
@@ -107,7 +119,7 @@ fn ease_out(t: f32) -> f32 {
 }
 
 /// Where every toast sits in `bounds` right now, and how visible it is.
-fn place(ui: &Ui, bounds: Rectangle, can_undo: bool) -> Vec<(Placed, String, bool)> {
+fn place(ui: &Ui, bounds: Rectangle, can_undo: bool) -> Vec<(Placed, String, bool, u8)> {
     let size = ui.theme().typography.body.size;
     keys::toasts(|ts, now| {
         let mut y = bounds.origin.y + bounds.size.height - BOTTOM;
@@ -124,7 +136,9 @@ fn place(ui: &Ui, bounds: Rectangle, can_undo: bool) -> Vec<(Placed, String, boo
             } else {
                 0.0
             };
+            let dot = if t.tone > 0 { 18.0 } else { 0.0 };
             let w = (tw
+                + dot
                 + 2.0 * PAD
                 + if t.undo && can_undo {
                     12.0 + uw - PAD + 6.0
@@ -152,6 +166,7 @@ fn place(ui: &Ui, bounds: Rectangle, can_undo: bool) -> Vec<(Placed, String, boo
                 },
                 t.text.clone(),
                 t.error,
+                t.tone,
             ));
         }
         out
@@ -250,6 +265,11 @@ impl<M: Clone + 'static> Widget<M> for Chrome<M> {
 impl<M: Clone + 'static> Chrome<M> {
     /// Everything that is not palette input: toast ticks and clicks, the page, then shortcuts.
     fn on_idle(&mut self, event: &Event, layout: &Layout, cursor: Point, out: &mut Vec<M>) -> bool {
+        for id in keys::take_invoked() {
+            if let Some((_, msg)) = self.named.iter().find(|(n, _)| *n == id) {
+                out.push(msg.clone());
+            }
+        }
         match event {
             Event::Tick(ms) => {
                 keys::set_now(*ms);
@@ -299,7 +319,7 @@ impl<M: Clone + 'static> Chrome<M> {
         let t = self.ui.theme();
         let size = t.typography.body.size;
         let hover = self.ui.cursor();
-        for (p, text, error) in place(&self.ui, layout.bounds, self.undo.is_some()) {
+        for (p, text, error, tone) in place(&self.ui, layout.bounds, self.undo.is_some()) {
             if p.alpha <= 0.0 {
                 continue;
             }
@@ -321,8 +341,26 @@ impl<M: Clone + 'static> Chrome<M> {
                 shadow: Some(shadow),
             });
             let ty = p.rect.origin.y + (H - t.typography.body.line_height) / 2.0;
+            let lead = if tone > 0 { 18.0 } else { 0.0 };
+            if tone > 0 {
+                let c = match tone {
+                    1 => t.palette.success,
+                    2 => t.palette.warning,
+                    _ => t.palette.accent,
+                };
+                out.push(DrawCommand::Quad {
+                    bounds: Rectangle::new(
+                        Point::new(p.rect.origin.x + PAD, p.rect.origin.y + H / 2.0 - 4.0),
+                        Size::new(8.0, 8.0),
+                    ),
+                    fill: fade(c),
+                    radius: 4.0,
+                    border: None,
+                    shadow: None,
+                });
+            }
             out.push(DrawCommand::Text {
-                origin: Point::new(p.rect.origin.x + PAD, ty),
+                origin: Point::new(p.rect.origin.x + PAD + lead, ty),
                 content: text,
                 size,
                 color: fade(if error {

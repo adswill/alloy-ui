@@ -5,8 +5,10 @@
 //! only produced on request ([`ShellContext::request_redraw`]) or when the OS
 //! asks for one. Background tasks wake the loop through a [`ShellProxy`].
 
+use crate::safe_area::Insets;
+use crate::touch::{Fling, Gesture, GestureRecognizer, PointerEmulation, TouchEvent, TouchPhase};
 use crate::{convert, PlatformError, WindowSettings};
-use alloy_ui_core::{Event, Point, Size};
+use alloy_ui_core::{Event, Key, Point, Size};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -31,8 +33,17 @@ pub enum PlatformEvent {
     FileHovered(PathBuf),
     /// The drag left the window without dropping.
     FileHoverCancelled,
-    /// A file was dropped on the window.
-    FileDropped(PathBuf),
+    /// Files were dropped on the window. One event per drop, however many
+    /// files it carried. (winit reports them one by one; the shell batches
+    /// them at the end of the loop turn.)
+    FilesDropped(Vec<PathBuf>),
+    /// The OS appearance or accessibility settings changed, or were read for
+    /// the first time (shortly after start-up). See [`crate::settings`].
+    SettingsChanged(crate::settings::SystemSettings),
+    /// The app was asked to open something: a URL for a registered scheme
+    /// (`myapp://...`), or files (macOS "Open With", a second launch that was
+    /// forwarded to this single instance). Carries the raw argument strings.
+    Open(Vec<String>),
     /// The OS switched between light and dark.
     ThemeChanged {
         /// True when the new theme is dark.
@@ -52,8 +63,30 @@ pub enum PlatformEvent {
     MenuAction(String),
     /// The tray icon was clicked (left button).
     TrayClicked,
+    /// A hotkey registered with [`ShellContext::register_global_hotkey`] was
+    /// pressed, possibly while another application had the focus. Carries the
+    /// string it was registered with.
+    GlobalHotkey(String),
     /// A [`ShellProxy::wake`] arrived from another thread.
     Wake,
+    /// A finger touched, moved or lifted (raw, logical pixels). The shell
+    /// already turns the first finger into mouse events and pans into
+    /// scrolling, so most apps only need [`PlatformEvent::Gesture`].
+    Touch(TouchEvent),
+    /// A recognised gesture: tap, double tap, long press, pan, fling release
+    /// or pinch. Taps and pans have already been delivered as mouse and
+    /// scroll input; this is for apps that want more (pinch to zoom).
+    Gesture(Gesture),
+    /// The native surface is gone (Android moved the app to the background).
+    /// Drop GPU surfaces now; [`PlatformEvent::Resumed`] says when to rebuild.
+    /// Never sent on desktop or iOS, whose windows survive.
+    Suspended,
+    /// The app returned to the foreground with a fresh window. Build surfaces
+    /// again for the windows in [`ShellContext::window_keys`].
+    Resumed,
+    /// The area covered by system chrome (notch, bars, home indicator)
+    /// changed; see [`ShellContext::safe_area`].
+    SafeAreaChanged(Insets),
     /// Assistive technology (a screen reader) asked a control to do something.
     /// `window` is the window whose [`ShellContext::set_accessibility`] tree
     /// holds the target.
@@ -211,6 +244,12 @@ impl ShellContext {
     pub fn request_redraw(&mut self) {
         self.redraw = true;
     }
+    /// Bring the current window to the front and give it focus (used when a
+    /// second launch hands its arguments to this instance).
+    pub fn focus_window(&self) {
+        self.window.set_minimized(false);
+        self.window.focus_window();
+    }
     /// Exit the event loop after this callback.
     pub fn exit(&mut self) {
         self.exit = true;
@@ -239,6 +278,19 @@ impl ShellContext {
             .inner_size()
             .to_logical::<f32>(self.scale_factor());
         Size::new(s.width, s.height)
+    }
+    /// Parts of the window system chrome may cover (notch, status and
+    /// navigation bars, home indicator), in logical pixels. All zero on
+    /// desktop. Pad scrolling content by this and let backgrounds run under it.
+    pub fn safe_area(&self) -> Insets {
+        crate::os::safe_area(&self.window)
+    }
+    /// Show or hide the on-screen keyboard together with IME. On phones and
+    /// tablets this is what brings the soft keyboard up: call it with true
+    /// when a text field gains focus and false when focus leaves. Same as
+    /// [`ShellContext::set_ime_allowed`].
+    pub fn set_soft_keyboard(&self, visible: bool) {
+        self.window.set_ime_allowed(visible);
     }
     /// Enable or disable IME (call with true while a text field has focus).
     pub fn set_ime_allowed(&self, allowed: bool) {
@@ -298,8 +350,29 @@ impl ShellContext {
     pub fn clear_tray(&self) {
         crate::os::clear_tray();
     }
+    /// Grab `keys` (`"ctrl+alt+space"`) for the whole desktop. Presses arrive as
+    /// [`PlatformEvent::GlobalHotkey`]. See [`crate::hotkey`] for what each OS supports.
+    pub fn register_global_hotkey(&self, keys: &str) -> Result<(), PlatformError> {
+        crate::hotkey::register(keys)
+    }
+    /// Release every global hotkey.
+    pub fn unregister_global_hotkeys(&self) {
+        crate::hotkey::unregister_all();
+    }
     fn main_window(&self) -> &Window {
         self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)
+    }
+    /// Give the main window a see-through look (Mica, acrylic, blur,
+    /// plain transparency) or take it away with [`alloy_ui_core::WindowEffect::None`].
+    /// The answer says what the OS really did; the app then picks a page
+    /// background opacity to match.
+    ///
+    /// On X11 the window must have been created see-through: call
+    /// [`request_window_effect`] before [`run`].
+    pub fn set_effect(&mut self, effect: alloy_ui_core::WindowEffect) -> crate::EffectOutcome {
+        let w = self.main_window();
+        w.set_transparent(effect != alloy_ui_core::WindowEffect::None);
+        crate::os::set_effect(w, effect)
     }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
@@ -320,11 +393,35 @@ struct App<H> {
     t0: Instant,
     /// True while an IME preedit string is showing; key events are dropped.
     composing: bool,
+    /// Files of the drop being delivered; flushed in `about_to_wait`.
+    dropped: Vec<PathBuf>,
+    #[cfg(not(target_os = "linux"))]
+    settings_seen: Option<crate::settings::SystemSettings>,
+    gestures: GestureRecognizer,
+    /// Makes the first finger act as the mouse.
+    pointer: PointerEmulation,
+    fling: Option<(Fling, Instant)>,
+    safe: Insets,
+}
+
+static INITIAL_EFFECT: std::sync::Mutex<alloy_ui_core::WindowEffect> =
+    std::sync::Mutex::new(alloy_ui_core::WindowEffect::None);
+
+/// Ask for windows to be created see-through, before [`run`]. X11 needs a
+/// 32-bit visual at creation time, so an app that will ever use a window
+/// effect has to say so up front; [`ShellContext::set_effect`] then switches
+/// effects (or turns them off) at any time.
+pub fn request_window_effect(effect: alloy_ui_core::WindowEffect) {
+    if let Ok(mut e) = INITIAL_EFFECT.lock() {
+        *e = effect;
+    }
 }
 
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
+    let effect = INITIAL_EFFECT.lock().map(|e| *e).unwrap_or_default();
     Window::default_attributes()
         .with_title(s.title.clone())
+        .with_transparent(effect != alloy_ui_core::WindowEffect::None)
         .with_inner_size(LogicalSize::new(s.size.width as f64, s.size.height as f64))
 }
 
@@ -351,6 +448,56 @@ impl<H: ShellHandler> App<H> {
             ctx.close_queue.push(key);
         }
         self.finish(el);
+    }
+
+    fn now_ms(&self) -> u64 {
+        self.t0.elapsed().as_millis() as u64
+    }
+
+    /// Deliver events the touch layer produced.
+    fn send_input(&mut self, el: &ActiveEventLoop, events: Vec<Event>) {
+        for e in events {
+            self.dispatch(el, PlatformEvent::Input(e));
+        }
+    }
+
+    /// Built-in meaning of a gesture, then hand it to the app.
+    fn apply_gesture(&mut self, el: &ActiveEventLoop, g: Gesture) {
+        let events = self.pointer.gesture(g);
+        self.send_input(el, events);
+        if let Gesture::PanEnd { velocity } = g {
+            self.fling = Fling::new(velocity).map(|f| (f, Instant::now()));
+        }
+        self.dispatch(el, PlatformEvent::Gesture(g));
+    }
+
+    fn touch(&mut self, el: &ActiveEventLoop, t: winit::event::Touch, scale: f64) {
+        let l = t.location.to_logical::<f32>(scale);
+        let phase = match t.phase {
+            winit::event::TouchPhase::Started => TouchPhase::Started,
+            winit::event::TouchPhase::Moved => TouchPhase::Moved,
+            winit::event::TouchPhase::Ended => TouchPhase::Ended,
+            winit::event::TouchPhase::Cancelled => TouchPhase::Cancelled,
+        };
+        let te = TouchEvent {
+            id: t.id,
+            phase,
+            pos: Point::new(l.x, l.y),
+        };
+        let first = self.gestures.finger_count() == 0;
+        if phase == TouchPhase::Started {
+            self.fling = None;
+        }
+        self.dispatch(el, PlatformEvent::Touch(te));
+        // The first finger drives the pointer, so every existing widget works by touch.
+        let events = self.pointer.before(te, first);
+        self.send_input(el, events);
+        let now = self.now_ms();
+        for g in self.gestures.touch(te, now) {
+            self.apply_gesture(el, g);
+        }
+        let events = self.pointer.after(te);
+        self.send_input(el, events);
     }
 
     /// Apply queued window opens/closes and the exit/redraw flags.
@@ -424,10 +571,83 @@ impl<H: ShellHandler> App<H> {
 }
 
 impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
+    fn suspended(&mut self, el: &ActiveEventLoop) {
+        // Only Android destroys the native window here; elsewhere nothing to tell.
+        if cfg!(target_os = "android") {
+            self.fling = None;
+            self.dispatch(el, PlatformEvent::Suspended);
+        }
+    }
+
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        if !self.dropped.is_empty() {
+            let files = std::mem::take(&mut self.dropped);
+            self.dispatch(el, PlatformEvent::FilesDropped(files));
+        }
+        // Timers for touch: a held finger becomes a long press, a flick keeps scrolling.
+        let now = self.now_ms();
+        if self.gestures.next_deadline().is_some_and(|d| now >= d) {
+            for g in self.gestures.poll(now) {
+                self.apply_gesture(el, g);
+            }
+        }
+        if let Some((mut f, last)) = self.fling.take() {
+            let t = Instant::now();
+            let dt = t.duration_since(last).as_secs_f32();
+            if dt >= 1.0 / 120.0 {
+                if let Some((dx, dy)) = f.step(dt) {
+                    self.fling = Some((f, t));
+                    self.dispatch(
+                        el,
+                        PlatformEvent::Input(Event::Scrolled { dx: -dx, dy: -dy }),
+                    );
+                }
+            } else {
+                self.fling = Some((f, last));
+            }
+        }
+        let next = [
+            self.gestures
+                .next_deadline()
+                .map(|d| self.t0 + Duration::from_millis(d)),
+            self.fling
+                .as_ref()
+                .map(|(_, last)| *last + Duration::from_millis(16)),
+        ]
+        .into_iter()
+        .flatten()
+        .min();
+        el.set_control_flow(next.map_or(ControlFlow::Wait, ControlFlow::WaitUntil));
+    }
+
     fn resumed(&mut self, el: &ActiveEventLoop) {
         if self.ctx.is_some() {
+            // Android hands out a new native window on every return to the
+            // foreground; swap it in for the main window and tell the app.
+            if cfg!(target_os = "android") {
+                match el.create_window(attributes(&self.settings)) {
+                    Ok(w) => {
+                        let w = Arc::new(w);
+                        self.ids.retain(|_, k| *k != WindowKey::MAIN);
+                        self.ids.insert(w.id(), WindowKey::MAIN);
+                        if let Some(ctx) = self.ctx.as_mut() {
+                            ctx.access.remove(&WindowKey::MAIN);
+                            if ctx.key == WindowKey::MAIN {
+                                ctx.window = w.clone();
+                            }
+                            ctx.windows.insert(WindowKey::MAIN, w.clone());
+                        }
+                        self.focus_ctx(WindowKey::MAIN);
+                        self.dispatch(el, PlatformEvent::Resumed);
+                        w.request_redraw();
+                    }
+                    Err(e) => log::error!("resume: {e}"),
+                }
+            }
             return;
         }
+        #[cfg(target_os = "macos")]
+        crate::os::install_open_handler();
         match el.create_window(attributes(&self.settings)) {
             Ok(w) => {
                 let w = Arc::new(w);
@@ -512,7 +732,16 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }
             WindowEvent::Resized(s) => {
                 let l = s.to_logical::<f32>(scale);
-                Some(I(Event::Resized(Size::new(l.width, l.height))))
+                self.dispatch(el, I(Event::Resized(Size::new(l.width, l.height))));
+                // Rotation, keyboard and bar changes all arrive as a resize.
+                let now = self.ctx.as_ref().map(|c| c.safe_area());
+                match now {
+                    Some(i) if i != self.safe => {
+                        self.safe = i;
+                        Some(PlatformEvent::SafeAreaChanged(i))
+                    }
+                    _ => None,
+                }
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 Some(PlatformEvent::ScaleFactorChanged(scale_factor))
@@ -522,7 +751,12 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }),
             WindowEvent::ModifiersChanged(m) => {
                 self.mods = m.state();
-                None
+                // Mouse events carry no modifiers; tell widgets (Shift/Ctrl-click) through
+                // a pseudo key release that only `Root` looks at.
+                Some(I(Event::KeyReleased(
+                    Key::Named("Modifiers".into()),
+                    convert::modifiers(self.mods),
+                )))
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let l = position.to_logical::<f32>(scale);
@@ -594,9 +828,28 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                 self.composing = false;
                 None
             }
+            WindowEvent::Touch(t) => {
+                self.touch(el, t, scale);
+                None
+            }
             WindowEvent::HoveredFile(p) => Some(PlatformEvent::FileHovered(p)),
             WindowEvent::HoveredFileCancelled => Some(PlatformEvent::FileHoverCancelled),
-            WindowEvent::DroppedFile(p) => Some(PlatformEvent::FileDropped(p)),
+            WindowEvent::DroppedFile(p) => {
+                self.dropped.push(p);
+                None
+            }
+            // Settings can only change while another app is in front, so on
+            // OSes without a change notification we re-read on focus.
+            #[cfg(not(target_os = "linux"))]
+            WindowEvent::Focused(true) => {
+                let now = crate::settings::system_settings();
+                if self.settings_seen != Some(now) {
+                    self.settings_seen = Some(now);
+                    Some(PlatformEvent::SettingsChanged(now))
+                } else {
+                    None
+                }
+            }
             _ => None,
         };
         if let Some(e) = out {
@@ -627,6 +880,14 @@ pub fn run<H: ShellHandler + 'static>(
         use winit::platform::windows::EventLoopBuilderExtWindows;
         builder.with_msg_hook(crate::os::msg_hook);
     }
+    #[cfg(target_os = "android")]
+    {
+        use winit::platform::android::EventLoopBuilderExtAndroid;
+        let app = crate::os::android_app().ok_or_else(|| {
+            PlatformError("android: call alloy_ui_platform::android::init(app) first".into())
+        })?;
+        builder.with_android_app(app);
+    }
     let el = builder
         .build()
         .map_err(|e| PlatformError(format!("event loop: {e}")))?;
@@ -647,7 +908,31 @@ pub fn run<H: ShellHandler + 'static>(
         error: None,
         proxy,
         composing: false,
+        dropped: Vec::new(),
+        #[cfg(not(target_os = "linux"))]
+        settings_seen: None,
+        gestures: GestureRecognizer::new(),
+        pointer: PointerEmulation::new(),
+        fling: None,
+        safe: Insets::ZERO,
     };
+    // What this launch itself was asked to open (a deep link, a file association).
+    let launch: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+    if !crate::deeplink::classify(&launch).is_empty() {
+        crate::os::push_pending(PlatformEvent::Open(launch));
+    }
+    // Read the OS settings off the UI thread (it can spawn helper processes);
+    // the answer arrives as `SettingsChanged` right after start-up.
+    let _ = std::thread::Builder::new()
+        .name("alloy-settings".into())
+        .spawn(|| {
+            crate::os::push_pending(PlatformEvent::SettingsChanged(
+                crate::settings::system_settings(),
+            ))
+        });
     el.run_app(&mut app)
         .map_err(|e| PlatformError(format!("run: {e}")))?;
     app.error.map_or(Ok(()), Err)

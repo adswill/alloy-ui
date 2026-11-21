@@ -1,0 +1,7 @@
+# With panic = "abort" (the release profile) nothing unwinds, so our own code does not need
+# unwind tables: they were 0.37 MB of the counter binary. Applies to every profile, and rustc
+# keeps them wherever panic = "unwind" still needs them (tests).
+# Not on Windows: x86_64 Windows requires unwind tables for SEH and rustc refuses the flag there
+# ("target requires unwind tables"), which broke every Windows build.
+[target.'cfg(not(windows))']
+rustflags = ["-C", "force-unwind-tables=no"]

@@ -110,8 +110,15 @@ impl HeadlessRenderer for GpuHeadlessRenderer {
             view_formats: &[],
         });
         let view = target.create_view(&wgpu::TextureViewDescriptor::default());
-        self.painter
-            .paint(&view, width, height, list, scale_factor, self.background);
+        self.painter.paint(
+            &view,
+            Some(&target),
+            width,
+            height,
+            list,
+            scale_factor,
+            self.background,
+        );
 
         let row = width * 4;
         let padded =

@@ -1,0 +1,9 @@
+# Edit and save this file while the example runs: the window updates instantly.
+theme accent=#6D4AFF
+col page gap=14
+  heading "Hello, {name}"
+  text "{n} so far" dim
+  row gap=8 center
+    button "Subtract" @sub
+    button "Add" primary @add
+    button "Reset" ghost @reset

@@ -21,19 +21,21 @@ The capabilities are `clipboard`, `dialogs`, `fs_read`, `fs_write`, `network`, `
 use alloy_ui::ipc::{Capability, CapabilitySet};
 use std::path::Path;
 
-let caps = CapabilitySet::from_toml(
+# // Absolute paths need a drive letter on Windows; this keeps the example runnable there.
+# let home = if cfg!(windows) { "C:/home/me" } else { "/home/me" };
+let caps = CapabilitySet::from_toml(&format!(
     r#"
     capabilities = ["fs_read", "network"]
     [fs]
-    read = ["/home/me/docs"]
+    read = ["{home}/docs"]
     [network]
     hosts = ["api.example.com"]
-    "#,
-)
+    "#
+))
 .unwrap();
 
 assert!(caps.has(Capability::FsRead));
-assert!(caps.check_fs_read(Path::new("/home/me/docs/a.txt")).is_ok());
+assert!(caps.check_fs_read(Path::new(&format!("{home}/docs/a.txt"))).is_ok());
 assert!(caps.check_fs_read(Path::new("/etc/passwd")).is_err());
 assert!(caps.check_host("api.example.com").is_ok());
 assert!(caps.check_host("evil.example.net").is_err());
@@ -53,13 +55,15 @@ commands.register("read_len", &[Capability::FsRead], |path: String| async move {
     Ok::<_, String>(path.len())
 });
 
-let granted = CapabilitySet::from_toml(
-    "capabilities = [\"fs_read\"]\n[fs]\nread = [\"/home/me\"]",
-)
+# let home = if cfg!(windows) { "C:/home/me" } else { "/home/me" };
+let granted = CapabilitySet::from_toml(&format!(
+    "capabilities = [\"fs_read\"]\n[fs]\nread = [\"{home}\"]"
+))
 .unwrap();
 
-let fut = commands.invoke("read_len", json!("/home/me/a.txt"), &granted).unwrap();
-assert_eq!(alloy_ui::block_on(fut).unwrap(), json!(14));
+let path = format!("{home}/a.txt");
+let fut = commands.invoke("read_len", json!(path), &granted).unwrap();
+assert_eq!(alloy_ui::block_on(fut).unwrap(), json!(path.len()));
 
 // Without the grant, the call is refused before the handler runs.
 let denied = commands.invoke("read_len", json!("x"), &CapabilitySet::none());

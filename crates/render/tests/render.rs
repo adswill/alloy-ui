@@ -439,3 +439,87 @@ fn gpu_text_matches_cpu_roughly() {
     let d = compare(&a, &b, Tolerance::GPU).unwrap();
     assert!(d.bad_fraction < 0.01, "{d:?}");
 }
+
+fn poly(points: &[(f32, f32)], fill: Color) -> DrawCommand {
+    DrawCommand::Polygon {
+        points: points.iter().map(|&(x, y)| Point::new(x, y)).collect(),
+        fill,
+    }
+}
+
+#[test]
+fn cpu_polygon_concave_is_filled_without_seams() {
+    // A concave "arrow" with translucent fill: every interior pixel must have
+    // the same alpha, i.e. the ear-clip diagonals leave neither gap nor overlap.
+    let outline = [
+        (10.0, 10.0),
+        (50.0, 10.0),
+        (50.0, 30.0),
+        (30.0, 30.0),
+        (30.0, 50.0),
+        (10.0, 50.0),
+    ];
+    let mut l = DrawList::default();
+    l.push(poly(&outline, Color::hex(0x2A6F97).with_alpha(0.5)));
+    let mut r = CpuRenderer::new(60, 60);
+    r.set_background(Color::hex(0xFFFFFF));
+    let img = r.render_to_image(&l, 60, 60, 1.0);
+    let inside = px(&img, 15, 15);
+    for (x, y) in [(12, 12), (40, 20), (20, 40), (28, 28), (20, 20), (25, 25)] {
+        assert_eq!(px(&img, x, y), inside, "uniform interior at {x},{y}");
+    }
+    assert_ne!(inside, [255, 255, 255, 255], "filled");
+    // The notch (outside the concave corner) stays background.
+    assert_eq!(px(&img, 40, 40), [255, 255, 255, 255]);
+    // Same polygon wound the other way round fills identically.
+    let mut rev = outline;
+    rev.reverse();
+    let mut l2 = DrawList::default();
+    l2.push(poly(&rev, Color::hex(0x2A6F97).with_alpha(0.5)));
+    assert_eq!(r.render_to_image(&l2, 60, 60, 1.0), img);
+}
+
+#[test]
+fn cpu_polygon_edges_are_antialiased() {
+    // A right triangle: the hypotenuse pixels are partial coverage.
+    let mut l = DrawList::default();
+    l.push(poly(
+        &[(4.0, 4.0), (36.0, 4.0), (4.0, 36.0)],
+        Color::hex(0x000000),
+    ));
+    let mut r = CpuRenderer::new(40, 40);
+    let img = r.render_to_image(&l, 40, 40, 1.0);
+    assert_eq!(px(&img, 10, 10), [0, 0, 0, 255]);
+    let partial = (0..40u32)
+        .filter(|&i| {
+            let p = px(&img, i, 39 - i).first().copied();
+            matches!(p, Some(v) if v > 20 && v < 235)
+        })
+        .count();
+    assert!(partial > 0, "hypotenuse has intermediate shades");
+    assert_eq!(px(&img, 30, 30), [255, 255, 255, 255]);
+}
+
+#[test]
+fn gpu_polygon_matches_cpu() {
+    let Some(mut g) = gpu_or_skip(80, 80) else {
+        return;
+    };
+    let mut l = DrawList::default();
+    l.push(quad(rect(0.0, 0.0, 80.0, 80.0), 0xF2F2EE, 0.0));
+    l.push(poly(
+        &[
+            (10.0, 10.0),
+            (70.0, 14.0),
+            (50.0, 40.0),
+            (68.0, 70.0),
+            (12.0, 62.0),
+        ],
+        Color::hex(0xC8553D).with_alpha(0.7),
+    ));
+    let mut c = CpuRenderer::new(80, 80);
+    let want = c.render_to_image(&l, 80, 80, 1.0);
+    let got = g.render_to_image(&l, 80, 80, 1.0);
+    let d = compare(&want, &got, Tolerance::GPU).expect("sizes");
+    assert!(d.bad_fraction <= 0.01, "{d:?}");
+}

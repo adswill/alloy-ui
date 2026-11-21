@@ -9,7 +9,16 @@
 //! category     = "Utility"               # freedesktop main category
 //! icons        = ["assets/icon-256.png", "assets/icon-512.png"]
 //! capabilities = "alloy.capabilities.toml"
+//! update-url   = "https://example.com/counter"   # where releases are published
+//! mac-entitlements = "mac.entitlements"          # optional, hardened runtime
+//! msix-publisher = "CN=Example Inc., O=Example Inc., C=US"  # = certificate subject
+//! flatpak-runtime-version = "24.08"              # optional
+//! flatpak-finish-args = ["--share=network"]      # optional, else from capabilities
+//! url-schemes  = ["myapp"]               # deep links: myapp://...
 //! ```
+//!
+//! Signing keys and certificates never live here; they come from environment
+//! variables (see `bundle::sign`).
 
 use crate::error::{io, Error, Result};
 use alloy_ui_ipc::{Capability, CapabilitySet};
@@ -46,11 +55,42 @@ struct RawMeta {
     #[serde(default)]
     icons: Vec<String>,
     capabilities: Option<String>,
+    /// URL schemes the app handles (`myapp` for `myapp://...`).
+    #[serde(default)]
+    url_schemes: Vec<String>,
     min_macos: Option<String>,
     #[serde(default)]
     deb_depends: Option<Vec<String>>,
     #[serde(default)]
     rpm_requires: Option<Vec<String>>,
+    update_url: Option<String>,
+    mac_entitlements: Option<String>,
+    flatpak_runtime_version: Option<String>,
+    flatpak_finish_args: Option<Vec<String>>,
+    msix_publisher: Option<String>,
+    mobile: Option<RawMobile>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct RawMobile {
+    orientation: Option<String>,
+    android_min_sdk: Option<u32>,
+    android_target_sdk: Option<u32>,
+    ios_deployment_target: Option<String>,
+}
+
+/// `[package.metadata.alloy.mobile]`, with defaults filled in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MobileMeta {
+    /// `portrait`, `landscape` or `any`.
+    pub orientation: String,
+    /// Android `minSdk`.
+    pub android_min_sdk: u32,
+    /// Android `targetSdk` and `compileSdk`.
+    pub android_target_sdk: u32,
+    /// Minimum iOS version.
+    pub ios_deployment_target: String,
 }
 
 /// Validated app metadata plus package facts from Cargo.
@@ -88,12 +128,29 @@ pub struct Project {
     pub icons: Vec<PathBuf>,
     /// Absolute path of the capability config, if configured.
     pub capabilities_path: Option<PathBuf>,
+    /// URL schemes the app opens (deep links), without `://`.
+    pub url_schemes: Vec<String>,
     /// Minimum macOS version.
     pub min_macos: String,
+    /// Name of the `cdylib`/`staticlib` library target, if the package has one
+    /// (what Android and iOS load; see `mobile.rs`).
+    pub lib_name: Option<String>,
+    /// Mobile settings.
+    pub mobile: MobileMeta,
     /// Debian `Depends` entries.
     pub deb_depends: Vec<String>,
     /// RPM `Requires` entries (Fedora-style package names by default).
     pub rpm_requires: Vec<String>,
+    /// Directory URL where release artifacts and `latest.json` are published.
+    pub update_url: Option<String>,
+    /// macOS entitlements plist to sign with (hardened runtime).
+    pub mac_entitlements: Option<PathBuf>,
+    /// Flatpak runtime version (default `24.08`).
+    pub flatpak_runtime_version: String,
+    /// Flatpak `finish-args`; `None` derives them from the capabilities.
+    pub flatpak_finish_args: Option<Vec<String>>,
+    /// MSIX `Identity/@Publisher`; must equal the signing certificate subject.
+    pub msix_publisher: Option<String>,
 }
 
 /// Which package/binary to act on.
@@ -201,6 +258,30 @@ impl Project {
                     .collect()
             })
             .unwrap_or_default();
+        let lib_name = pkg["targets"].as_array().and_then(|t| {
+            t.iter()
+                .find(|t| {
+                    t["kind"]
+                        .as_array()
+                        .is_some_and(|k| k.iter().any(|k| k == "cdylib" || k == "staticlib"))
+                })
+                .and_then(|t| t["name"].as_str().map(str::to_string))
+        });
+        let mobile = {
+            let m = raw.mobile.unwrap_or_default();
+            let orientation = m.orientation.unwrap_or_else(|| "any".into());
+            if !["portrait", "landscape", "any"].contains(&orientation.as_str()) {
+                return Err(Error::Config(format!(
+                    "mobile orientation `{orientation}` must be portrait, landscape or any"
+                )));
+            }
+            MobileMeta {
+                orientation,
+                android_min_sdk: m.android_min_sdk.unwrap_or(26),
+                android_target_sdk: m.android_target_sdk.unwrap_or(35),
+                ios_deployment_target: m.ios_deployment_target.unwrap_or_else(|| "15.0".into()),
+            }
+        };
         let bin_name = match &sel.bin {
             Some(b) if bins.contains(&b.as_str()) => b.clone(),
             Some(b) => {
@@ -210,11 +291,15 @@ impl Project {
                 )))
             }
             None => match bins.as_slice() {
-                [] => {
-                    return Err(Error::Config(format!(
-                        "package `{name}` has no binary target"
-                    )))
-                }
+                [] => match &lib_name {
+                    // A mobile-only crate has just the library.
+                    Some(l) => l.clone(),
+                    None => {
+                        return Err(Error::Config(format!(
+                            "package `{name}` has no binary target"
+                        )))
+                    }
+                },
                 [one] => one.to_string(),
                 many => {
                     if many.contains(&name.as_str()) {
@@ -279,7 +364,10 @@ impl Project {
             copyright: raw.copyright,
             icons: raw.icons.iter().map(|i| base.join(i)).collect(),
             capabilities_path: raw.capabilities.map(|c| base.join(c)),
+            url_schemes: raw.url_schemes,
             min_macos: raw.min_macos.unwrap_or_else(|| "11.0".into()),
+            lib_name,
+            mobile,
             deb_depends: raw.deb_depends.unwrap_or_else(|| {
                 ["libc6", "libxkbcommon0", "libvulkan1 | libgl1"]
                     .map(String::from)
@@ -288,6 +376,13 @@ impl Project {
             rpm_requires: raw
                 .rpm_requires
                 .unwrap_or_else(|| ["libxkbcommon", "vulkan-loader"].map(String::from).to_vec()),
+            update_url: raw.update_url.map(|u| u.trim_end_matches('/').to_string()),
+            mac_entitlements: raw.mac_entitlements.map(|e| base.join(e)),
+            flatpak_runtime_version: raw
+                .flatpak_runtime_version
+                .unwrap_or_else(|| "24.08".into()),
+            flatpak_finish_args: raw.flatpak_finish_args,
+            msix_publisher: raw.msix_publisher,
             manifest_path,
         })
     }

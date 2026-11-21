@@ -57,6 +57,10 @@ pub struct Boxed<M> {
     w: Length,
     h: Length,
     align: Align,
+    fx: Vec<w::Layer>,
+    fx_key: u64,
+    glide: bool,
+    flow: Option<f32>,
 }
 
 impl<M: 'static> Boxed<M> {
@@ -72,6 +76,10 @@ impl<M: 'static> Boxed<M> {
             w: Length::Shrink,
             h: Length::Shrink,
             align: Align::Start,
+            fx: Vec::new(),
+            fx_key: 0,
+            glide: false,
+            flow: None,
         }
     }
     /// Padding on all sides.
@@ -82,6 +90,19 @@ impl<M: 'static> Boxed<M> {
     /// Horizontal and vertical padding.
     pub fn pad_xy(mut self, x: f32, y: f32) -> Self {
         self.pad = Padding::symmetric(x, y);
+        self
+    }
+    /// Padding of `p` on all sides plus the [`safe_area`](crate::safe_area),
+    /// so content clears the notch and system bars while a background set
+    /// with `bg` still runs under them.
+    pub fn pad_safe(mut self, p: f32) -> Self {
+        let i = crate::cx::safe_area();
+        self.pad = Padding {
+            top: p + i.top,
+            right: p + i.right,
+            bottom: p + i.bottom,
+            left: p + i.left,
+        };
         self
     }
     /// Fixed width.
@@ -143,6 +164,81 @@ impl<M: 'static> Boxed<M> {
         let r = cx::theme().radii.large;
         self.surface().outline().round(r).pad(16.0)
     }
+    #[track_caller]
+    fn layer(mut self, l: w::Layer) -> Self {
+        if self.fx_key == 0 {
+            self.fx_key = cx::auto_id(80);
+        }
+        self.fx.push(l);
+        self
+    }
+    /// Rise 2 px and deepen the shadow while hovered.
+    #[track_caller]
+    pub fn lift(self) -> Self {
+        self.layer(w::Layer::Lift)
+    }
+    /// Hover depth: a 1.2% swell, a shadow leaning away from the pointer and a
+    /// faint highlight following it.
+    #[track_caller]
+    pub fn tilt(self) -> Self {
+        self.layer(w::Layer::Tilt)
+    }
+    /// A soft ripple spreading from each press.
+    #[track_caller]
+    pub fn ripple(self) -> Self {
+        self.layer(w::Layer::Ripple(None))
+    }
+    /// A ripple in your own colour.
+    #[track_caller]
+    pub fn ripple_color(self, c: Color) -> Self {
+        self.layer(w::Layer::Ripple(Some(c)))
+    }
+    /// While pressed, the accent colour rims the inside edge.
+    #[track_caller]
+    pub fn glow(self) -> Self {
+        self.layer(w::Layer::Glow)
+    }
+    /// A recessed well: a soft shadow inside the top edge.
+    #[track_caller]
+    pub fn inset(self) -> Self {
+        self.layer(w::Layer::Inset)
+    }
+    /// Fine film grain; `amount` 0.02 to 0.05 is the usable range.
+    #[track_caller]
+    pub fn grain(self, amount: f32) -> Self {
+        self.layer(w::Layer::Grain(amount))
+    }
+    /// Frosted glass over whatever is behind (18 px blur, theme tint, hairline
+    /// edge). Replaces the background; call it after `.card()` or `.bg()`.
+    #[track_caller]
+    pub fn frosted(self) -> Self {
+        self.layer(w::Layer::Frosted(18.0, None))
+    }
+    /// Frosted glass with your own blur radius in logical pixels.
+    #[track_caller]
+    pub fn frosted_blur(self, blur: f32) -> Self {
+        self.layer(w::Layer::Frosted(blur, None))
+    }
+    /// Let this box's size and position changes animate.
+    #[track_caller]
+    pub fn glide(mut self) -> Self {
+        if self.fx_key == 0 {
+            self.fx_key = cx::auto_id(80);
+        }
+        self.glide = true;
+        self
+    }
+    /// Turn the gradient slowly, one full turn every `seconds`. Ambient only:
+    /// it keeps the window redrawing while visible (and holds still under
+    /// reduced motion).
+    #[track_caller]
+    pub fn flow(mut self, seconds: f32) -> Self {
+        if self.fx_key == 0 {
+            self.fx_key = cx::auto_id(80);
+        }
+        self.flow = Some(seconds.max(1.0));
+        self
+    }
     /// Centre the child horizontally inside the box.
     pub fn center(mut self) -> Self {
         self.align = Align::Center;
@@ -158,10 +254,22 @@ impl<M: 'static> From<Boxed<M>> for Node<M> {
             .align_x(b.align)
             .width(b.w)
             .height(b.h);
-        if let Some(bg) = b.bg {
+        if let (Some(bg), false) = (
+            b.bg,
+            b.fx.iter().any(|l| matches!(l, w::Layer::Frosted(..))),
+        ) {
             c = c.background(bg);
         }
+        let mut fx = b.fx;
         if let Some((from, to, a)) = b.grad {
+            let mut a = a;
+            if let Some(secs) = b.flow {
+                let u = cx::ui();
+                if !u.reduced_motion() {
+                    a += 360.0 * ((u.now() as f32 / 1000.0 / secs) % 1.0);
+                    fx.push(w::Layer::Keepalive);
+                }
+            }
             c = c.gradient(from, to, a);
         }
         if let Some(sh) = b.shadow {
@@ -170,7 +278,16 @@ impl<M: 'static> From<Boxed<M>> for Node<M> {
         if let Some((col, width)) = b.border {
             c = c.border(col, width);
         }
-        Node(c.into_element())
+        let mut el = c.into_element();
+        if b.glide {
+            el = w::Glide::new(&cx::ui(), b.fx_key ^ 0x6C, el).into_element();
+        }
+        if !fx.is_empty() {
+            el = w::Fx::new(&cx::ui(), b.fx_key, b.radius, el)
+                .layers(fx)
+                .into_element();
+        }
+        Node(el)
     }
 }
 
@@ -188,6 +305,10 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     /// Horizontal and vertical padding.
     fn pad_xy(self, x: f32, y: f32) -> Boxed<M> {
         self.boxed().pad_xy(x, y)
+    }
+    /// Padding on all sides plus the [`safe_area`](crate::safe_area).
+    fn pad_safe(self, p: f32) -> Boxed<M> {
+        self.boxed().pad_safe(p)
     }
     /// Fixed width.
     fn w(self, w: f32) -> Boxed<M> {
@@ -216,6 +337,46 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     /// Gradient background (see [`Boxed::gradient`]).
     fn gradient(self, from: Color, to: Color, angle_deg: f32) -> Boxed<M> {
         self.boxed().gradient(from, to, angle_deg)
+    }
+    /// Hover lift (see [`Boxed::lift`]).
+    #[track_caller]
+    fn lift(self) -> Boxed<M> {
+        self.boxed().lift()
+    }
+    /// Hover tilt (see [`Boxed::tilt`]).
+    #[track_caller]
+    fn tilt(self) -> Boxed<M> {
+        self.boxed().tilt()
+    }
+    /// Press ripple (see [`Boxed::ripple`]).
+    #[track_caller]
+    fn ripple(self) -> Boxed<M> {
+        self.boxed().ripple()
+    }
+    /// Press glow (see [`Boxed::glow`]).
+    #[track_caller]
+    fn glow(self) -> Boxed<M> {
+        self.boxed().glow()
+    }
+    /// Recessed well (see [`Boxed::inset`]).
+    #[track_caller]
+    fn inset(self) -> Boxed<M> {
+        self.boxed().inset()
+    }
+    /// Film grain (see [`Boxed::grain`]).
+    #[track_caller]
+    fn grain(self, amount: f32) -> Boxed<M> {
+        self.boxed().grain(amount)
+    }
+    /// Frosted glass (see [`Boxed::frosted`]).
+    #[track_caller]
+    fn frosted(self) -> Boxed<M> {
+        self.boxed().frosted()
+    }
+    /// Animate size and position changes (see [`Boxed::glide`]).
+    #[track_caller]
+    fn glide(self) -> Boxed<M> {
+        self.boxed().glide()
     }
     /// Medium elevation shadow.
     fn elevated(self) -> Boxed<M> {
@@ -249,6 +410,37 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     fn labelled(self, label: &str) -> Node<M> {
         let label: Node<M> = crate::text(label).w(110.0).into();
         crate::row([label, self.into()]).align_center().into()
+    }
+    /// Let the user pick this up with the pointer and drop it on a [`drop_on`](Self::drop_on)
+    /// target that takes the same type: `card(c).drag(c.id)`. A translucent copy follows the
+    /// pointer; Escape cancels. Presses on buttons inside still click.
+    #[track_caller]
+    fn drag<T: 'static>(self, payload: T) -> Node<M> {
+        let id = cx::auto_id(70);
+        Node(w::Draggable::new(&cx::ui(), id, payload, self.into().0).into_element())
+    }
+    /// Take a value dropped here: `column.drop_on(|id: u64| Msg::MoveTo(Col::Done, id))`. Lights
+    /// up while a matching [`drag`](Self::drag) is in flight; other types are ignored.
+    fn drop_on<T: Clone + 'static>(self, f: impl Fn(T) -> M + 'static) -> Node<M> {
+        Node(w::DropZone::new(&cx::ui(), self.into().0, f).into_element())
+    }
+    /// Like [`drop_on`](Self::drop_on) for apps with closure messages: `.drop_act(|s, id: u64| s.move_to(id))`.
+    fn drop_act<T: Clone + Send + Sync + 'static, S: 'static>(
+        self,
+        f: impl Fn(&mut S, T) + Send + Sync + 'static,
+    ) -> Node<crate::dsl::Act<S>>
+    where
+        Self: Into<Node<crate::dsl::Act<S>>>,
+    {
+        let f = std::sync::Arc::new(f);
+        let node: Node<crate::dsl::Act<S>> = self.into();
+        Node(
+            w::DropZone::new(&cx::ui(), node.0, move |t: T| {
+                let f = f.clone();
+                crate::dsl::Act::new(move |s: &mut S| f(s, t.clone()))
+            })
+            .into_element(),
+        )
     }
     /// Show `text` in a tooltip on hover.
     fn tip(self, text: impl Into<String>) -> Node<M> {

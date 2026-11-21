@@ -29,7 +29,7 @@ The earlier wgpu-offscreen column was dropped when the examples moved to the fac
 
 | Metric | Value | Target |
 |---|---|---|
-| counter release binary (windowed build, also runs headless) | 7.15 MB | < 10 MB |
+| counter release binary (windowed build, also runs headless) | 6.41 MB (4.41 MB slim; was 7.15 MB, see the last section) | < 10 MB |
 | counter spawn to first frame written (--headless, median of 7) | 25 ms | < 200 ms |
 
 ## Bundle sizes (counter, `alloy bundle -p alloy-ui-examples --bin counter`)
@@ -90,7 +90,7 @@ All numbers: Linux x86_64 cloud container, software Vulkan (Mesa llvmpipe), not 
 
 Reading: on the CPU side a whole frame is about 0.2 ms; what remains is fragment work on the software adapter, which a real GPU does not pay. The wgpu offscreen path therefore bounds text_editor near 100 fps and the dashboard near 60 fps on llvmpipe. The reported 4 fps for text_editor under pointer movement could not be reproduced: in this Xvfb session `xdotool` input never reached the window (no redraws), so the window path was timed only for its first two frames (26 ms, then 3.4 ms including present). Not render or layout CPU; the shaping cost it could have hit is now cached.
 
-Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled Plex fonts are 1.15 MB of the binary.
+Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled bundled fonts are 1.15 MB of the binary.
 
 ## Large views (Linux, headless, CPU only)
 
@@ -112,7 +112,7 @@ Two real problems showed up and were fixed:
 
 A 10 000-row view therefore goes from about 0.5 frames per second to over 100 on the CPU side. The cost that remains is the cold first pass (about 150 us per distinct string to shape) and rebuilding and laying out every row on each event; real virtualisation (build only visible rows) is the next step and is not done. Draw output still contains commands for off-screen rows (26 673 commands for 10 000 rows); culling them without dropping their tab-order registration needs a widget-contract change, so it was left alone.
 
-Smaller changes: the six bundled Plex fonts are borrowed from the binary instead of copied to the heap at startup (1.15 MB less heap; `TextSystem::new` is about 4 ms with 117 system faces, measured by `--bin startup`).
+Smaller changes: the six bundled fonts are borrowed from the binary instead of copied to the heap at startup (1.15 MB less heap; `TextSystem::new` is about 4 ms with 117 system faces, measured by `--bin startup`).
 
 Tried and not kept: removing winit's `wayland-csd-adwaita` feature changed the counter binary by under 0.1 MB (7.17 MB), so Wayland window decorations stay as they were. Binary size is otherwise unchanged from the figures above; the biggest remaining items are wgpu and the bundled fonts.
 
@@ -410,3 +410,60 @@ slides, which Alloy's toasts have), so treat 16.9x as an estimate. The block-app
 because the features are free in Alloy; ordinary apps do not change. Verified on Linux by headless
 tests (`tests/keys.rs`); the macOS menu path is compiled only, and no native menu backend exists
 yet, so on Linux shortcuts go through the shell's own matching.
+
+
+## Size, cold start, million-row lists, plugins (this pass)
+
+All Linux x86_64 in the cloud container, Xvfb with Mesa llvmpipe software Vulkan. **Not GPU numbers, and nothing here ran on macOS or Windows.** The `cargo bloat` figures are estimates by the tool.
+
+### Binary size (counter, release, stripped)
+
+| Build | Bytes | MB |
+|---|---|---|
+| Before this pass (wgpu + gles, six full bundled fonts, unwind tables) | 7,576,304 | 7.58 |
+| Default build now (wgpu, Vulkan only on Linux, CPU fallback, subset fonts) | 6,414,912 | 6.41 |
+| Default + `gles` feature (OpenGL backend for machines with no Vulkan) | 6,789,872 | 6.79 |
+| **Slim build**: `--no-default-features --features soft-window` (no wgpu, no naga) | **4,406,976** | **4.41** |
+
+What each step bought, measured one at a time on the counter:
+
+| Change | Saved |
+|---|---|
+| Drop wgpu `gles` from the defaults (opt-in feature `gles`; machines with no Vulkan use the CPU window path instead) | ~0.3 MB |
+| Subset the six bundled fonts to Latin plus the symbols Alloy draws (1.15 MB to 0.28 MB; Greek, Cyrillic and the rest come from system fonts) | 0.87 MB |
+| `-C force-unwind-tables=no` (workspace `.cargo/config.toml`; nothing unwinds under `panic = "abort"`) | 0.37 MB |
+| Slim build: no wgpu, naga, wgpu-hal (naga alone was 642 KiB of `.text`) | 2.0 MB |
+
+**The default build is 6.4 MB, not under 5 MB.** The remaining weight is wgpu itself (naga 0.64 MB, wgpu-core 0.40 MB, wgpu-hal 0.17 MB of `.text`) on top of winit (0.33 MB), the text stack (skrifa, swash, rustybuzz, ttf-parser, about 0.7 MB) and std. Under 5 MB needs the slim build, which draws with Alloy's own CPU rasteriser. Other ideas, not done: a pre-translated shader to drop naga's WGSL front end (needs per-backend shader blobs, a large change), and `build-std` (nightly only).
+
+### Cold start (`first_paint`: from entering `run` to the end of the first painted frame; median of 11, counter)
+
+| Build / mode | Median | Range |
+|---|---|---|
+| Before: wgpu on llvmpipe | 86.6 ms | 78 to 99 |
+| Now: wgpu on llvmpipe, with prewarm threads | 71.5 ms | 60 to 86 |
+| Now: `ALLOY_RENDERER=cpu` (CPU window path in the default binary) | 26.4 ms | 20 to 33 |
+| Now: slim build | 25.7 ms | 22 to 31 |
+
+Where the 79 ms of the old GPU path went (`ALLOY_PERF=1` prints these as `alloy-perf phase ...`): loading the Vulkan runtime and creating the wgpu instance 21 ms, device creation 16 ms, text system (font scan) 6 ms, pipeline creation 6 ms, first frame render and present 19 ms, window creation and the rest about 10 ms. The change: `alloy_ui_render::prewarm()` starts the instance and the text system on two background threads while winit creates the window, which took about 15 ms off. The remaining GPU time (device, pipeline, first draw) cannot overlap with the window and, on llvmpipe, includes JIT-compiling the shader on first use, which a real GPU driver does differently. **Under 50 ms is met by the CPU window path (about 26 ms) and not by the GPU path in this container (about 70 ms); a real GPU was not available to measure.** The shell's timer excludes process start (about 5 ms for the 4 MB binary).
+
+The CPU path is not just a start-up trick, but it is not free either, so the default stays on the GPU:
+
+| Example (software GL vs `ALLOY_RENDERER=cpu`) | frames/s, pointer moving | resident memory |
+|---|---|---|
+| dashboard, llvmpipe | 88 | 127 MB |
+| dashboard, CPU window | 49 | 20 MB |
+| text_editor, llvmpipe | 35 | 131 MB |
+| text_editor, CPU window | 8 in the default binary, 47 in the slim build (run to run variation; the slim run used the same rasteriser) | 18 to 21 MB |
+
+Memory is the clear win (6 to 10x less, no Vulkan loader or llvmpipe); big, busy windows draw slower on the CPU than llvmpipe's multi-threaded renderer. That is why there is no automatic switch to the CPU path when the adapter is a software one.
+
+Slim build, all examples, first paint and idle: counter 25 ms, todo 32, settings 29, dashboard 42, text_editor 49; idle CPU 0.00% except the ticking dashboard (1.40%, the same as the GPU build).
+
+### Lists of a million rows
+
+`vlist` / `VirtualList` already built only the visible rows (fixed row height, cost follows the window; see Pass 6 above for the 100k figures). It had a precision bug beyond about 600k rows of 28 px: scroll offsets and content height were `f32`, which stops resolving single pixels past 16.7 million pixels, so rows would shift by up to a row and the last row could be unreachable. Offsets, content height and the row maths are now `f64` (`Ui::scroll_offset_f64`). `virtual_list_ten_million_rows_stay_pixel_exact` checks 10 million rows (280 million pixels): End reaches the exact last pixel, only a screenful of rows is built, a click at the bottom edge hits row 9,999,999, and a 3 px wheel step moves exactly 3 px. Variable row heights are not supported (fixed height only), and the plain `list` and `table` widgets still build every row.
+
+### Plugins
+
+`docs/PLUGINS.md`, `alloy_ui::plugin` (`Plugin`, `install`, `installed`) and `alloy_ui::ext` (focus, press, state, a11y, colour helpers). Worked example: `examples/plugin-rating` (238 lines for a keyboard-, mouse- and screen-reader-aware star rating plus its translations; 5 tests and a doc-test, all passing headless).

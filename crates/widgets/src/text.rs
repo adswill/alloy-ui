@@ -51,6 +51,7 @@ pub struct Text {
     line_height: f32,
     color: Color,
     weight: u16,
+    italic: bool,
     width: Length,
     wrap: bool,
 }
@@ -67,6 +68,7 @@ impl Text {
             line_height: s.line_height,
             color: t.palette.text,
             weight: s.weight.0,
+            italic: false,
             width: Length::Shrink,
             wrap: true,
         }
@@ -94,6 +96,11 @@ impl Text {
     /// Override the font weight (100..=900).
     pub fn weight(mut self, w: u16) -> Self {
         self.weight = w;
+        self
+    }
+    /// Set in the true italic face.
+    pub fn italic(mut self) -> Self {
+        self.italic = true;
         self
     }
     /// Override the colour.
@@ -151,7 +158,11 @@ impl<M> Widget<M> for Text {
                 continue;
             }
             out.push(DrawCommand::Text {
-                family: alloy_ui_core::FontFamily::Sans,
+                family: if self.italic {
+                    alloy_ui_core::FontFamily::SansItalic
+                } else {
+                    alloy_ui_core::FontFamily::Sans
+                },
                 weight: self.weight,
                 line_height: None,
                 origin: Point::new(b.origin.x, b.origin.y + i as f32 * self.line_height),

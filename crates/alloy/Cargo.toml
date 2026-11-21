@@ -13,6 +13,15 @@ rust-version.workspace = true
 unsafe_op_in_unsafe_fn = "deny"
 missing_docs = "allow"
 
+[features]
+# The default build draws with wgpu and falls back to the CPU rasteriser when no adapter works.
+# `default-features = false, features = ["soft-window"]` is the slim build: no wgpu, no naga,
+# roughly 40% smaller. `gles` adds the OpenGL backend for machines with no Vulkan.
+default = ["gpu", "soft-window"]
+gpu = ["alloy-ui-render/gpu"]
+soft-window = ["alloy-ui-render/soft-window"]
+gles = ["alloy-ui-render/gles"]
+
 [dependencies]
 alloy-ui-core.workspace = true
 alloy-ui-layout.workspace = true
@@ -28,3 +37,5 @@ alloy-ui-macros = { path = "../macros", version = "0.0.1" }
 
 [dev-dependencies]
 trybuild = "1"
+# Only so the guide chapter on updates and crash reports compiles as a doc-test.
+alloy-ui-ship.workspace = true

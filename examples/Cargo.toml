@@ -19,8 +19,14 @@ publisher = "Alloy"
 category = "Utility"
 icons = ["assets/icon-32.png", "assets/icon-256.png", "assets/icon-512.png"]
 
+[features]
+default = ["gpu", "soft-window"]
+gpu = ["alloy-ui/gpu"]
+soft-window = ["alloy-ui/soft-window"]
+gles = ["alloy-ui/gles"]
+
 [dependencies]
-alloy-ui = { path = "../crates/alloy" }
+alloy-ui = { path = "../crates/alloy", default-features = false }
 
 [[bin]]
 name = "counter"
@@ -37,6 +43,9 @@ path = "src/bin/settings.rs"
 [[bin]]
 name = "gallery"
 path = "src/bin/gallery.rs"
+[[bin]]
+name = "desk"
+path = "src/bin/desk.rs"
 [[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
