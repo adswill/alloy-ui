@@ -219,7 +219,10 @@ mod tests {
             .iter()
             .any(|x| x.contains("network") || x.contains("filesystem")));
         let mut ctx = f.ctx();
-        ctx.capabilities = Some("capabilities = [\"network\", \"fs_read\", \"fs_write\", \"notifications\"]\n[fs]\nread = [\"/tmp\"]\nwrite = [\"/tmp\"]\n[network]\nhosts = [\"example.com\"]\n".into());
+        // A path that is absolute on the host (Windows needs a drive letter); TOML literal
+        // strings keep its backslashes as they are.
+        let dir = std::env::temp_dir().display().to_string();
+        ctx.capabilities = Some(format!("capabilities = [\"network\", \"fs_read\", \"fs_write\", \"notifications\"]\n[fs]\nread = ['{dir}']\nwrite = ['{dir}']\n[network]\nhosts = [\"example.com\"]\n"));
         let a = finish_args(&ctx);
         assert!(a.contains(&"--share=network".to_string()));
         assert!(a.contains(&"--filesystem=home".to_string()));

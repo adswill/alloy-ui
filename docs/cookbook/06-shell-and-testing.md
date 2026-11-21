@@ -98,11 +98,13 @@ use alloy_ui::ipc::{Capability, CapabilitySet};
 use std::path::Path;
 
 fn main() {
-    let caps = CapabilitySet::from_toml(
-        "capabilities = [\"fs_read\"]\n[fs]\nread = [\"/home/me/notes\"]",
-    )
+    // Absolute paths need a drive letter on Windows; this keeps the example runnable there.
+    let home = if cfg!(windows) { "C:/home/me" } else { "/home/me" };
+    let caps = CapabilitySet::from_toml(&format!(
+        "capabilities = [\"fs_read\"]\n[fs]\nread = [\"{home}/notes\"]"
+    ))
     .unwrap();
-    assert!(caps.check_fs_read(Path::new("/home/me/notes/today.md")).is_ok());
+    assert!(caps.check_fs_read(Path::new(&format!("{home}/notes/today.md"))).is_ok());
     assert!(caps.check_fs_read(Path::new("/etc/passwd")).is_err());
     assert!(caps.check(&Capability::Clipboard).is_err());
 }
@@ -121,9 +123,10 @@ fn main() {
     commands.register("word_count", &[Capability::FsRead], |text: String| async move {
         Ok::<_, String>(text.split_whitespace().count())
     });
-    let granted = CapabilitySet::from_toml(
-        "capabilities = [\"fs_read\"]\n[fs]\nread = [\"/home/me\"]",
-    )
+    let home = if cfg!(windows) { "C:/home/me" } else { "/home/me" };
+    let granted = CapabilitySet::from_toml(&format!(
+        "capabilities = [\"fs_read\"]\n[fs]\nread = [\"{home}\"]"
+    ))
     .unwrap();
     let run = commands.invoke("word_count", json!("one two three"), &granted).unwrap();
     assert_eq!(alloy_ui::block_on(run).unwrap(), json!(3));
