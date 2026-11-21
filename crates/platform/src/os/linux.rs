@@ -169,7 +169,7 @@ pub fn watch_theme() {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     let Ok(mut child) = Command::new("gsettings")
-        .args(["monitor", "org.gnome.desktop.interface", "color-scheme"])
+        .args(["monitor", "org.gnome.desktop.interface"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .stdout(Stdio::piped())
@@ -184,9 +184,13 @@ pub fn watch_theme() {
         .name("alloy-theme".into())
         .spawn(move || {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
+                if !crate::settings::is_relevant_monitor_line(&line) {
+                    continue;
+                }
                 if let Some(dark) = parse_monitor_line(&line) {
                     super::push_pending(PlatformEvent::ThemeChanged { dark });
                 }
+                super::push_pending(PlatformEvent::SettingsChanged(super::read_settings()));
             }
             let _ = child.wait();
         });

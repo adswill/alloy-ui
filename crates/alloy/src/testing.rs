@@ -14,7 +14,8 @@
 
 use crate::app::{App, Shell};
 use alloy_ui_core::{
-    runtime::Runtime, DrawCommand, Event, Key, Modifiers, MouseButton, Point, Size,
+    runtime::Runtime, Application, DrawCommand, Event, HostEvent, Key, Modifiers, MouseButton,
+    Point, Size,
 };
 use alloy_ui_render::{CpuRenderer, HeadlessRenderer, TextMeasurer};
 use alloy_ui_theme::Theme;
@@ -202,6 +203,80 @@ impl<A: App> Harness<A> {
         self.rt
             .handle_event(&Event::CursorMoved(Point::new(p.x + 3.0, p.y + 3.0)));
         self
+    }
+    fn text_point(&self, text: &str) -> Point {
+        let (p, _) = self
+            .placed()
+            .into_iter()
+            .find(|(_, t)| t == text)
+            .unwrap_or_else(|| panic!("no widget with text {text:?}"));
+        Point::new(p.x + 3.0, p.y + 3.0)
+    }
+    /// Press on the widget showing `from`, move the pointer onto the one showing `to` in
+    /// steps, and keep the button down (the drag stays in flight, for a screenshot of it).
+    /// Panics if either text is missing.
+    pub fn drag_hold(&mut self, from: &str, to: &str) -> &mut Self {
+        let (a, b) = (self.text_point(from), self.text_point(to));
+        self.rt.handle_event(&Event::CursorMoved(a));
+        self.rt
+            .handle_event(&Event::MousePressed(MouseButton::Left));
+        for i in 1..=8 {
+            let k = i as f32 / 8.0;
+            let p = Point::new(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k);
+            self.rt.handle_event(&Event::CursorMoved(p));
+        }
+        self
+    }
+    /// Drag the widget showing `from` onto the one showing `to` and release there: what a user's
+    /// drag and drop does. Panics if either text is missing.
+    pub fn drag(&mut self, from: &str, to: &str) -> &mut Self {
+        self.drag_hold(from, to);
+        self.rt
+            .handle_event(&Event::MouseReleased(MouseButton::Left));
+        self
+    }
+    /// Let go of the button after [`drag_hold`](Self::drag_hold).
+    pub fn release(&mut self) -> &mut Self {
+        self.rt
+            .handle_event(&Event::MouseReleased(MouseButton::Left));
+        self
+    }
+    fn host(&mut self, events: Vec<HostEvent>) -> &mut Self {
+        let msgs: Vec<_> = events
+            .into_iter()
+            .filter_map(|e| self.rt.app().host_event(e))
+            .collect();
+        self.rt.dispatch_all(msgs);
+        self
+    }
+    /// Drop files on the window, as another app's drag would.
+    pub fn drop_files<P: Into<std::path::PathBuf>>(
+        &mut self,
+        files: impl IntoIterator<Item = P>,
+    ) -> &mut Self {
+        crate::cx::set_files_hovering(false);
+        self.host(vec![
+            HostEvent::FilesHovering(false),
+            HostEvent::FilesDropped(files.into_iter().map(Into::into).collect()),
+        ])
+    }
+    /// Start or stop dragging files over the window without dropping them.
+    pub fn hover_files(&mut self, over: bool) -> &mut Self {
+        crate::cx::set_files_hovering(over);
+        self.host(vec![HostEvent::FilesHovering(over)])
+    }
+    /// Open a deep link, as the OS does when a `myapp://...` URL is clicked.
+    pub fn open_url(&mut self, url: &str) -> &mut Self {
+        self.host(vec![HostEvent::OpenUrl(url.into())])
+    }
+    /// Open files, as the OS does for a file association or a forwarded second launch.
+    pub fn open_files<P: Into<std::path::PathBuf>>(
+        &mut self,
+        files: impl IntoIterator<Item = P>,
+    ) -> &mut Self {
+        self.host(vec![HostEvent::OpenFiles(
+            files.into_iter().map(Into::into).collect(),
+        )])
     }
     /// Show or hide the layout inspector overlay (what F12 does in a running app).
     pub fn inspect(&mut self, on: bool) -> &mut Self {

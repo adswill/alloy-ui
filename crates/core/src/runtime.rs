@@ -124,6 +124,16 @@ pub trait Application: Sized {
     fn subscription(&self) -> Vec<Subscription<Self::Message>> {
         Vec::new()
     }
+    /// Turn something the host noticed (dropped files, an opened link) into a
+    /// message, or `None` to ignore it.
+    fn host_event(&self, _event: crate::host::HostEvent) -> Option<Self::Message> {
+        None
+    }
+    /// Host-level wishes (window effect, system accent). Asked at start-up and
+    /// after every message, so it may depend on state.
+    fn host_config(&self) -> crate::host::HostConfig {
+        crate::host::HostConfig::default()
+    }
 }
 
 /// What the shell must do after the runtime handled input.
