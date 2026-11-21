@@ -1,12 +1,13 @@
 //! System tray model and backend trait.
 //!
-//! Status: contract only. No native tray backend is implemented yet (see
-//! `DECISIONS.md`); [`UnsupportedTray`] reports that honestly.
+//! Shown with [`ShellContext::set_tray`](crate::ShellContext::set_tray): NSStatusItem on
+//! macOS, `Shell_NotifyIconW` on Windows, a StatusNotifierItem over D-Bus on Linux.
+//! [`TrayBackend`] is a separate, unused hook.
 
 use crate::{menu::Menu, PlatformError};
 
 /// Tray icon description.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct TraySettings {
     /// Tooltip text.
     pub tooltip: String,

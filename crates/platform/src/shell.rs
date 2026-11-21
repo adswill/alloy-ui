@@ -52,6 +52,10 @@ pub enum PlatformEvent {
     MenuAction(String),
     /// The tray icon was clicked (left button).
     TrayClicked,
+    /// A hotkey registered with [`ShellContext::register_global_hotkey`] was
+    /// pressed, possibly while another application had the focus. Carries the
+    /// string it was registered with.
+    GlobalHotkey(String),
     /// A [`ShellProxy::wake`] arrived from another thread.
     Wake,
     /// Assistive technology (a screen reader) asked a control to do something.
@@ -297,6 +301,15 @@ impl ShellContext {
     /// Remove the tray icon.
     pub fn clear_tray(&self) {
         crate::os::clear_tray();
+    }
+    /// Grab `keys` (`"ctrl+alt+space"`) for the whole desktop. Presses arrive as
+    /// [`PlatformEvent::GlobalHotkey`]. See [`crate::hotkey`] for what each OS supports.
+    pub fn register_global_hotkey(&self, keys: &str) -> Result<(), PlatformError> {
+        crate::hotkey::register(keys)
+    }
+    /// Release every global hotkey.
+    pub fn unregister_global_hotkeys(&self) {
+        crate::hotkey::unregister_all();
     }
     fn main_window(&self) -> &Window {
         self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)

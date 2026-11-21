@@ -2,7 +2,10 @@
 //! value, menu bar, tray). Type-checked from Linux and built by CI; never run by the author.
 
 use crate::{
+    dialog::{DialogKind, FileDialogOptions},
     menu::{Menu, MenuItem},
+    notify::Notification,
+    shortcut::Shortcut,
     tray::TraySettings,
     PlatformError, PlatformEvent,
 };
@@ -84,21 +87,32 @@ pub fn clipboard_write(text: &str) -> bool {
 }
 
 pub fn open_file() -> Result<Option<PathBuf>, PlatformError> {
-    Ok(file_dialog(false, false, "")?.into_iter().next())
+    Ok(file_dialog(&FileDialogOptions::default())?
+        .into_iter()
+        .next())
 }
 
 pub fn open_files() -> Result<Vec<PathBuf>, PlatformError> {
-    file_dialog(true, false, "")
+    file_dialog(&FileDialogOptions {
+        kind: DialogKind::OpenFiles,
+        ..Default::default()
+    })
 }
 
 pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
-    Ok(file_dialog(false, true, name)?.into_iter().next())
+    Ok(file_dialog(&FileDialogOptions {
+        kind: DialogKind::Save,
+        name: name.into(),
+        ..Default::default()
+    })?
+    .into_iter()
+    .next())
 }
 
 /// Shared IFileOpenDialog / IFileSaveDialog call (the Vista+ common item
 /// dialog: places bar, recent folders, long paths). Empty result = cancelled.
-fn file_dialog(multi: bool, save: bool, name: &str) -> Result<Vec<PathBuf>, PlatformError> {
-    com_dialog(multi, save, name).map_err(|e| PlatformError(format!("file dialog: {e}")))
+pub fn file_dialog(o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError> {
+    com_dialog(o).map_err(|e| PlatformError(format!("file dialog: {e}")))
 }
 
 /// Balances a successful `CoInitializeEx` with `CoUninitialize` on drop.
@@ -114,7 +128,8 @@ impl Drop for ComGuard {
     }
 }
 
-fn com_dialog(multi: bool, save: bool, name: &str) -> windows::core::Result<Vec<PathBuf>> {
+fn com_dialog(o: &FileDialogOptions) -> windows::core::Result<Vec<PathBuf>> {
+    let (save, multi) = (o.kind == DialogKind::Save, o.kind == DialogKind::OpenFiles);
     use std::os::windows::ffi::OsStringExt;
     use windows::{
         core::{Interface, HRESULT, HSTRING},
@@ -125,8 +140,9 @@ fn com_dialog(multi: bool, save: bool, name: &str) -> windows::core::Result<Vec<
                 COINIT_APARTMENTTHREADED,
             },
             UI::Shell::{
-                FileOpenDialog, FileSaveDialog, IFileDialog, IFileOpenDialog, IShellItem,
-                FOS_ALLOWMULTISELECT, FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FOS_PATHMUSTEXIST,
+                Common::COMDLG_FILTERSPEC, FileOpenDialog, FileSaveDialog, IFileDialog,
+                IFileOpenDialog, IShellItem, SHCreateItemFromParsingName, FOS_ALLOWMULTISELECT,
+                FOS_FORCEFILESYSTEM, FOS_OVERWRITEPROMPT, FOS_PATHMUSTEXIST, FOS_PICKFOLDERS,
                 SIGDN_FILESYSPATH,
             },
         },
@@ -165,13 +181,39 @@ fn com_dialog(multi: bool, save: bool, name: &str) -> windows::core::Result<Vec<
         let mut opts = dialog.GetOptions()? | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST;
         if save {
             opts |= FOS_OVERWRITEPROMPT;
-            if !name.is_empty() {
-                dialog.SetFileName(&HSTRING::from(name))?;
+            if !o.name.is_empty() {
+                dialog.SetFileName(&HSTRING::from(o.name.as_str()))?;
             }
         } else if multi {
             opts |= FOS_ALLOWMULTISELECT;
+        } else if o.kind == DialogKind::Folder {
+            opts |= FOS_PICKFOLDERS;
         }
         dialog.SetOptions(opts)?;
+        if let Some(t) = &o.title {
+            dialog.SetTitle(&HSTRING::from(t.as_str()))?;
+        }
+        if let Some(d) = &o.dir {
+            let item: IShellItem =
+                SHCreateItemFromParsingName(&HSTRING::from(d.display().to_string()), None)?;
+            dialog.SetFolder(&item)?;
+        }
+        // The HSTRINGs must outlive `SetFileTypes` (it copies them), so they are kept here.
+        let specs = crate::dialog::windows_filters(&o.filters);
+        let wide: Vec<(HSTRING, HSTRING)> = specs
+            .iter()
+            .map(|(n, p)| (HSTRING::from(n.as_str()), HSTRING::from(p.as_str())))
+            .collect();
+        if o.kind != DialogKind::Folder && !wide.is_empty() {
+            let raw: Vec<COMDLG_FILTERSPEC> = wide
+                .iter()
+                .map(|(n, p)| COMDLG_FILTERSPEC {
+                    pszName: windows::core::PCWSTR(n.as_ptr()),
+                    pszSpec: windows::core::PCWSTR(p.as_ptr()),
+                })
+                .collect();
+            dialog.SetFileTypes(&raw)?;
+        }
         match dialog.Show(None) {
             Ok(()) => {}
             // The user dismissed the dialog: not an error.
@@ -186,6 +228,26 @@ fn com_dialog(multi: bool, save: bool, name: &str) -> windows::core::Result<Vec<
         } else {
             Ok(vec![path_of(&dialog.GetResult()?)?])
         }
+    }
+}
+
+/// Show a toast through PowerShell, which needs no installer or app id of our own.
+pub fn notify(n: &Notification) -> Result<(), PlatformError> {
+    use std::os::windows::process::CommandExt;
+    let script = crate::notify::powershell_toast(n);
+    // CREATE_NO_WINDOW: no console flash.
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+        .creation_flags(0x0800_0000)
+        .output()
+        .map_err(|e| PlatformError(format!("notification: {e}")))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(PlatformError(format!(
+            "notification: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
     }
 }
 
@@ -458,4 +520,79 @@ pub fn new_access_adapter(
 ) -> Option<Box<dyn crate::access::AccessAdapter>> {
     let a = super::windows_access::WinAdapter::new(window, sink)?;
     Some(Box::new(a))
+}
+
+// ---------------------------------------------------------------------------------------
+// Global hotkeys: RegisterHotKey is tied to the thread that calls it and its WM_HOTKEY
+// messages come to that thread's queue, so each hotkey gets a thread with its own loop.
+
+/// Thread ids of the hotkey loops, to post WM_QUIT to on release.
+static HOTKEY_THREADS: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+pub fn register_hotkey(keys: &str, sc: &Shortcut) -> Result<(), PlatformError> {
+    use windows_sys::Win32::{
+        System::Threading::GetCurrentThreadId,
+        UI::Input::KeyboardAndMouse::{
+            RegisterHotKey, UnregisterHotKey, MOD_ALT, MOD_CONTROL, MOD_NOREPEAT, MOD_SHIFT,
+            MOD_WIN,
+        },
+    };
+    let fail = |m: String| PlatformError(format!("global hotkey {keys}: {m}"));
+    let vk = crate::hotkey::windows_vk(&sc.key)
+        .ok_or_else(|| fail(format!("unknown key {:?}", sc.key)))?;
+    let mut mods = MOD_NOREPEAT;
+    for (on, bit) in [
+        (sc.mods.ctrl, MOD_CONTROL),
+        (sc.mods.shift, MOD_SHIFT),
+        (sc.mods.alt, MOD_ALT),
+        (sc.mods.logo, MOD_WIN),
+    ] {
+        if on {
+            mods |= bit;
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let name = keys.to_string();
+    std::thread::Builder::new()
+        .name("alloy-hotkey".into())
+        .spawn(move || {
+            // SAFETY: plain Win32 calls on this thread. The id only has to be unique per
+            // thread, and the hotkey is unregistered before the thread ends. `msg` is a
+            // zeroed MSG that GetMessageW fills in.
+            unsafe {
+                if RegisterHotKey(std::ptr::null_mut(), 1, mods, vk) == 0 {
+                    let _ = tx.send(Err(()));
+                    return;
+                }
+                let _ = tx.send(Ok(GetCurrentThreadId()));
+                let mut msg: MSG = std::mem::zeroed();
+                while GetMessageW(&mut msg, std::ptr::null_mut(), 0, 0) > 0 {
+                    if msg.message == WM_HOTKEY {
+                        super::push_pending(PlatformEvent::GlobalHotkey(name.clone()));
+                    }
+                }
+                UnregisterHotKey(std::ptr::null_mut(), 1);
+            }
+        })
+        .map_err(|e| fail(e.to_string()))?;
+    match rx.recv() {
+        Ok(Ok(tid)) => {
+            if let Ok(mut t) = HOTKEY_THREADS.lock() {
+                t.push(tid);
+            }
+            Ok(())
+        }
+        _ => Err(fail("already taken by another program".into())),
+    }
+}
+
+pub fn unregister_hotkeys() {
+    let Ok(mut t) = HOTKEY_THREADS.lock() else {
+        return;
+    };
+    for tid in t.drain(..) {
+        // SAFETY: posting WM_QUIT to a thread id we created ends its message loop; a thread
+        // that already exited just makes the call fail harmlessly.
+        unsafe { PostThreadMessageW(tid, WM_QUIT, 0, 0) };
+    }
 }
