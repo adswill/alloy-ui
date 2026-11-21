@@ -93,33 +93,6 @@ impl Node {
         self
     }
 
-    /// The length this node asks its parent for on `axis`.
-    ///
-    /// A `Shrink` container that holds a `Fill` child on that axis is itself
-    /// `Fill` (as in iced's `Length::fluid`): otherwise the child could only
-    /// ever fall back to its content size, and a row of `Fill` columns inside
-    /// an auto-sized column would collapse instead of using the space on offer.
-    fn length(&self, axis: Axis) -> Length {
-        let own = match axis {
-            Axis::Horizontal => self.style.width,
-            Axis::Vertical => self.style.height,
-        };
-        if own == Length::Shrink {
-            let weight = self
-                .children
-                .iter()
-                .filter_map(|c| match c.length(axis) {
-                    Length::Fill(w) if w > 0 => Some(w),
-                    _ => None,
-                })
-                .max();
-            if let Some(w) = weight {
-                return Length::Fill(w);
-            }
-        }
-        own
-    }
-
     /// Size of the node's content box (children plus spacing, or the leaf's
     /// intrinsic size), before padding, explicit lengths and limits.
     fn content_size(&self) -> Size {
@@ -188,22 +161,93 @@ fn make_size(axis: Axis, main: f32, cross: f32) -> Size {
 /// never shrunk below their own minimum and never cause a panic or NaN).
 /// The returned [`Layout`] has exactly the same shape as the input tree.
 ///
-/// Cost is O(n * depth) because preferred sizes are recomputed per level.
+/// Cost is O(n): one bottom-up measuring pass records each node's preferred
+/// size and resolved lengths, and placement reuses them.
 pub fn compute(root: &Node, origin: Point, available: Size) -> Layout {
-    let pref = root.preferred_size();
+    let m = measure(root);
     let pick = |len: Length, avail: f32, pref: f32| match len {
         Length::Fill(w) if w > 0 => clean(avail),
         _ => pref,
     };
     let size = root.style.limits.clamp(Size::new(
-        pick(root.length(Axis::Horizontal), available.width, pref.width),
-        pick(root.length(Axis::Vertical), available.height, pref.height),
+        pick(m.len[0], available.width, m.pref.width),
+        pick(m.len[1], available.height, m.pref.height),
     ));
-    place(root, origin, size)
+    place(root, &m, origin, size)
+}
+
+/// Per-node results of the measuring pass (same shape as the node tree).
+struct Measured {
+    /// `preferred_size()`.
+    pref: Size,
+    /// `length(Horizontal)` and `length(Vertical)`.
+    len: [Length; 2],
+    children: Vec<Measured>,
+}
+
+fn axis_ix(axis: Axis) -> usize {
+    match axis {
+        Axis::Horizontal => 0,
+        Axis::Vertical => 1,
+    }
+}
+
+/// Bottom-up: the same values `Node::preferred_size` and `Node::length` give,
+/// computed once per node instead of once per ancestor level.
+fn measure(node: &Node) -> Measured {
+    let children: Vec<Measured> = node.children.iter().map(measure).collect();
+    let content = if children.is_empty() {
+        Size::new(clean(node.intrinsic.width), clean(node.intrinsic.height))
+    } else {
+        let axis = node.style.axis;
+        let gaps = clean(node.style.spacing) * (children.len() - 1) as f32;
+        let (mut main, mut cross) = (gaps, 0.0f32);
+        for c in &children {
+            main += main_of(c.pref, axis);
+            cross = cross.max(cross_of(c.pref, axis));
+        }
+        make_size(axis, main, cross)
+    };
+    let p = &node.style.padding;
+    let natural = |len: Length, c: f32, pad: f32| match len {
+        Length::Fixed(v) => clean(v),
+        _ => c + pad,
+    };
+    let pref = node.style.limits.clamp(Size::new(
+        natural(node.style.width, content.width, p.horizontal()),
+        natural(node.style.height, content.height, p.vertical()),
+    ));
+    // The length a node asks its parent for: a `Shrink` container that holds a
+    // `Fill` child on that axis is itself `Fill` (as in iced's `Length::fluid`),
+    // so a row of `Fill` columns inside an auto-sized column still gets room.
+    let len = [Axis::Horizontal, Axis::Vertical].map(|axis| {
+        let own = match axis {
+            Axis::Horizontal => node.style.width,
+            Axis::Vertical => node.style.height,
+        };
+        if own == Length::Shrink {
+            let weight = children
+                .iter()
+                .filter_map(|c| match c.len[axis_ix(axis)] {
+                    Length::Fill(w) if w > 0 => Some(w),
+                    _ => None,
+                })
+                .max();
+            if let Some(w) = weight {
+                return Length::Fill(w);
+            }
+        }
+        own
+    });
+    Measured {
+        pref,
+        len,
+        children,
+    }
 }
 
 /// Place `node` (whose final border-box `size` is already decided).
-fn place(node: &Node, origin: Point, size: Size) -> Layout {
+fn place(node: &Node, m: &Measured, origin: Point, size: Size) -> Layout {
     let bounds = Rectangle::new(origin, size);
     if node.children.is_empty() {
         return Layout {
@@ -222,15 +266,13 @@ fn place(node: &Node, origin: Point, size: Size) -> Layout {
     let n = node.children.len();
 
     // Main-axis sizes.
-    let mut mains: Vec<f32> = node
-        .children
-        .iter()
-        .map(|c| main_of(c.preferred_size(), axis))
-        .collect();
+    let ax = axis_ix(axis);
+    let mut mains: Vec<f32> = m.children.iter().map(|c| main_of(c.pref, axis)).collect();
     let flex: Vec<Option<(u16, f32, f32)>> = node
         .children
         .iter()
-        .map(|c| match c.length(axis) {
+        .zip(&m.children)
+        .map(|(c, cm)| match cm.len[ax] {
             Length::Fill(w) if w > 0 => {
                 let (lo, hi) = ordered(
                     main_of(c.style.limits.min, axis),
@@ -254,9 +296,9 @@ fn place(node: &Node, origin: Point, size: Size) -> Layout {
     let content_origin = Point::new(origin.x + clean(pad.left), origin.y + clean(pad.top));
     let mut cursor = 0.0f32;
     let mut children = Vec::with_capacity(n);
-    for (c, &m) in node.children.iter().zip(&mains) {
-        let pref = c.preferred_size();
-        let cross = match c.length(flip(axis)) {
+    for ((c, cm), &main) in node.children.iter().zip(&m.children).zip(&mains) {
+        let pref = cm.pref;
+        let cross = match cm.len[1 - ax] {
             Length::Fill(w) if w > 0 => {
                 let (lo, hi) = ordered(
                     cross_of(c.style.limits.min, axis),
@@ -275,8 +317,8 @@ fn place(node: &Node, origin: Point, size: Size) -> Layout {
             Axis::Horizontal => Point::new(content_origin.x + cursor, content_origin.y + offset),
             Axis::Vertical => Point::new(content_origin.x + offset, content_origin.y + cursor),
         };
-        children.push(place(c, pos, make_size(axis, m, cross)));
-        cursor += m + spacing;
+        children.push(place(c, cm, pos, make_size(axis, main, cross)));
+        cursor += main + spacing;
     }
     Layout { bounds, children }
 }

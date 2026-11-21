@@ -560,3 +560,24 @@ How to read this:
 - The binary differs by OS for the same source (3.67 MB macOS, 4.39 MB Windows, 6.93 MB Linux); the reason was not investigated. The macOS figure comes from the file size only; its job summary printed the size line garbled, so MiB is not recorded.
 - Shared CI runners vary run to run. Treat differences under about 30% as noise.
 - Not measured on any of the three: frame rate, idle CPU, memory.
+
+## Layout and CPU raster pass (Task 4, macOS arm64 Apple M2 Pro, release, shared machine)
+
+Output is unchanged: the CPU rasteriser image hash printed by `phases` is identical before and after (`text_editor` 4fdbe1de06aea69d, `dashboard` 4f3107be21f6d4e9), and `cargo test -p alloy-ui-layout -p alloy-ui-render` passes. These numbers are from a laptop with other builds running, so treat differences under about 20% as noise. The GPU column is Metal and was not touched.
+
+| Bench | Before | After |
+|---|---|---|
+| `layout 8 3` (`compute`, 9 841 nodes, depth 8) | 1 710 us | 990 us |
+| `layout 6 6` (55 987 nodes, depth 6) | 7 350 us | 3 170 us |
+| `layout 10 2` (2 047 nodes, depth 10) | 435 us | 224 us |
+| `phases text_editor`, CPU raster | 34.4 to 35.4 ms | 10.3 ms |
+| `phases dashboard`, CPU raster | 38.7 to 39.0 ms | 13.0 ms |
+| `large 10000`, no-op tick | 25 ms | 26 to 27 ms (unchanged; dominated by the view rebuild in widgets) |
+
+What changed:
+- **Layout**: `compute` now measures the tree once, bottom up (preferred size and resolved `Fill` lengths per node), and placement reuses those results. Before, `preferred_size` and `length` were recomputed per child at every level, O(n * depth). Cost is now O(n).
+- **CPU raster, conversion**: un-premultiplying into the output was a per-byte `push` with a divide per pixel (13 ms of the 35 ms for text_editor). It now writes into a pre-sized buffer and skips the divide for opaque pixels (a reciprocal of 1.0 is exactly 1.0).
+- **CPU raster, quads**: the interior of a rectangle (further than radius + border + 1 px from the edge) has exact full coverage, so its colour is computed once and the row span is written as a slice (a plain fill when opaque) instead of running the signed-distance maths per pixel. Fully transparent source pixels no longer touch the destination.
+- **CPU raster, allocation**: the float framebuffer is kept between frames instead of being allocated and page-faulted each frame.
+
+New benches: `cargo run --release -p alloy-ui-bench --bin layout [depth] [fanout]`; `phases` now prints the CPU image hash. Not done: the GPU path, glyph (`Mask`) sampling, and the widget-side view rebuild that dominates `large`.

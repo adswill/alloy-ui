@@ -65,6 +65,11 @@ pub enum HostEvent {
     /// The OS asked this app to open these files (file association, "Open
     /// With", or a second launch forwarded to this single instance).
     OpenFiles(Vec<PathBuf>),
+    /// The user asked to close a window (its close button, Alt+F4, Cmd+W). If the app answers
+    /// with a message the window stays open and the message is delivered instead.
+    CloseRequested,
+    /// The window gained (`true`) or lost (`false`) keyboard focus.
+    Focus(bool),
 }
 
 /// Host-level settings an application can ask for. Read at start-up and

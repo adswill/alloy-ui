@@ -55,6 +55,8 @@ pub enum PlatformEvent {
     /// names. The default closes it (the loop exits when the last window is
     /// gone); call [`ShellContext::cancel_close`] to keep it open.
     CloseRequested,
+    /// The window gained (`true`) or lost (`false`) keyboard focus.
+    Focused(bool),
     /// A window is about to be destroyed. [`ShellContext::window_key`] still
     /// names it and [`ShellContext::window`] is still valid, so per-window
     /// state (surfaces, runtimes) can be dropped here.
@@ -750,6 +752,9 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         self.focus_ctx(key);
         let scale = self.ctx.as_ref().map_or(1.0, |c| c.scale_factor());
         use PlatformEvent::Input as I;
+        if let WindowEvent::Focused(f) = ev {
+            self.dispatch(el, PlatformEvent::Focused(f));
+        }
         let out = match ev {
             WindowEvent::CloseRequested => Some(PlatformEvent::CloseRequested),
             WindowEvent::RedrawRequested => {

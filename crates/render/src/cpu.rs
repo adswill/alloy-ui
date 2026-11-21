@@ -27,6 +27,9 @@ pub struct CpuRenderer {
     next_id: u64,
     text: TextSystem,
     last: Option<Image>,
+    /// Float framebuffer kept between frames so a frame does not re-allocate
+    /// (and re-fault) tens of megabytes.
+    scratch: Vec<[f32; 4]>,
 }
 
 impl CpuRenderer {
@@ -47,6 +50,7 @@ impl CpuRenderer {
             next_id: 1,
             text,
             last: None,
+            scratch: Vec::new(),
         }
     }
 
@@ -107,7 +111,9 @@ impl HeadlessRenderer for CpuRenderer {
         let prims = flatten(list, scale_factor, width, height, &mut self.text);
         let bg = self.background;
         let clear = [bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a];
-        let mut buf = vec![clear; width as usize * height as usize];
+        let mut buf = std::mem::take(&mut self.scratch);
+        buf.clear();
+        buf.resize(width as usize * height as usize, clear);
         for p in &prims {
             if p.kind == Kind::Backdrop {
                 backdrop(p, &mut buf, width, height);
@@ -115,15 +121,24 @@ impl HeadlessRenderer for CpuRenderer {
                 self.raster(p, &mut buf, width, height);
             }
         }
-        let mut rgba = Vec::with_capacity(buf.len() * 4);
-        for px in buf {
+        // Un-premultiply into a pre-sized buffer (no per-byte push); an opaque
+        // pixel's reciprocal is exactly 1.0, so the divide is skipped there.
+        let mut rgba = vec![0u8; buf.len() * 4];
+        for (out, px) in rgba.chunks_exact_mut(4).zip(&buf) {
             let a = px[3];
-            let inv = if a > 0.0 { 1.0 / a } else { 0.0 };
-            for c in &px[..3] {
-                rgba.push(to_u8(c * inv));
-            }
-            rgba.push(to_u8(a));
+            let inv = if a == 1.0 {
+                1.0
+            } else if a > 0.0 {
+                1.0 / a
+            } else {
+                0.0
+            };
+            out[0] = to_u8(px[0] * inv);
+            out[1] = to_u8(px[1] * inv);
+            out[2] = to_u8(px[2] * inv);
+            out[3] = to_u8(a);
         }
+        self.scratch = buf;
         Image {
             width,
             height,
@@ -358,8 +373,64 @@ impl CpuRenderer {
         let fill = premul(p.color);
         let border = premul(p.border_color);
         let fill2 = premul(p.color2);
+        // Quad interior: pixel centres this far inside the rect edge have
+        // exactly full coverage (sd <= -1, so `cover` is 1.0) for both the
+        // outer shape and the border's inner shape, so the source is a constant
+        // and the distance maths can be skipped. Same arithmetic as the
+        // general path, evaluated once.
+        let inset = if p.border_w > 0.0 {
+            p.border_w + (p.radius - p.border_w).max(0.0) + 1.0
+        } else {
+            p.radius.max(0.0) + 1.0
+        };
+        let quad_fast = p.kind == Kind::Quad
+            && inset.is_finite()
+            && p.rect.iter().all(|v| v.is_finite())
+            && rw > 2.0 * inset
+            && rh > 2.0 * inset;
+        let interior: [f32; 4] =
+            std::array::from_fn(|k| 1.0 * (border[k] + (fill[k] - border[k]) * 1.0));
+        let (fx0, fx1, fy0, fy1) = if quad_fast {
+            (
+                (rx + inset - 0.5).ceil() as i32,
+                (rx + rw - inset - 0.5).floor() as i32 + 1,
+                (ry + inset - 0.5).ceil() as i32,
+                (ry + rh - inset - 0.5).floor() as i32 + 1,
+            )
+        } else {
+            (0, 0, 0, 0)
+        };
         for y in y0..y1 {
+            let fast_row = quad_fast && y >= fy0 && y < fy1;
+            // Constant interior span of this row: written (opaque) or blended
+            // as a slice instead of pixel by pixel.
+            let (sx0, sx1) = if fast_row {
+                (fx0.max(x0), fx1.min(x1))
+            } else {
+                (0, 0)
+            };
+            if sx1 > sx0 {
+                let row = y as usize * width as usize;
+                let span = &mut buf[row + sx0 as usize..row + sx1 as usize];
+                if interior[3] == 1.0 {
+                    // src + dst * 0 is exactly src for finite dst.
+                    span.fill(interior);
+                } else {
+                    let ia = 1.0 - interior[3];
+                    for dst in span {
+                        for k in 0..4 {
+                            dst[k] = interior[k] + dst[k] * ia;
+                        }
+                    }
+                }
+            }
             for x in x0..x1 {
+                if sx1 > sx0 && x == sx0 {
+                    continue;
+                }
+                if x > sx0 && x < sx1 {
+                    continue;
+                }
                 let pt = (x as f32 + 0.5, y as f32 + 0.5);
                 let src: [f32; 4] = match p.kind {
                     Kind::Shadow => {
@@ -517,6 +588,10 @@ impl CpuRenderer {
                         sample(d, w, h, u, v).map(|c| c * p.color[3] * cov)
                     }
                 };
+                // A fully transparent source leaves the destination untouched.
+                if src == [0.0; 4] {
+                    continue;
+                }
                 let dst = &mut buf[y as usize * width as usize + x as usize];
                 let ia = 1.0 - src[3];
                 for k in 0..4 {

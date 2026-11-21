@@ -307,6 +307,18 @@ impl<A: App> Harness<A> {
         crate::cx::set_files_hovering(over);
         self.host(vec![HostEvent::FilesHovering(over)])
     }
+    /// The user clicks the window's close button. Returns true if the app let it close and false
+    /// if it kept the window open (its `on_close` answered with a message, which is delivered).
+    pub fn close(&mut self) -> bool {
+        let veto = self.rt.app().host_event(HostEvent::CloseRequested);
+        let allowed = veto.is_none();
+        self.rt.dispatch_all(veto.into_iter().collect());
+        allowed
+    }
+    /// The window gains or loses keyboard focus, as when the user switches apps.
+    pub fn focus(&mut self, focused: bool) -> &mut Self {
+        self.host(vec![HostEvent::Focus(focused)])
+    }
     /// Open a deep link, as the OS does when a `myapp://...` URL is clicked.
     pub fn open_url(&mut self, url: &str) -> &mut Self {
         self.host(vec![HostEvent::OpenUrl(url.into())])

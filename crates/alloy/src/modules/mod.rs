@@ -18,6 +18,7 @@ use alloy_ui_core::{Color, Point};
 use alloy_ui_widgets as w;
 
 mod chat;
+mod controls;
 mod empty;
 mod feed;
 mod files;
@@ -31,6 +32,7 @@ mod search;
 mod tour;
 
 pub use chat::*;
+pub use controls::*;
 pub use empty::*;
 pub use feed::*;
 pub use files::*;

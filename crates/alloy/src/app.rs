@@ -183,6 +183,19 @@ pub trait App: Sized + 'static {
         None
     }
 
+    /// The user asked to close the window (close button, Alt+F4, Cmd+W). Return `None` to let
+    /// it close. Return a message to keep the window open and handle it instead, usually to ask
+    /// about unsaved work; close for real afterwards with `Cmd::exit()`.
+    fn on_close(&self) -> Option<Self::Msg> {
+        None
+    }
+
+    /// The window gained (`true`) or lost (`false`) keyboard focus: pause polling, refresh data
+    /// on return, dim a live view.
+    fn on_focus(&self, _focused: bool) -> Option<Self::Msg> {
+        None
+    }
+
     /// A deep link was opened: the OS passed a `myapp://...` URL for a scheme the app
     /// registered ([`url_schemes`](Self::url_schemes)), at launch or, for a
     /// [`single_instance`](Self::single_instance) app, from a second launch.
@@ -233,6 +246,15 @@ pub trait App: Sized + 'static {
     /// pressing every `--click <text>`, `--rclick <text>`, `--hover <text>`, `--key <name>`, `--chord <keys>`, `--type <text>`, `--drag <From>To>`, `--drop <file>`, `--open <url>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
     fn run_sized(self, title: &str, width: f32, height: f32) {
         let args: Vec<String> = std::env::args().skip(1).collect();
+        // `--web [addr]` or `ALLOY_WEB=addr`: show the app in a browser instead of a window.
+        let env = std::env::var("ALLOY_WEB").ok().filter(|v| !v.is_empty());
+        if let Some(at) = args.iter().position(|a| a == "--web") {
+            let addr = args.get(at + 1).filter(|a| !a.starts_with("--")).cloned();
+            let addr = addr.or(env).unwrap_or_else(|| "127.0.0.1:8080".into());
+            return crate::web::serve(self, &addr, (width, height)).expect("web server");
+        } else if let Some(addr) = env {
+            return crate::web::serve(self, &addr, (width, height)).expect("web server");
+        }
         if let Some(at) = args.iter().position(|a| a == "--headless") {
             let mut h = crate::testing::Harness::new(self, width, height);
             h.settle();
@@ -418,6 +440,8 @@ impl<A: App> Application for Shell<A> {
                 self.app.on_open_url(u)
             }
             HostEvent::OpenFiles(f) => self.app.on_open_files(f),
+            HostEvent::CloseRequested => self.app.on_close(),
+            HostEvent::Focus(f) => self.app.on_focus(f),
         }
     }
 

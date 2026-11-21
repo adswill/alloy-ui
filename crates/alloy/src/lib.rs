@@ -148,6 +148,7 @@ mod tone;
 pub mod valid;
 pub mod view;
 mod viz;
+pub mod web;
 
 pub use alloy_ui_macros::{at, state};
 pub use alloy_ui_platform::safe_area::Insets;
@@ -808,6 +809,17 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                 redraw: true,
                 ..Outcome::default()
             },
+            PlatformEvent::CloseRequested => match rt.app().host_event(HostEvent::CloseRequested) {
+                Some(msg) => {
+                    ctx.cancel_close();
+                    rt.dispatch_all(vec![msg])
+                }
+                None => return,
+            },
+            PlatformEvent::Focused(f) => {
+                let msg = rt.app().host_event(HostEvent::Focus(f));
+                rt.dispatch_all(msg.into_iter().collect())
+            }
             PlatformEvent::FileHovered(_) | PlatformEvent::FileHoverCancelled => {
                 let over = matches!(event, PlatformEvent::FileHovered(_));
                 // winit reports one `FileHovered` per file: act on the first only.

@@ -63,3 +63,6 @@ path = "src/bin/dashboard.rs"
 
 [dev-dependencies]
 alloy-ui-render.workspace = true
+[[bin]]
+name = "web"
+path = "src/bin/web.rs"

@@ -1,0 +1,39 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alloy web GUI</title>
+<style>
+  html,body{margin:0;height:100%;background:#16181d}
+  canvas{display:block;width:100vw;height:100vh;outline:none}
+</style>
+<canvas id="c" tabindex="0"></canvas>
+<script>
+const c = document.getElementById('c'), g = c.getContext('2d');
+let v = 0, W = 0, H = 0, wait = 33;
+const send = o => { wait = 33; return fetch('/event', {method: 'POST', body: JSON.stringify(o)}).catch(() => {}); };
+const pos = e => { const r = c.getBoundingClientRect(); return {x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height}; };
+async function loop() {
+  try {
+    const r = await fetch('/frame?v=' + v);
+    if (r.status === 200) {
+      v = +r.headers.get('X-Version');
+      const b = await createImageBitmap(await r.blob());
+      c.width = b.width; c.height = b.height; W = b.width / 2; H = b.height / 2;
+      g.drawImage(b, 0, 0);
+      wait = 33;
+    } else wait = Math.min(wait * 2, 500);
+  } catch (_) { await new Promise(r => setTimeout(r, 500)); }
+  setTimeout(loop, document.hidden ? 1000 : wait);
+}
+c.addEventListener('mousemove', e => send({t: 'move', ...pos(e)}));
+c.addEventListener('mousedown', e => { c.focus(); send({t: 'move', ...pos(e)}); send({t: 'down'}); });
+c.addEventListener('mouseup', () => send({t: 'up'}));
+c.addEventListener('wheel', e => { e.preventDefault(); send({t: 'scroll', dy: -e.deltaY}); }, {passive: false});
+c.addEventListener('keydown', e => {
+  const mods = [(e.ctrlKey || e.metaKey) && 'mod', e.shiftKey && e.key.length > 1 && 'shift', e.altKey && 'alt'].filter(Boolean).join('+');
+  if (e.key.length === 1 && !mods) { send({t: 'text', s: e.key}); e.preventDefault(); return; }
+  if (e.key === 'Shift' || e.key === 'Control' || e.key === 'Meta' || e.key === 'Alt') return;
+  send({t: 'key', k: e.key, mods}); e.preventDefault();
+});
+c.focus(); loop();
+</script>
