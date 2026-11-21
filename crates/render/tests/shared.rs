@@ -121,6 +121,7 @@ fn pixel_surfaces_draw_on_cpu_and_gpu_and_update_live() {
     let v0 = s.version();
 
     let gpu = gpu_or_skip(16, 16);
+    let gpu_ran = gpu.is_some();
     if let Some(mut g) = gpu {
         g.render(&l, 1.0);
         assert_eq!(px(g.last_image().unwrap(), 8, 8), [255, 0, 0, 255]);
@@ -133,7 +134,10 @@ fn pixel_surfaces_draw_on_cpu_and_gpu_and_update_live() {
         g.render(&l, 1.0);
         assert_eq!(px(g.last_image().unwrap(), 8, 8), [0, 0, 255, 255]);
     }
-    assert!(s.version() > v0);
+    // Only the GPU half uploads, so the version moves only where an adapter was found.
+    if gpu_ran {
+        assert!(s.version() > v0);
+    }
     let id = s.id();
     drop(s);
     let gone = CpuRenderer::new(16, 16).render_to_image(&list(id), 16, 16, 1.0);

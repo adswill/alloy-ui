@@ -982,8 +982,15 @@ impl Ui {
         b.dim = dim;
         let raw_changed = b.raw != old_raw;
         s.scroll.insert(id, noff as f64);
-        if force {
-            // Dragging: the content stays under the pointer, with no glide behind it.
+        // A notched mouse wheel reports whole lines (multiples of the platform line height),
+        // which glide on the spring. Trackpads and touch report arbitrary pixel deltas that the
+        // OS has already smoothed and given momentum, so they track 1:1; gliding on top of that
+        // would only add lag.
+        let precise = dy.abs() > 0.0
+            && (dy.abs() % WHEEL_LINE) > 0.01
+            && (WHEEL_LINE - dy.abs() % WHEEL_LINE) > 0.01;
+        if force || precise {
+            // Dragging or a trackpad: the content stays under the pointer, with no glide.
             s.anims.remove(&Self::scroll_key(id));
         }
         noff != off || raw_changed

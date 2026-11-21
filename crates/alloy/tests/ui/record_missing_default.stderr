@@ -1,8 +1,8 @@
-error[E0277]: the trait bound `P: Default` is not satisfied
+error[E0277]: the trait bound `P: std::default::Default` is not satisfied
  --> tests/ui/record_missing_default.rs:3:8
   |
 3 | struct P {
-  |        ^ the trait `Default` is not implemented for `P`
+  |        ^ the trait `std::default::Default` is not implemented for `P`
   |
 note: required by a bound in `alloy_ui::Record`
  --> src/records.rs
@@ -15,11 +15,11 @@ help: consider annotating `P` with `#[derive(Default)]`
 4 | struct P {
   |
 
-error[E0277]: the trait bound `P: Default` is not satisfied
+error[E0277]: the trait bound `P: std::default::Default` is not satisfied
  --> tests/ui/record_missing_default.rs:2:17
   |
 2 | #[derive(Clone, Record)]
-  |                 ^^^^^^ the trait `Default` is not implemented for `P`
+  |                 ^^^^^^ the trait `std::default::Default` is not implemented for `P`
   |
   = note: this error originates in the derive macro `Record` (in Nightly builds, run with -Z macro-backtrace for more info)
 help: consider annotating `P` with `#[derive(Default)]`
