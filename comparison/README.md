@@ -42,3 +42,19 @@ Linux, Xvfb, Mesa llvmpipe (software GL), 4 vCPU cloud container, release builds
 * **Startup, CPU, memory** are software-rendered Linux numbers. Do not read them as GPU, macOS or Windows results. First paint here includes software shader compilation for the wgpu apps.
 * **Not exercised.** Dark mode, interactions beyond the default screen, Windows and macOS. CI is blocked by a GitHub billing limit, so nothing here ran in CI.
 * **Framework change.** To let the Preferences accent control work, Alloy gained `set_accent(color)` (and `set_dark` keeps it). The apps call it with the brief's indigo.
+
+## Alloy at iced's line budget (`alloy-rich/`)
+
+The lean Alloy apps above stay as they are. `alloy-rich/` rebuilds the same three apps with roughly iced's line count, spent on finish and features instead of brevity: status pills, round colour swatches, a bar and line chart with a value axis and a label under every bar (click a bar to inspect it, bars grow in on a range change), sparklines in the stat tiles, a plan-mix bar, search, sort and filter on the orders table, tag filters, sorting, duplicate and a word-goal bar in Notes, Language and Storage pages, density and reduce-motion in Preferences, empty states, toasts with undo, a Dark toggle in every app, and keyboard shortcuts everywhere (`mod+k` lists them all).
+
+Everything custom lives in one shared kit, `alloy-rich/src/lib.rs` (pill, chip, kbd, group, setting, swatches, plot, sparkline, stack, legend, sized text), counted like iced's `ui.rs`. Nothing in the Alloy crates depends on it.
+
+| App | Alloy lean | Alloy rich | iced |
+|---|---|---|---|
+| notes | 134 | 259 | 294 |
+| dashboard | 96 | 290 | 364 |
+| settings | 125 | 350 | 365 |
+| shared kit / styling | | 431 | 464 |
+| **total** | 355 | 1,330 | 1487 |
+
+Screenshots: `screenshots/alloy_rich_*.png` (light, dark, several pages), rendered by the built-in `--headless` mode (software, 2x). Two honest caveats: headless renders do not run timers, so the switch animation and the toggle knob slide are not captured (`mod+.` finishes the chart animation for the render), and these were not run on macOS or Windows.
