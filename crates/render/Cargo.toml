@@ -45,4 +45,5 @@ wgpu = { version = "25", default-features = false, features = ["dx12"], optional
 wgpu = { version = "25", default-features = false, features = ["vulkan"], optional = true }
 
 [dev-dependencies]
+wgpu = { version = "25", default-features = false, features = ["wgsl"] }
 naga = { version = "25", features = ["wgsl-in"] }

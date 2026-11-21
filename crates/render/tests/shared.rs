@@ -5,8 +5,8 @@ use alloy_ui_core::{DrawCommand, DrawList, Point, Rectangle, Size};
 use alloy_ui_render::testing::gpu_or_skip;
 use alloy_ui_render::{Renderer, ShareError};
 
-fn clear(gpu: &alloy_ui_render::SharedGpu, tex: &alloy_ui_render::wgpu::Texture, c: [f64; 4]) {
-    use alloy_ui_render::wgpu as w;
+fn clear(gpu: &alloy_ui_render::SharedGpu, tex: &wgpu::Texture, c: [f64; 4]) {
+    use wgpu as w;
     let view = tex.create_view(&w::TextureViewDescriptor::default());
     let mut enc = gpu
         .device
@@ -79,7 +79,7 @@ fn shared_texture_is_sampled_live() {
 
 #[test]
 fn rejects_unsuitable_textures() {
-    use alloy_ui_render::wgpu as w;
+    use wgpu as w;
     let Some(r) = gpu_or_skip(8, 8) else { return };
     let gpu = r.shared_gpu();
     let make = |format, usage| {
