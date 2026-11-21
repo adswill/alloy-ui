@@ -61,3 +61,11 @@ Renders: `gallery/motion_rest.png`, `motion_midflight.png` (50 ms into a transit
 - `reveal(show, view)` fade, 6 px rise and height collapse; `fade`; `animated(x)` eased value; `spring(x)` critically damped spring. All respect reduced motion.
 - Button: press fades in 45 ms and out 120 ms, label presses 1 px, focus ring fades in. Slider thumb swells on a spring.
 - Depth: `.elevated()` (medium shadow, with a real 1 px border) for the one card that is above the page; `.gradient(..)` only as a tonal shift between two stops of the accent or surface, never hue-shifting.
+## Rich widgets and theming (2026-11-21)
+Renders: `gallery/rich/showcase_*.png` (light, dark with an indigo accent, high contrast); golden tests `rich_light` and `rich_dark_accent`.
+
+- **Badges** are pills (`badge("Active").success().dot()`): tinted fill with tone-coloured text by default, `.solid()` for the one thing that must stand out, `.outline()` for hairline. The label always carries the meaning.
+- **Charts** (`line_chart`, `bar_chart`) get a real y axis with nice ticks, hairline gridlines (only the base line is strong), thinned x labels, a legend for more than one series, and a hover readout on the overlay layer. Series colours are the accent first, then hues kept apart from success, danger and warning. `sparkline` is the axis-free version for cells and stat cards.
+- **Swatches** carry a hairline so near-white and near-black stay visible; the selected one gets a ring plus a tick, never colour alone.
+- **Accent theming** nudges the brand colour toward black or white until it passes AA on all three surfaces, and re-derives hover, pressed, on-accent, focus ring and selection; tests run six awkward brand colours through both themes.
+- **High contrast** is pure black/white, 7:1 text and borders, and a yellow or blue focus ring. **Density** scales the spacing tokens to 80% or 125%.

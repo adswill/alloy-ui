@@ -296,3 +296,23 @@ pub(crate) fn fade_translate(cmd: DrawCommand, alpha: f32, dx: f32, dy: f32) -> 
         other => other,
     }
 }
+
+/// A single-line text command in the sans family.
+pub(crate) fn label_cmd(
+    origin: Point,
+    content: impl Into<String>,
+    style: &alloy_ui_theme::TextStyle,
+    weight: u16,
+    color: alloy_ui_core::Color,
+) -> DrawCommand {
+    DrawCommand::Text {
+        family: alloy_ui_core::FontFamily::Sans,
+        weight,
+        line_height: Some(style.line_height),
+        origin,
+        content: content.into(),
+        size: style.size,
+        color,
+        max_width: None,
+    }
+}

@@ -66,6 +66,82 @@ pub fn set_dark(dark: bool) {
     ui().set_theme(if dark { Theme::dark() } else { Theme::light() });
 }
 
+/// Recolour the whole window with a brand accent, keeping light or dark. The accent is nudged
+/// until it passes WCAG AA on the theme's surfaces.
+pub fn set_accent(brand: alloy_ui_core::Color) {
+    ui().set_theme(theme().as_ref().clone().with_accent(brand));
+}
+
+/// A complete look: appearance, optional brand accent, contrast and density. Build one and
+/// apply it with [`set_look`]; every part is optional.
+///
+/// ```ignore
+/// set_look(Look::dark().accent(Color::hex(0x6D4AFF)).density(Density::Compact));
+/// ```
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Look {
+    dark: bool,
+    accent: Option<alloy_ui_core::Color>,
+    high_contrast: bool,
+    density: alloy_ui_theme::Density,
+}
+
+impl Look {
+    /// The light theme.
+    pub fn light() -> Self {
+        Self::default()
+    }
+    /// The dark theme.
+    pub fn dark() -> Self {
+        Self {
+            dark: true,
+            ..Self::default()
+        }
+    }
+    /// Pick light or dark from a flag.
+    pub fn is_dark(self, dark: bool) -> Self {
+        Self { dark, ..self }
+    }
+    /// Use a brand accent.
+    pub fn accent(self, c: alloy_ui_core::Color) -> Self {
+        Self {
+            accent: Some(c),
+            ..self
+        }
+    }
+    /// 7:1 text, solid borders.
+    pub fn high_contrast(self, on: bool) -> Self {
+        Self {
+            high_contrast: on,
+            ..self
+        }
+    }
+    /// Spacing preset.
+    pub fn density(self, d: alloy_ui_theme::Density) -> Self {
+        Self { density: d, ..self }
+    }
+    /// The theme this look describes.
+    pub fn theme(self) -> Theme {
+        let mut t = if self.dark {
+            Theme::dark()
+        } else {
+            Theme::light()
+        };
+        if let Some(c) = self.accent {
+            t = t.with_accent(c);
+        }
+        if self.high_contrast {
+            t = t.high_contrast();
+        }
+        t.density(self.density)
+    }
+}
+
+/// Apply a [`Look`] to the window.
+pub fn set_look(look: Look) {
+    ui().set_theme(look.theme());
+}
+
 /// Run `f` with every generated id (and so every [`local`](crate::local)) keyed by `key` as
 /// well as its call site: the same code for row 3 and row 4 gets separate cursors and state.
 pub(crate) fn keyed<R>(key: u64, f: impl FnOnce() -> R) -> R {

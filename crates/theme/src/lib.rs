@@ -28,6 +28,9 @@
 //!   (4.5:1 body, 3:1 large text and UI components) in the unit tests.
 #![warn(missing_docs)]
 
+mod variants;
+pub use variants::{mix, Density};
+
 use alloy_ui_core::{Color, Point, Shadow};
 
 /// Light or dark appearance.
@@ -100,6 +103,8 @@ pub struct Palette {
     pub danger: Color,
     /// Success colour (usable as text on the surfaces).
     pub success: Color,
+    /// Warning colour (amber; usable as text on the surfaces).
+    pub warning: Color,
     /// Keyboard focus ring.
     pub focus_ring: Color,
     /// Selection background (text selection, selected rows); primary text
@@ -138,6 +143,7 @@ impl Palette {
             on_accent: Color::hex(0xFFFFFF),
             danger: Color::hex(0xB3261E),
             success: Color::hex(0x1B7A3A),
+            warning: Color::hex(0x8F5200),
             focus_ring: Color::hex(0x0B6B5F),
             selection: Color::hex(0xCDE6E1),
         }
@@ -173,6 +179,7 @@ impl Palette {
             on_accent: Color::hex(0x06201B),
             danger: Color::hex(0xF28078),
             success: Color::hex(0x5CC47E),
+            warning: Color::hex(0xE3A83D),
             focus_ring: Color::hex(0x6BD0C0),
             selection: Color::hex(0x1F4D46),
         }

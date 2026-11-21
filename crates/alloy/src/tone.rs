@@ -34,11 +34,7 @@ pub(crate) fn tone(label: &str) -> Option<Color> {
 
 /// Amber that reads on both light and dark surfaces (the palette has no warning role).
 pub(crate) fn warning() -> Color {
-    if cx::palette().background.r < 0.5 {
-        Color::hex(0xE3A83D)
-    } else {
-        Color::hex(0xA85F00)
-    }
+    cx::palette().warning
 }
 
 /// A filled circle of `d` logical pixels.
