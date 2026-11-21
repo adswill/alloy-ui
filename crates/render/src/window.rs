@@ -114,7 +114,12 @@ impl WindowRenderer {
             .find(|m| *m == wgpu::CompositeAlphaMode::Opaque)
             .unwrap_or(caps.alpha_modes[0]);
         let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            // COPY_SRC (when offered) lets backdrop blur read what is drawn so far.
+            usage: if caps.usages.contains(wgpu::TextureUsages::COPY_SRC) {
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC
+            } else {
+                wgpu::TextureUsages::RENDER_ATTACHMENT
+            },
             format,
             width: width.max(1),
             height: height.max(1),
@@ -174,8 +179,13 @@ impl Renderer for WindowRenderer {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
+        let can_copy = self
+            .config
+            .usage
+            .contains(wgpu::TextureUsages::COPY_SRC);
         self.painter.paint(
             &view,
+            can_copy.then_some(&frame.texture),
             self.config.width,
             self.config.height,
             list,
