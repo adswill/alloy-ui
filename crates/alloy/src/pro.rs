@@ -211,6 +211,7 @@ pub struct VList<S> {
     count: usize,
     build: Rc<dyn Fn(usize) -> Element<Act<S>>>,
     row_h: Option<f32>,
+    heights: Option<w::HeightIndex>,
     ruled: bool,
     selected: Option<Option<usize>>,
     on: Option<Run2<S>>,
@@ -233,6 +234,7 @@ pub fn vlist<S: 'static, N: Into<Node<Act<S>>>>(
         count,
         build: Rc::new(move |i| cx::scoped(&ui, i as u64, || row(i).into().into_element())),
         row_h: None,
+        heights: None,
         ruled: false,
         selected: None,
         on: None,
@@ -243,6 +245,12 @@ impl<S: 'static> VList<S> {
     /// Row height in pixels.
     pub fn row_height(mut self, px: f32) -> Self {
         self.row_h = Some(px);
+        self
+    }
+    /// Rows of different heights: build a [`w::HeightIndex`] once, keep it in your state, and
+    /// pass it here. The list then shows `heights.len()` rows.
+    pub fn variable(mut self, heights: &w::HeightIndex) -> Self {
+        self.heights = Some(heights.clone());
         self
     }
     /// A hairline between rows.
@@ -280,6 +288,9 @@ impl<S: 'static> From<VList<S>> for Node<Act<S>> {
             });
         if let Some(h) = v.row_h {
             e = e.row_height(h);
+        }
+        if let Some(h) = &v.heights {
+            e = e.variable(h);
         }
         if v.ruled {
             e = e.ruled();

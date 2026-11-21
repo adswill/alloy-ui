@@ -169,13 +169,45 @@ pub(crate) struct Painter {
     pub(crate) text: TextSystem,
 }
 
-impl Painter {
-    pub(crate) fn new(
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        format: wgpu::TextureFormat,
-        text: TextSystem,
-    ) -> Self {
+/// The surface-independent GPU objects the first frame needs: shader module, bind group
+/// layouts and the render pipeline for one target format. Building them is the slowest part
+/// of a cold start (the WGSL is parsed, validated and compiled), so [`crate::prewarm`] builds
+/// them on a background thread while the window is being created.
+pub(crate) struct Parts {
+    pub(crate) format: wgpu::TextureFormat,
+    pipeline: wgpu::RenderPipeline,
+    globals_layout: wgpu::BindGroupLayout,
+    tex_layout: wgpu::BindGroupLayout,
+}
+
+/// What [`crate::prewarm`] builds on its thread: an instance, an adapter chosen without
+/// knowing the window, its device, and the pipeline for the format nearly every surface offers.
+pub(crate) struct Warm {
+    pub(crate) ctx: GpuContext,
+    pub(crate) parts: Parts,
+}
+
+impl Warm {
+    /// The format a surface almost always offers first among the non-sRGB ones (Metal, D3D12
+    /// and most Vulkan drivers); a surface that wants another just rebuilds the pipeline.
+    pub(crate) const GUESS: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
+
+    pub(crate) fn build() -> Option<Self> {
+        let mut t = std::time::Instant::now();
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        crate::perf_mark("warm.instance", &mut t);
+        let adapter = request_adapter(&instance, None, false)?;
+        crate::perf_mark("warm.adapter", &mut t);
+        let ctx = GpuContext::from_adapter(instance, adapter).ok()?;
+        crate::perf_mark("warm.device", &mut t);
+        let parts = Parts::build(&ctx.device, Self::GUESS);
+        crate::perf_mark("warm.pipeline", &mut t);
+        Some(Self { ctx, parts })
+    }
+}
+
+impl Parts {
+    pub(crate) fn build(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("alloy-ui shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
@@ -267,6 +299,39 @@ impl Painter {
             multiview: None,
             cache: None,
         });
+        Self {
+            format,
+            pipeline,
+            globals_layout,
+            tex_layout,
+        }
+    }
+}
+
+impl Painter {
+    pub(crate) fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        format: wgpu::TextureFormat,
+        text: TextSystem,
+    ) -> Self {
+        let parts = Parts::build(&device, format);
+        Self::with_parts(device, queue, parts, text)
+    }
+
+    /// A painter using pipeline objects that were already built (see [`Parts`]).
+    pub(crate) fn with_parts(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        parts: Parts,
+        text: TextSystem,
+    ) -> Self {
+        let Parts {
+            format,
+            pipeline,
+            globals_layout,
+            tex_layout,
+        } = parts;
         let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("globals"),
             size: std::mem::size_of::<Globals>() as u64,

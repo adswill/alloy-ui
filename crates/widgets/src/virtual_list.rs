@@ -18,6 +18,71 @@ const K_DRAG: u64 = 0x7117_0001 << 20;
 /// Offsets below this (in pixels) are smooth-scrolled; an `f32` still resolves sub-pixel there.
 const GLIDE_LIMIT: f64 = 4_000_000.0;
 
+/// Row heights for a [`VirtualList`] whose rows differ in height.
+///
+/// Build it once (it holds one running total per row, 8 bytes each, so a million rows cost
+/// 8 MB) and keep it in your state; cloning is cheap. Finding the row at a scroll offset is a
+/// binary search, so scrolling a million variable-height rows costs the same as twenty.
+/// Call [`HeightIndex::new`] again when your data changes.
+#[derive(Clone)]
+pub struct HeightIndex {
+    /// `ends[i]` is the bottom edge of row `i`; the top of row 0 is 0.
+    ends: Rc<Vec<f64>>,
+}
+
+impl HeightIndex {
+    /// Measure `count` rows: row `i` is `height(i)` pixels tall (at least 1).
+    pub fn new(count: usize, height: impl Fn(usize) -> f32) -> Self {
+        let mut acc = 0.0f64;
+        let ends = (0..count)
+            .map(|i| {
+                acc += height(i).max(1.0) as f64;
+                acc
+            })
+            .collect();
+        Self {
+            ends: Rc::new(ends),
+        }
+    }
+    /// Number of rows measured.
+    pub fn len(&self) -> usize {
+        self.ends.len()
+    }
+    /// True when there are no rows.
+    pub fn is_empty(&self) -> bool {
+        self.ends.is_empty()
+    }
+    /// Total height of all rows.
+    pub fn total(&self) -> f64 {
+        self.ends.last().copied().unwrap_or(0.0)
+    }
+    /// Top edge of row `i` (the total height for `i == len`).
+    pub fn top(&self, i: usize) -> f64 {
+        if i == 0 {
+            0.0
+        } else {
+            self.ends[(i - 1).min(self.ends.len() - 1)]
+        }
+    }
+    /// Height of row `i`.
+    pub fn height(&self, i: usize) -> f32 {
+        (self.ends[i] - self.top(i)) as f32
+    }
+    /// The row that contains vertical offset `y` (clamped to the last row).
+    pub fn row_at(&self, y: f64) -> usize {
+        self.ends
+            .partition_point(|&e| e <= y)
+            .min(self.ends.len().saturating_sub(1))
+    }
+}
+
+/// Row geometry: one height for every row, or a measured [`HeightIndex`].
+#[derive(Clone)]
+enum Heights {
+    Fixed(f32),
+    Var(HeightIndex),
+}
+
 type Build<M> = Rc<dyn Fn(usize) -> Element<M>>;
 
 /// A list of `count` rows of fixed height, built on demand by `row(index)`. Only rows in view
@@ -28,7 +93,7 @@ pub struct VirtualList<M> {
     ui: Ui,
     id: u64,
     count: usize,
-    row_h: f32,
+    heights: Heights,
     ruled: bool,
     selected: Option<usize>,
     build: Build<M>,
@@ -48,7 +113,7 @@ impl<M: 'static> VirtualList<M> {
             ui: ui.clone(),
             id,
             count,
-            row_h: t.typography.body.line_height + 2.0 * t.spacing.sm,
+            heights: Heights::Fixed(t.typography.body.line_height + 2.0 * t.spacing.sm),
             ruled: false,
             selected: None,
             build: Rc::new(row),
@@ -57,7 +122,14 @@ impl<M: 'static> VirtualList<M> {
     }
     /// Row height in pixels (every row is the same height).
     pub fn row_height(mut self, h: f32) -> Self {
-        self.row_h = h.max(8.0);
+        self.heights = Heights::Fixed(h.max(8.0));
+        self
+    }
+    /// Rows of different heights, as measured by `heights` (see [`HeightIndex`]). The list
+    /// shows `heights.len()` rows; build the index once and keep it in your state.
+    pub fn variable(mut self, heights: &HeightIndex) -> Self {
+        self.count = heights.len();
+        self.heights = Heights::Var(heights.clone());
         self
     }
     /// A hairline between rows.
@@ -83,7 +155,36 @@ impl<M: 'static> VirtualList<M> {
     // Offsets and content height are f64: past 16.7 million pixels (a million 28 px rows) an f32
     // cannot tell one pixel from the next, so rows would jitter and the end would be unreachable.
     fn content_h(&self) -> f64 {
-        self.count as f64 * self.row_h as f64
+        match &self.heights {
+            Heights::Fixed(h) => self.count as f64 * *h as f64,
+            Heights::Var(ix) => ix.total(),
+        }
+    }
+    fn row_top(&self, i: usize) -> f64 {
+        match &self.heights {
+            Heights::Fixed(h) => i as f64 * *h as f64,
+            Heights::Var(ix) => ix.top(i),
+        }
+    }
+    fn row_height_of(&self, i: usize) -> f32 {
+        match &self.heights {
+            Heights::Fixed(h) => *h,
+            Heights::Var(ix) => ix.height(i),
+        }
+    }
+    /// The row under list-space offset `y`, if any.
+    fn row_at(&self, y: f64) -> Option<usize> {
+        if self.count == 0 || y < 0.0 || y >= self.content_h() {
+            return None;
+        }
+        Some(match &self.heights {
+            Heights::Fixed(h) => ((y / *h as f64).floor() as usize).min(self.count - 1),
+            Heights::Var(ix) => ix.row_at(y),
+        })
+    }
+    /// Average row height, for paging.
+    fn avg_h(&self) -> f32 {
+        (self.content_h() / self.count.max(1) as f64).max(1.0) as f32
     }
     fn max_off(&self, b: &Rectangle) -> f64 {
         (self.content_h() - b.size.height as f64).max(0.0)
@@ -111,10 +212,14 @@ impl<M: 'static> VirtualList<M> {
     }
     fn range(&self, b: &Rectangle) -> std::ops::Range<usize> {
         let off = self.offset(b);
-        let rh = self.row_h as f64;
-        let first = (off / rh).floor() as usize;
-        let last = (((off + b.size.height as f64) / rh).ceil() as usize).min(self.count);
-        first.min(self.count)..last
+        let Some(first) = self.row_at(off) else {
+            return 0..0;
+        };
+        // One past the row holding the viewport's last pixel.
+        let last = self
+            .row_at((off + b.size.height as f64 - 0.01).min(self.content_h() - 0.01))
+            .map_or(first, |i| i + 1);
+        first..last
     }
     fn row_rect(&self, b: &Rectangle, i: usize) -> Rectangle {
         let bar = if self.max_off(b) > 0.0 {
@@ -125,9 +230,9 @@ impl<M: 'static> VirtualList<M> {
         Rectangle::new(
             Point::new(
                 b.origin.x,
-                b.origin.y + (i as f64 * self.row_h as f64 - self.offset(b)) as f32,
+                b.origin.y + (self.row_top(i) - self.offset(b)) as f32,
             ),
-            Size::new((b.size.width - bar).max(0.0), self.row_h),
+            Size::new((b.size.width - bar).max(0.0), self.row_height_of(i)),
         )
     }
     /// The built row element and its laid-out content, centred vertically in the row.
@@ -170,9 +275,9 @@ impl<M: 'static> VirtualList<M> {
         }
     }
     fn reveal(&self, b: &Rectangle, i: usize) {
-        let top = i as f64 * self.row_h as f64;
+        let top = self.row_top(i);
         let off = self.target(b);
-        let (rh, vh) = (self.row_h as f64, b.size.height as f64);
+        let (rh, vh) = (self.row_height_of(i) as f64, b.size.height as f64);
         if top < off {
             self.set_offset(b, top);
         } else if top + rh > off + vh {
@@ -191,7 +296,7 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
         }
     }
     fn measure(&self, _available: Size) -> Size {
-        Size::new(240.0, self.row_h * self.count.min(8) as f32)
+        Size::new(240.0, self.avg_h() * self.count.min(8) as f32)
     }
     fn on_event(
         &mut self,
@@ -223,10 +328,7 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
                     self.drag_to(&b, cursor.y, grab);
                     return true;
                 }
-                let i = ((cursor.y - b.origin.y) as f64 + self.offset(&b)) / self.row_h as f64;
-                let i = i.floor();
-                if i >= 0.0 && (i as usize) < self.count {
-                    let i = i as usize;
+                if let Some(i) = self.row_at((cursor.y - b.origin.y) as f64 + self.offset(&b)) {
                     let (mut row, l) = self.laid(&b, i);
                     if row.0.on_event(event, &l, cursor, out) {
                         return true;
@@ -260,7 +362,7 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
                 if self.ui.is_focused(Some(self.id)) && self.count > 0 =>
             {
                 let last = self.count - 1;
-                let page = ((b.size.height / self.row_h) as usize)
+                let page = ((b.size.height / self.avg_h()) as usize)
                     .saturating_sub(1)
                     .max(1);
                 let next = match (k.as_str(), self.selected) {

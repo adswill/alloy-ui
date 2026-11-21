@@ -26,6 +26,7 @@
 //!
 //! plugin::install(&Rating);
 //! plugin::install(&Rating); // installing twice is a no-op
+//! assert!(plugin::is_installed("rating"));
 //! assert_eq!(plugin::installed(), vec![("rating".to_string(), "1.0.0".to_string())]);
 //! assert_eq!(alloy_ui::i18n::translate("rating.label", &[("n", "4".into())]), "Rated 4 of 5");
 //! ```
@@ -53,6 +54,10 @@ pub trait Plugin {
     fn name(&self) -> &str;
     /// The plugin's version, shown by [`installed`] (for an About box or a bug report).
     fn version(&self) -> &str {
+        ""
+    }
+    /// One sentence on what the plugin adds, for an About box or a plugin list.
+    fn description(&self) -> &str {
         ""
     }
     /// Register everything the plugin contributes through `host`.
@@ -88,6 +93,8 @@ fn installed_list() -> std::sync::MutexGuard<'static, Vec<(String, String)>> {
 /// Install `plugin` into this app, once, before the first view.
 /// Does nothing when a plugin of the same [`name`](Plugin::name) is already installed.
 pub fn install(plugin: &dyn Plugin) {
+    // A plugin must not be able to deadlock the registry by installing from `install`: the
+    // lock is released before `install` runs (below).
     let name = plugin.name().to_string();
     let fresh = {
         let mut i = installed_list();
@@ -101,6 +108,19 @@ pub fn install(plugin: &dyn Plugin) {
     if fresh {
         plugin.install(&mut Host { plugin: name });
     }
+}
+
+/// Install several plugins in order (same as calling [`install`] for each).
+pub fn install_all(plugins: &[&dyn Plugin]) {
+    for p in plugins {
+        install(*p);
+    }
+}
+
+/// True when a plugin called `name` is installed: lets a plugin check that one it builds on
+/// is present, or an app show a feature only when its plugin is.
+pub fn is_installed(name: &str) -> bool {
+    installed_list().iter().any(|(n, _)| n == name)
 }
 
 /// `(name, version)` of every installed plugin, in install order.

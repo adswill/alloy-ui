@@ -1,0 +1,16 @@
+[package]
+name = "alloy-ui-callout"
+description = "A tinted callout box for Alloy: the second example plugin, a container widget"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# Facade crate only, renderer features left to the app (see docs/PLUGINS.md).
+[dependencies]
+alloy-ui = { path = "../../crates/alloy", default-features = false }
