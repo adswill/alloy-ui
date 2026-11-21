@@ -85,6 +85,7 @@ mod cx;
 mod declare;
 mod desktop;
 mod dsl;
+mod editors;
 pub mod fs;
 pub mod i18n;
 mod icons;
@@ -127,6 +128,10 @@ pub use dsl::{
     slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
 };
 pub use icons::{icon, set_icon_pack, Ico, Icon, IconPack};
+pub use editors::{
+    code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
+    GridRows, Lang, Mark, Marks, RichText, RichView, Run, Selection,
+};
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use live::{live_file, Live};
@@ -179,6 +184,7 @@ pub mod prelude {
         calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph,
         object, pie, pt, stream, viewport3d,
     };
+    pub use crate::{code_editor, data_grid, rich_editor, GridCell, Lang, RichText, Tone};
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::{Density, Preset};
     pub use std::time::Duration;

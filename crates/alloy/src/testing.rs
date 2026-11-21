@@ -27,6 +27,17 @@ impl TextMetrics for Metrics {
     fn width(&self, text: &str, size: f32) -> f32 {
         self.0.measure(text, size, 400, None).width
     }
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        weight: u16,
+        family: alloy_ui_core::FontFamily,
+    ) -> f32 {
+        self.0
+            .measure_styled(text, size, weight, family, None, None)
+            .width
+    }
 }
 
 /// A running app with scripted input and software rendering.
