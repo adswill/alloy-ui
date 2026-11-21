@@ -37,11 +37,11 @@ pollster = { version = "0.4", optional = true }
 softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen", "kms"], optional = true }
 
 # Each OS gets only its own wgpu backend.
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["metal"], optional = true }
 [target.'cfg(windows)'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["dx12"], optional = true }
-[target.'cfg(not(any(target_os = "macos", windows)))'.dependencies]
+[target.'cfg(not(any(target_os = "macos", target_os = "ios", windows)))'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["vulkan"], optional = true }
 
 [dev-dependencies]
