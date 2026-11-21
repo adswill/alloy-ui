@@ -27,6 +27,12 @@ impl<S> Act<S> {
     pub fn new(f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         Act(Arc::new(f))
     }
+
+    /// Run the mutation on `state`. Apps that implement [`App`](crate::App) by hand with
+    /// `Msg = Act<State>` call this from `update`.
+    pub fn apply(&self, state: &mut S) {
+        (self.0)(state)
+    }
 }
 
 fn len(px: f32) -> Length {
