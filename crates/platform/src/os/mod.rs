@@ -61,6 +61,8 @@ use macos as backend;
 use macos_ext as ext;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use mobile as backend;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use mobile::ext;
 #[cfg(target_os = "windows")]
 use windows as backend;
 #[cfg(target_os = "windows")]
