@@ -17,6 +17,7 @@ COMMANDS:
     bundle    Build, then package (default formats depend on the host OS)
     new       Create a starter app: alloy new <name> [--template <T>]
     dev       Run the app, rebuild and restart on every save (F12 = inspector)
+    lsp       Language server for .alloy live views over stdio (the VS Code extension starts it)
     test      Run cargo test; failing snapshots land as expected|actual|diff images
               in target/alloy-diff (--update accepts the new look). Also: `cargo alloy test`
     check     Validate [package.metadata.alloy], icons and the capability config
@@ -90,6 +91,8 @@ pub enum Command {
     Dev,
     /// `alloy test`
     Test,
+    /// `alloy lsp`
+    Lsp,
     /// `alloy help`
     Help,
     /// `alloy version`
@@ -150,6 +153,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
         Some("new") => Command::New,
         Some("dev") => Command::Dev,
         Some("test") => Command::Test,
+        Some("lsp") => Command::Lsp,
         Some(other) => {
             return Err(Error::Usage(format!(
                 "unknown command `{other}`; try `alloy help`"

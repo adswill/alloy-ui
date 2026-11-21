@@ -252,6 +252,24 @@ pub fn cpu(width: u32, height: u32) -> Box<dyn HeadlessRenderer> {
 mod report_tests {
     use super::*;
 
+    /// Fails on purpose: `crates/cli/tests/alloy_test_flow.rs` runs it through `alloy test` to
+    /// check the failure report and `--update`. Ignored so a normal `cargo test` stays green.
+    #[test]
+    #[ignore = "fixture for the `alloy test` flow test; fails unless run with --update"]
+    fn alloy_test_fixture_mismatch() {
+        let dir = std::env::temp_dir().join(format!("alloy-fixture-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let golden = Image::filled(8, 8, [255, 255, 255, 255]);
+        std::fs::write(dir.join("fixture.png"), golden.encode_png().unwrap()).unwrap();
+        assert_golden(
+            &dir,
+            "fixture",
+            &Image::filled(8, 8, [0, 0, 0, 255]),
+            Tolerance::CPU,
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn diff_marks_changed_pixels_and_reports_the_region() {
         let a = Image::filled(8, 6, [10, 10, 10, 255]);

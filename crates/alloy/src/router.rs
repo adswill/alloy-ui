@@ -20,13 +20,15 @@ use crate::{
     Shortcuts,
 };
 
+type Saver<R> = Box<dyn Fn(&[R]) + Send>;
+
 struct Stack<R> {
     /// Visited routes, oldest first; the last one is on screen.
     past: Vec<R>,
     /// Routes that `back` stepped over, nearest first, for `forward`.
     future: Vec<R>,
     /// Writes `past` to disk after every change (see [`router_saved`]).
-    save: Option<Box<dyn Fn(&[R]) + Send>>,
+    save: Option<Saver<R>>,
 }
 
 impl<R> Stack<R> {

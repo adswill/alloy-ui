@@ -1,8 +1,8 @@
 {
   "name": "alloy-ui",
   "displayName": "Alloy",
-  "description": "Snippets for Alloy apps in Rust and syntax highlighting for .alloy live views.",
-  "version": "0.1.0",
+  "description": "Alloy for VS Code: snippets for Rust apps, and .alloy live views with highlighting, diagnostics, completion and hover from the same parser the app uses.",
+  "version": "0.2.0",
   "publisher": "alloy-ui",
   "license": "MIT",
   "icon": "images/icon.png",
@@ -12,7 +12,7 @@
     "directory": "editors/vscode"
   },
   "engines": {
-    "vscode": "^1.75.0"
+    "vscode": "^1.82.0"
   },
   "categories": [
     "Snippets",
@@ -55,13 +55,48 @@
         "language": "alloy",
         "path": "./snippets/alloy.code-snippets"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "alloy.dev",
+        "title": "Alloy: Run with live reload (alloy dev)"
+      },
+      {
+        "command": "alloy.test",
+        "title": "Alloy: Run tests with snapshot diffs (alloy test)"
+      },
+      {
+        "command": "alloy.restartServer",
+        "title": "Alloy: Restart language server"
+      }
+    ],
+    "configuration": {
+      "title": "Alloy",
+      "properties": {
+        "alloy.server.path": {
+          "type": "string",
+          "default": "alloy",
+          "markdownDescription": "The `alloy` executable that provides `alloy lsp`, `alloy dev` and `alloy test`. Install it with `cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli`."
+        }
+      }
+    }
   },
   "scripts": {
-    "test": "node test/grammar.test.js && python3 test/check_snippets.py"
+    "test": "node test/grammar.test.js && node test/extension.test.js && python3 test/check_snippets.py",
+    "package": "vsce package"
   },
   "devDependencies": {
     "vscode-textmate": "^9.0.0",
-    "vscode-oniguruma": "^2.0.1"
+    "vscode-oniguruma": "^2.0.1",
+    "@vscode/vsce": "3.2.1"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:alloy",
+    "onCommand:alloy.dev",
+    "onCommand:alloy.test"
+  ],
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
   }
 }

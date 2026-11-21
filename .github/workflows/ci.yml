@@ -67,3 +67,36 @@ jobs:
       - name: Known bugs (reported, non-blocking)
         continue-on-error: true
         run: cargo test -p alloy-ui-text-conformance --release --no-fail-fast -- --ignored
+  vscode:
+    # The VS Code extension: grammar, snippets (compiled against the real crate), the extension
+    # wiring and the real `alloy lsp` server over JSON-RPC. The packaged .vsix is uploaded as an
+    # artifact on every run; it is never published to the Marketplace from CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps (the snippet check builds alloy-ui)
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev
+      - run: cargo build -p alloy-ui-cli --bin alloy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+        working-directory: editors/vscode
+      - name: Test (grammar, extension, language server, snippets)
+        run: npm test
+        working-directory: editors/vscode
+        env:
+          ALLOY_BIN: ${{ github.workspace }}/target/debug/alloy
+          CI: "true"
+      - name: Package the .vsix
+        run: npx vsce package --no-yarn --out alloy-vscode.vsix
+        working-directory: editors/vscode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alloy-vscode-vsix
+          path: editors/vscode/alloy-vscode.vsix
+          if-no-files-found: error
