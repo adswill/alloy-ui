@@ -140,6 +140,8 @@ struct Inner {
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
+    states: HashMap<u64, Box<dyn std::any::Any>>,
+    mods: alloy_ui_core::Modifiers,
     a11y: Vec<A11yNode>,
     viewport: Rectangle,
 }
@@ -240,6 +242,8 @@ impl Ui {
             clip: None,
             histories: HashMap::new(),
             slots: HashMap::new(),
+            states: HashMap::new(),
+            mods: Default::default(),
             a11y: Vec::new(),
             viewport: Rectangle::new(
                 Point::new(0.0, 0.0),
@@ -571,6 +575,31 @@ impl Ui {
         };
     }
 
+    /// The modifier keys as of the last key event. Mouse events carry none, so widgets that
+    /// need Shift/Ctrl-click read it here. The platform shell sends a `KeyReleased` of the
+    /// pseudo key `Named("Modifiers")` whenever the modifier state changes.
+    pub fn modifiers(&self) -> alloy_ui_core::Modifiers {
+        self.0.borrow().mods
+    }
+    pub(crate) fn set_modifiers(&self, m: alloy_ui_core::Modifiers) {
+        self.0.borrow_mut().mods = m;
+    }
+    /// Run `f` on the typed state of widget `id` (created with `T::default()` on first use).
+    /// `f` must not call back into `Ui`. For state too rich for a slot: a grid's selection,
+    /// a find query, a rich-text caret.
+    pub(crate) fn state<T: std::any::Any + Default, R>(
+        &self,
+        id: u64,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> R {
+        let mut s = self.0.borrow_mut();
+        let b = s.states.entry(id).or_insert_with(|| Box::new(T::default()));
+        if !b.is::<T>() {
+            *b = Box::new(T::default());
+        }
+        f(b.downcast_mut::<T>().expect("type checked above"))
+    }
+
     pub(crate) fn edit(&self, id: u64) -> Edit {
         self.0.borrow().edits.get(&id).cloned().unwrap_or_default()
     }
@@ -638,6 +667,7 @@ impl<M: 'static> Widget<M> for Root<M> {
             }
         }
         match event {
+            Event::KeyPressed(_, m) | Event::KeyReleased(_, m) => self.ui.set_modifiers(*m),
             Event::CursorMoved(p) => self.ui.set_cursor(*p),
             Event::CursorLeft => self.ui.set_cursor(Point::new(-1.0e6, -1.0e6)),
             Event::MousePressed(_) => {

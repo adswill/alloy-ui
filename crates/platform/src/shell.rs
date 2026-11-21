@@ -6,7 +6,7 @@
 //! asks for one. Background tasks wake the loop through a [`ShellProxy`].
 
 use crate::{convert, PlatformError, WindowSettings};
-use alloy_ui_core::{Event, Point, Size};
+use alloy_ui_core::{Event, Key, Point, Size};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -522,7 +522,12 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }),
             WindowEvent::ModifiersChanged(m) => {
                 self.mods = m.state();
-                None
+                // Mouse events carry no modifiers; tell widgets (Shift/Ctrl-click) through
+                // a pseudo key release that only `Root` looks at.
+                Some(I(Event::KeyReleased(
+                    Key::Named("Modifiers".into()),
+                    convert::modifiers(self.mods),
+                )))
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let l = position.to_logical::<f32>(scale);

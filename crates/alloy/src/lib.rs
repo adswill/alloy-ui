@@ -69,6 +69,7 @@ mod collections;
 mod cx;
 mod declare;
 mod dsl;
+mod editors;
 pub mod fs;
 pub mod i18n;
 mod inputs;
@@ -104,6 +105,10 @@ pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
     options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll, section,
     slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
+};
+pub use editors::{
+    code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
+    GridRows, Lang, Mark, Marks, RichText, RichView, Run, Selection,
 };
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
@@ -143,6 +148,7 @@ pub mod prelude {
     pub use crate::{
         at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
     };
+    pub use crate::{code_editor, data_grid, rich_editor, GridCell, Lang, RichText, Tone};
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;
     pub use std::time::Duration;
