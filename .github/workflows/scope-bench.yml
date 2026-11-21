@@ -32,7 +32,6 @@ jobs:
         shell: bash
         env:
           ALLOY_SCOPE_SECS: "12"
-          ALLOY_PERF: "1"
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
           $RUN target/release/examples/scope 2>&1 | tee scope-gpu.txt
@@ -47,4 +46,4 @@ jobs:
       - name: Summary
         shell: bash
         run: |
-          { echo "### ${{ matrix.os }}"; echo '```'; grep -h "SCOPE\|BENCH" scope-bench.txt scope-gpu.txt scope-cpu.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### ${{ matrix.os }}"; echo '```'; grep -h "SCOPE\|BENCH" scope-bench.txt scope-gpu.txt scope-cpu.txt || true; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
