@@ -20,19 +20,19 @@ mod linux_tray;
 mod macos;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
-mod macos_ext;
+mod macos_access;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
-mod macos_access;
+mod macos_ext;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
-mod windows_ext;
+mod windows_access;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
-mod windows_access;
+mod windows_ext;
 #[cfg(target_os = "linux")]
 mod wl_clip;
 #[cfg(target_os = "linux")]
@@ -43,13 +43,13 @@ use linux as backend;
 #[cfg(target_os = "linux")]
 use linux_ext as ext;
 #[cfg(target_os = "macos")]
+use macos as backend;
+#[cfg(target_os = "macos")]
 use macos_ext as ext;
 #[cfg(target_os = "windows")]
-use windows_ext as ext;
-#[cfg(target_os = "macos")]
-use macos as backend;
-#[cfg(target_os = "windows")]
 use windows as backend;
+#[cfg(target_os = "windows")]
+use windows_ext as ext;
 
 #[cfg(unix)]
 /// Run a program and capture stdout when it succeeds. `None` if it is missing or fails.
@@ -103,11 +103,7 @@ pub(crate) fn read_settings() -> crate::settings::SystemSettings {
 }
 
 /// Register a URL scheme for the current user (see [`crate::deeplink::register_scheme`]).
-pub(crate) fn register_scheme(
-    app_id: &str,
-    scheme: &str,
-    exe: &str,
-) -> Result<(), PlatformError> {
+pub(crate) fn register_scheme(app_id: &str, scheme: &str, exe: &str) -> Result<(), PlatformError> {
     ext::register_scheme(app_id, scheme, exe)
 }
 

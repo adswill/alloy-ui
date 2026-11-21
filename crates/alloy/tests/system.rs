@@ -26,22 +26,25 @@ fn board() -> impl App<Msg = Act<Board>> {
         |b: &Board| -> Node<Act<Board>> {
             let todo: Vec<Node<Act<Board>>> = b.todo.iter().map(|&i| card(i)).collect();
             let done: Vec<Node<Act<Board>>> = b.done.iter().map(|&i| card(i)).collect();
-            let hint: Node<Act<Board>> = text(if files_hovering() { "DROP NOW" } else { "idle" }).into();
+            let hint: Node<Act<Board>> =
+                text(if files_hovering() { "DROP NOW" } else { "idle" }).into();
             row![
-                col![heading("To do"), col(todo).pad(16.0).w(160.0).h(240.0)]
-                    .drop_act(|b: &mut Board, id: u32| {
+                col![heading("To do"), col(todo).pad(16.0).w(160.0).h(240.0)].drop_act(
+                    |b: &mut Board, id: u32| {
                         b.done.retain(|&d| d != id);
                         if !b.todo.contains(&id) {
                             b.todo.push(id);
                         }
-                    }),
-                col![heading("Done"), col(done).pad(16.0).w(160.0).h(240.0)]
-                    .drop_act(|b: &mut Board, id: u32| {
+                    }
+                ),
+                col![heading("Done"), col(done).pad(16.0).w(160.0).h(240.0)].drop_act(
+                    |b: &mut Board, id: u32| {
                         b.todo.retain(|&d| d != id);
                         if !b.done.contains(&id) {
                             b.done.push(id);
                         }
-                    }),
+                    }
+                ),
                 col![
                     hint,
                     text(format!("files:{}", b.files.len())),
@@ -67,7 +70,10 @@ fn drag_card_between_columns() {
     // The card is now listed after the 9 in the Done column: its position moved right.
     let p1 = h.position("Card 1").unwrap();
     let p9 = h.position("Card 9").unwrap();
-    assert!(p1.x > 100.0 && (p1.x - p9.x).abs() < 1.0, "Card 1 joined the Done column: {p1:?} vs {p9:?}");
+    assert!(
+        p1.x > 100.0 && (p1.x - p9.x).abs() < 1.0,
+        "Card 1 joined the Done column: {p1:?} vs {p9:?}"
+    );
     // And back again.
     h.drag("Card 1", "To do");
     h.advance(20).advance(400);
@@ -108,12 +114,17 @@ fn ghost_follows_pointer() {
         .0
         .iter()
         .filter_map(|c| match c {
-            alloy_ui::DrawCommand::Text { content, origin, .. } if content == "Card 1" => Some(*origin),
+            alloy_ui::DrawCommand::Text {
+                content, origin, ..
+            } if content == "Card 1" => Some(*origin),
             _ => None,
         })
         .collect();
     assert_eq!(labels.len(), 2, "original (dimmed) plus ghost");
-    assert!(labels[1].x > labels[0].x + 100.0, "ghost sits over the Done column");
+    assert!(
+        labels[1].x > labels[0].x + 100.0,
+        "ghost sits over the Done column"
+    );
     assert!(list.0.len() > n_idle);
     h.advance(16).advance(300);
     if std::env::var_os("SYSTEM_PNG").is_some() {

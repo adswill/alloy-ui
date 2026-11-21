@@ -65,7 +65,8 @@ fn rich_roundtrip() {
 
     // A foreign client sees the formats we offer.
     if x && have("xclip") {
-        cb.write_rich(&ClipContent::html("<i>hi</i>", "hi")).unwrap();
+        cb.write_rich(&ClipContent::html("<i>hi</i>", "hi"))
+            .unwrap();
         let out = |target: &str| {
             Command::new("xclip")
                 .args(["-selection", "clipboard", "-t", target, "-o"])
@@ -102,10 +103,13 @@ fn rich_roundtrip() {
             cb.read_rich().unwrap().html.as_deref(),
             Some("<u>from xclip</u>")
         );
+        child.kill().ok();
+        child.wait().ok();
         let _ = child.kill();
     }
     if wl && have("wl-paste") {
-        cb.write_rich(&ClipContent::html("<i>hi</i>", "hi")).unwrap();
+        cb.write_rich(&ClipContent::html("<i>hi</i>", "hi"))
+            .unwrap();
         let out = Command::new("wl-paste")
             .args(["--no-newline", "--type", "text/html"])
             .output()

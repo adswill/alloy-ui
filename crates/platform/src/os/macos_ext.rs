@@ -9,10 +9,18 @@ pub fn read_settings() -> SystemSettings {
     SystemSettings {
         dark: super::macos::is_dark().unwrap_or(false),
         reduced_motion: settings::parse_macos_flag(
-            capture("defaults", &["read", "com.apple.universalaccess", "reduceMotion"]).as_deref(),
+            capture(
+                "defaults",
+                &["read", "com.apple.universalaccess", "reduceMotion"],
+            )
+            .as_deref(),
         ),
         high_contrast: settings::parse_macos_flag(
-            capture("defaults", &["read", "com.apple.universalaccess", "increaseContrast"]).as_deref(),
+            capture(
+                "defaults",
+                &["read", "com.apple.universalaccess", "increaseContrast"],
+            )
+            .as_deref(),
         ),
         accent: settings::parse_macos_accent(
             capture("defaults", &["read", "-g", "AppleAccentColor"]).as_deref(),
@@ -21,7 +29,9 @@ pub fn read_settings() -> SystemSettings {
 }
 
 use crate::clipboard::{self, ClipContent};
-use objc2_app_kit::{NSPasteboard, NSPasteboardTypeHTML, NSPasteboardTypePNG, NSPasteboardTypeString};
+use objc2_app_kit::{
+    NSPasteboard, NSPasteboardTypeHTML, NSPasteboardTypePNG, NSPasteboardTypeString,
+};
 use objc2_foundation::{NSArray, NSData, NSString};
 
 /// Pasteboard type name for a list of file paths (old but still honoured by Finder).
@@ -36,8 +46,10 @@ pub fn rich_read() -> Option<ClipContent> {
     // an owned object or nil.
     let (text, html, png) = unsafe {
         (
-            pb.stringForType(NSPasteboardTypeString).map(|s| s.to_string()),
-            pb.stringForType(NSPasteboardTypeHTML).map(|s| s.to_string()),
+            pb.stringForType(NSPasteboardTypeString)
+                .map(|s| s.to_string()),
+            pb.stringForType(NSPasteboardTypeHTML)
+                .map(|s| s.to_string()),
             pb.dataForType(NSPasteboardTypePNG).map(|d| d.to_vec()),
         )
     };
@@ -221,8 +233,7 @@ pub fn install_open_handler() {
         return;
     };
     // SAFETY: `alloc` returns a fresh allocation and `init` is the NSObject initialiser.
-    let handler: Retained<OpenHandler> =
-        unsafe { objc2::msg_send![OpenHandler::alloc(mtm), init] };
+    let handler: Retained<OpenHandler> = unsafe { objc2::msg_send![OpenHandler::alloc(mtm), init] };
     let mgr = NSAppleEventManager::sharedAppleEventManager();
     let register = |sel: objc2::runtime::Sel, class: u32, id: u32| {
         // SAFETY: `setEventHandler:andSelector:forEventClass:andEventID:` takes an
@@ -240,13 +251,21 @@ pub fn install_open_handler() {
         }
     };
     register(sel!(handleURL:withReply:), 0x4755_524C, 0x4755_524C); // 'GURL', 'GURL'
-    register(sel!(handleOpenDocuments:withReply:), 0x6165_7674, 0x6F64_6F63); // 'aevt', 'odoc'
+    register(
+        sel!(handleOpenDocuments:withReply:),
+        0x6165_7674,
+        0x6F64_6F63,
+    ); // 'aevt', 'odoc'
     HANDLER.with(|h| *h.borrow_mut() = Some(handler));
 }
 
 /// A URL scheme cannot be registered while running on macOS; it must be in
 /// the bundle's `Info.plist`.
-pub fn register_scheme(_app_id: &str, _scheme: &str, _exe: &str) -> Result<(), crate::PlatformError> {
+pub fn register_scheme(
+    _app_id: &str,
+    _scheme: &str,
+    _exe: &str,
+) -> Result<(), crate::PlatformError> {
     Err(crate::PlatformError(
         "macOS reads URL schemes from the app bundle: list them under `url-schemes` in \
          [package.metadata.alloy] and build with `alloy bundle app`"

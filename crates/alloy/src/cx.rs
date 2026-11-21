@@ -398,12 +398,12 @@ pub(crate) fn window_ui_or_fork(id: alloy_ui_core::WindowId, template: &Ui) -> U
 thread_local! {
     static PAGE_ALPHA: Cell<f32> = const { Cell::new(1.0) };
     static SYSTEM: Cell<alloy_ui_platform::settings::SystemSettings> =
-        Cell::new(alloy_ui_platform::settings::SystemSettings {
+        const { Cell::new(alloy_ui_platform::settings::SystemSettings {
             dark: false,
             reduced_motion: false,
             high_contrast: false,
             accent: None,
-        });
+        }) };
     static HOVERING_FILES: Cell<bool> = const { Cell::new(false) };
 }
 

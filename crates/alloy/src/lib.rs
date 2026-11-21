@@ -55,6 +55,8 @@ mod guide {
     struct G11;
     #[doc = include_str!("../../../docs/guide/13-localization.md")]
     struct G12;
+    #[doc = include_str!("../../../docs/guide/14-system-integration.md")]
+    struct G13;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.
@@ -142,8 +144,8 @@ pub mod prelude {
         Resource, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clipboard, clock, col, files_hovering, money, redo, row, state, system, t, toast,
-        undo, vals, Hotkey, Shortcuts, WindowEffect,
+        at, choices, clipboard, clock, col, files_hovering, money, redo, row, state, system, t,
+        toast, undo, vals, Hotkey, Shortcuts, WindowEffect,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;
@@ -305,7 +307,8 @@ impl<A: Application + 'static> Host<A> {
     fn refresh_effect(&mut self, ctx: &mut ShellContext) {
         let effect = self.effect;
         let outcome = ctx.set_effect(effect);
-        let see_through = effect != WindowEffect::None && outcome != platform::EffectOutcome::Unsupported;
+        let see_through =
+            effect != WindowEffect::None && outcome != platform::EffectOutcome::Unsupported;
         let ok = match self.renderers.get_mut(&WindowId::MAIN) {
             Some(r) => {
                 let ok = r.set_transparent(see_through);
@@ -462,7 +465,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             let forced = std::env::var("ALLOY_REDUCE_MOTION").ok().map(|v| v != "0");
             cx::set_reduced_motion_everywhere(forced.unwrap_or(s.reduced_motion));
             self.system_accent = false; // re-read the app's wish below
-            // Mica and friends follow light/dark: tell the OS again.
+                                        // Mica and friends follow light/dark: tell the OS again.
             if self.effect != WindowEffect::None {
                 self.refresh_effect(ctx);
             }
@@ -570,7 +573,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     .urls
                     .into_iter()
                     .map(HostEvent::OpenUrl)
-                    .chain((!opened.files.is_empty()).then(|| HostEvent::OpenFiles(opened.files)))
+                    .chain((!opened.files.is_empty()).then_some(HostEvent::OpenFiles(opened.files)))
                     .filter_map(|e| rt.app().host_event(e))
                     .collect();
                 rt.dispatch_all(msgs)

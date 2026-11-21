@@ -58,7 +58,13 @@ fn lock_dir() -> PathBuf {
 fn lock_path(app_id: &str) -> PathBuf {
     let safe: String = app_id
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || "-._".contains(c) { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || "-._".contains(c) {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
     lock_dir().join(format!("{safe}.lock"))
 }
@@ -118,7 +124,12 @@ fn receive(s: TcpStream, token: &str) -> Option<Vec<String>> {
     r.read_line(&mut head).ok()?;
     let (got, count) = head.trim_end().split_once(' ')?;
     // Constant-time-ish compare is unnecessary on loopback, but cheap.
-    if got.len() != token.len() || !got.bytes().zip(token.bytes()).fold(true, |a, (x, y)| a & (x == y)) {
+    if got.len() != token.len()
+        || !got
+            .bytes()
+            .zip(token.bytes())
+            .fold(true, |a, (x, y)| a & (x == y))
+    {
         return None;
     }
     let n: usize = count.parse().ok().filter(|&n| n <= 256)?;
@@ -152,11 +163,18 @@ pub fn single_instance(app_id: &str) -> Single {
         }
     }
     for _ in 0..6 {
-        match std::fs::OpenOptions::new().write(true).create_new(true).open(&path) {
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
             Ok(mut f) => {
                 let Ok(listener) = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)) else {
                     let _ = std::fs::remove_file(&path);
-                    return Single::Primary(Guard { path, token: String::new() });
+                    return Single::Primary(Guard {
+                        path,
+                        token: String::new(),
+                    });
                 };
                 let port = listener.local_addr().map_or(0, |a| a.port());
                 let token = random_token();
@@ -195,7 +213,10 @@ pub fn single_instance(app_id: &str) -> Single {
         }
     }
     // Could not settle it: run normally rather than refuse to start.
-    Single::Primary(Guard { path, token: String::new() })
+    Single::Primary(Guard {
+        path,
+        token: String::new(),
+    })
 }
 
 #[cfg(test)]
@@ -216,7 +237,10 @@ mod tests {
         // process (empty under the test harness besides flags), so use the
         // lower-level pieces for specific content.
         let lock = std::fs::read_to_string(&guard.path).unwrap();
-        assert!(forward(&lock, &["myapp://x?a=1&b=ü".into(), "two words".into()]));
+        assert!(forward(
+            &lock,
+            &["myapp://x?a=1&b=ü".into(), "two words".into()]
+        ));
         let Single::Forwarded = single_instance(&id) else {
             panic!("second launch must be forwarded");
         };

@@ -94,7 +94,15 @@ fn is_kde() -> bool {
 
 fn x11_effect(win: u32, effect: WindowEffect, kde: bool) -> Option<EffectOutcome> {
     let (c, screen) = x11rb::rust_connection::RustConnection::connect(None).ok()?;
-    let atom = |name: &str| Some(c.intern_atom(false, name.as_bytes()).ok()?.reply().ok()?.atom);
+    let atom = |name: &str| {
+        Some(
+            c.intern_atom(false, name.as_bytes())
+                .ok()?
+                .reply()
+                .ok()?
+                .atom,
+        )
+    };
     let blur = atom("_KDE_NET_WM_BLUR_BEHIND_REGION")?;
     let want_blur = matches!(effect, WindowEffect::Acrylic | WindowEffect::Blur);
     if want_blur && kde {
@@ -116,27 +124,6 @@ fn x11_effect(win: u32, effect: WindowEffect, kde: bool) -> Option<EffectOutcome
         _ if want_blur && kde => EffectOutcome::Applied,
         _ => EffectOutcome::SeeThrough,
     })
-}
-
-/// The `_KDE_NET_WM_BLUR_BEHIND_REGION` property of `win`, for tests.
-#[cfg(test)]
-pub(crate) fn blur_property(win: u32) -> Option<Vec<u32>> {
-    let (c, _) = x11rb::rust_connection::RustConnection::connect(None).ok()?;
-    let a = c
-        .intern_atom(true, b"_KDE_NET_WM_BLUR_BEHIND_REGION")
-        .ok()?
-        .reply()
-        .ok()?
-        .atom;
-    if a == x11rb::NONE {
-        return None;
-    }
-    let r = c
-        .get_property(false, win, a, AtomEnum::CARDINAL, 0, 16)
-        .ok()?
-        .reply()
-        .ok()?;
-    (r.type_ != x11rb::NONE).then(|| r.value32().map(|v| v.collect()).unwrap_or_default())
 }
 
 /// Install a per-user `.desktop` file that makes this executable the handler

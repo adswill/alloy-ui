@@ -39,14 +39,24 @@ pub fn read_settings() -> SystemSettings {
     let mut animations: i32 = 1;
     // SAFETY: SPI_GETCLIENTAREAANIMATION writes one BOOL through pvParam.
     let ok = unsafe {
-        SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, (&mut animations as *mut i32).cast(), 0)
+        SystemParametersInfoW(
+            SPI_GETCLIENTAREAANIMATION,
+            0,
+            (&mut animations as *mut i32).cast(),
+            0,
+        )
     };
     // SAFETY: HIGHCONTRASTW is plain data; all-zero is a valid value.
     let mut hc: HIGHCONTRASTW = unsafe { std::mem::zeroed() };
     hc.cbSize = std::mem::size_of::<HIGHCONTRASTW>() as u32;
     // SAFETY: SPI_GETHIGHCONTRAST fills the HIGHCONTRASTW whose cbSize we set.
     let hc_ok = unsafe {
-        SystemParametersInfoW(SPI_GETHIGHCONTRAST, hc.cbSize, (&mut hc as *mut HIGHCONTRASTW).cast(), 0)
+        SystemParametersInfoW(
+            SPI_GETHIGHCONTRAST,
+            hc.cbSize,
+            (&mut hc as *mut HIGHCONTRASTW).cast(),
+            0,
+        )
     };
     SystemSettings {
         dark: super::windows::is_dark().unwrap_or(false),
@@ -164,17 +174,27 @@ fn image_from_dib(d: &[u8]) -> Option<clipboard::ClipImage> {
     let mut rgba = vec![0u8; w * h * 4];
     for row in 0..h {
         let src_row = if top_down { row } else { h - 1 - row };
-        let line = d.get(data_at + src_row * stride..data_at + src_row * stride + w * bpp as usize / 8)?;
+        let line =
+            d.get(data_at + src_row * stride..data_at + src_row * stride + w * bpp as usize / 8)?;
         for (x, px) in line.chunks_exact(bpp as usize / 8).enumerate() {
             let o = (row * w + x) * 4;
-            rgba[o..o + 4].copy_from_slice(&[px[2], px[1], px[0], if bpp == 32 { px[3] } else { 255 }]);
+            rgba[o..o + 4].copy_from_slice(&[
+                px[2],
+                px[1],
+                px[0],
+                if bpp == 32 { px[3] } else { 255 },
+            ]);
         }
     }
     // Many 32-bit DIBs leave alpha at 0; an all-transparent picture is never meant.
     if bpp == 32 && rgba.chunks_exact(4).all(|p| p[3] == 0) {
         rgba.chunks_exact_mut(4).for_each(|p| p[3] = 255);
     }
-    Some(clipboard::ClipImage { width: w as u32, height: h as u32, rgba })
+    Some(clipboard::ClipImage {
+        width: w as u32,
+        height: h as u32,
+        rgba,
+    })
 }
 
 /// Everything on the clipboard: text, HTML Format, PNG or DIB, a file drop.
@@ -209,7 +229,12 @@ pub fn rich_read() -> Option<ClipContent> {
             })
             .unwrap_or_default();
         CloseClipboard();
-        Some(ClipContent { text, html, image, files })
+        Some(ClipContent {
+            text,
+            html,
+            image,
+            files,
+        })
     }
 }
 
@@ -284,8 +309,8 @@ pub fn set_effect(window: &winit::window::Window, effect: WindowEffect) -> Effec
     let dark = i32::from(window.theme() == Some(winit::window::Theme::Dark));
     let backdrop: i32 = match effect {
         WindowEffect::None | WindowEffect::Transparent => 1, // DWMSBT_NONE
-        WindowEffect::Mica => 2,                              // DWMSBT_MAINWINDOW
-        WindowEffect::Acrylic | WindowEffect::Blur => 3,      // DWMSBT_TRANSIENTWINDOW
+        WindowEffect::Mica => 2,                             // DWMSBT_MAINWINDOW
+        WindowEffect::Acrylic | WindowEffect::Blur => 3,     // DWMSBT_TRANSIENTWINDOW
     };
     let m = if effect == WindowEffect::None { 0 } else { -1 };
     let margins = MARGINS {

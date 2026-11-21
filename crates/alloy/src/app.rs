@@ -10,9 +10,9 @@ use crate::{
 use alloy_ui_core::{
     Application, Command, Element, HostConfig, HostEvent, Subscription, WindowEffect,
 };
-use std::path::PathBuf;
 use alloy_ui_platform::WindowSettings;
 use alloy_ui_widgets::{Container, Root, Ui};
+use std::path::PathBuf;
 use std::{future::Future, hash::Hasher, time::Duration};
 
 /// A side effect returned from `update`. Most messages need none: implement `App::update` and return nothing.

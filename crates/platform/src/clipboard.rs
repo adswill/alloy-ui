@@ -380,10 +380,7 @@ mod tests {
         let s = cf_html("<b>hi</b> ü");
         assert_eq!(parse_cf_html(&s).as_deref(), Some("<b>hi</b> ü"));
         // StartHTML points at the start of the document.
-        let n: usize = s
-            .lines()
-            .find(|l| l.starts_with("StartHTML:"))
-            .unwrap()[10..]
+        let n: usize = s.lines().find(|l| l.starts_with("StartHTML:")).unwrap()[10..]
             .parse()
             .unwrap();
         assert!(s[n..].starts_with("<html>"));

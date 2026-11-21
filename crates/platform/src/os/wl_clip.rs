@@ -82,9 +82,9 @@ pub fn read_mime(mime: &str) -> Option<Vec<u8>> {
 /// The previous owner thread of ours, if any, is told `cancelled` by the
 /// compositor when we replace the selection, and exits by itself.
 pub fn write(text: &str) -> bool {
-    write_formats(crate::clipboard::to_formats(&crate::clipboard::ClipContent::text(
-        text,
-    )))
+    write_formats(crate::clipboard::to_formats(
+        &crate::clipboard::ClipContent::text(text),
+    ))
 }
 
 /// Take ownership offering every `(mime, bytes)` pair.

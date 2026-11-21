@@ -170,9 +170,9 @@ fn fetch(k: &Conn, target: Atom) -> Option<Vec<u8>> {
 /// Become the clipboard owner and serve `text` from a background thread.
 /// Returns false if X11 is unavailable or the value is too large to serve.
 pub fn write(text: &str) -> bool {
-    write_formats(crate::clipboard::to_formats(&crate::clipboard::ClipContent::text(
-        text,
-    )))
+    write_formats(crate::clipboard::to_formats(
+        &crate::clipboard::ClipContent::text(text),
+    ))
 }
 
 /// Become the clipboard owner and serve every `(target, bytes)` pair from a

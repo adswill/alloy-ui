@@ -47,10 +47,12 @@ pub fn copy_image_file(path: impl AsRef<Path>) -> bool {
     std::fs::read(path)
         .ok()
         .and_then(|b| alloy_ui_platform::clipboard::decode_png(&b))
-        .is_some_and(|i| write(&ClipContent {
-            image: Some(i),
-            ..ClipContent::default()
-        }))
+        .is_some_and(|i| {
+            write(&ClipContent {
+                image: Some(i),
+                ..ClipContent::default()
+            })
+        })
 }
 
 /// Put files on the clipboard the way a file manager's "Copy" does, so a paste there copies them.

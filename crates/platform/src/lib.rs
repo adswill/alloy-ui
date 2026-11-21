@@ -11,8 +11,8 @@
 
 pub mod access;
 pub mod clipboard;
-pub mod deeplink;
 pub mod convert;
+pub mod deeplink;
 pub mod dialog;
 pub mod fonts;
 pub mod instance;
@@ -82,9 +82,7 @@ pub trait Clipboard {
     fn write_rich(&mut self, content: &clipboard::ClipContent) -> Result<(), PlatformError> {
         match &content.text {
             Some(t) => self.write_text(t),
-            None => Err(PlatformError(
-                "this clipboard only supports text".into(),
-            )),
+            None => Err(PlatformError("this clipboard only supports text".into())),
         }
     }
 }

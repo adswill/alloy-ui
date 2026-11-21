@@ -509,7 +509,10 @@ impl Ui {
         }
     }
 
-    pub(crate) fn drag_state<R>(&self, f: impl FnOnce(&mut Option<crate::dnd::DragState>) -> R) -> R {
+    pub(crate) fn drag_state<R>(
+        &self,
+        f: impl FnOnce(&mut Option<crate::dnd::DragState>) -> R,
+    ) -> R {
         f(&mut self.0.borrow_mut().drag)
     }
     /// True while a drag started by [`Draggable`](crate::Draggable) is in progress

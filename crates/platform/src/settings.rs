@@ -91,7 +91,10 @@ mod tests {
 
     #[test]
     fn gnome() {
-        assert_eq!(parse_gnome_accent(Some("'purple'\n")), Some([0x91, 0x41, 0xac]));
+        assert_eq!(
+            parse_gnome_accent(Some("'purple'\n")),
+            Some([0x91, 0x41, 0xac])
+        );
         assert_eq!(parse_gnome_accent(Some("'nope'")), None);
         assert_eq!(parse_gnome_accent(None), None);
         assert_eq!(parse_gsettings_bool(Some("false\n")), Some(false));
