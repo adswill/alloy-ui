@@ -74,16 +74,74 @@ impl Params {
 /// are kept keyed by a hash and verified against the stored content.
 #[derive(Default)]
 struct ShapeCache {
-    extents: HashMap<u64, Entry<(f32, f32)>>,
-    glyphs: HashMap<u64, Entry<Arc<[PlacedGlyph]>>>,
+    extents: Generations<Entry<(f32, f32)>>,
+    glyphs: Generations<Entry<Arc<[PlacedGlyph]>>>,
+}
+
+/// Two-generation cache: lookups hit `young` then `old` (promoting on hit);
+/// when `young` fills up it becomes `old` and the previous `old` is dropped.
+/// A working set that fits in one generation is never evicted. The keys of
+/// the dropped generation are remembered; inserting one of them again means
+/// the working set is bigger than the cache (every pass over it would miss),
+/// so the generation size doubles, up to [`SHAPE_CACHE_MAX`].
+struct Generations<V> {
+    young: HashMap<u64, V>,
+    old: HashMap<u64, V>,
+    dropped: std::collections::HashSet<u64>,
+    cap: usize,
+    reinserted: usize,
+}
+
+impl<V> Default for Generations<V> {
+    fn default() -> Self {
+        Self {
+            young: HashMap::new(),
+            old: HashMap::new(),
+            dropped: Default::default(),
+            cap: SHAPE_CACHE_CAP,
+            reinserted: 0,
+        }
+    }
+}
+
+impl<V> Generations<V> {
+    fn get(&mut self, key: u64) -> Option<&V> {
+        if !self.young.contains_key(&key) {
+            let v = self.old.remove(&key)?;
+            self.push(key, v);
+        }
+        self.young.get(&key)
+    }
+    fn insert(&mut self, key: u64, v: V) {
+        if self.dropped.contains(&key) {
+            self.reinserted += 1;
+        }
+        self.push(key, v);
+    }
+    fn push(&mut self, key: u64, v: V) {
+        if self.young.len() >= self.cap {
+            if self.reinserted * 50 > self.cap {
+                self.cap = (self.cap * 2).min(SHAPE_CACHE_MAX);
+            }
+            self.reinserted = 0;
+            if self.young.len() >= self.cap {
+                self.dropped = self.old.keys().copied().collect();
+                self.old = std::mem::take(&mut self.young);
+            }
+        }
+        self.young.insert(key, v);
+    }
 }
 
 /// Content and parameters kept beside a cached value to rule out hash collisions.
 type Entry<V> = (Box<str>, Params, V);
 
-/// Entries kept per map before it is cleared (a crude bound on memory; a
-/// window rarely shows more distinct strings than this).
-const SHAPE_CACHE_CAP: usize = 4096;
+/// Entries per cache generation (see [`Generations`]); up to twice this many
+/// are kept, so a 10 000-row list re-lays out without re-shaping.
+const SHAPE_CACHE_CAP: usize = 16384;
+
+/// Upper bound the generation size may grow to for very large views.
+const SHAPE_CACHE_MAX: usize = 262_144;
 
 fn shape_key(content: &str, p: &Params) -> u64 {
     use std::hash::{Hash, Hasher};
@@ -195,7 +253,10 @@ impl TextSystem {
     pub fn new() -> Self {
         let mut fonts = FontSystem::new();
         for data in BUNDLED_FONTS {
-            fonts.db_mut().load_font_data(data.to_vec());
+            // Borrow the embedded bytes instead of copying 1.15 MB onto the heap.
+            fonts
+                .db_mut()
+                .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(data)));
         }
         // Plex leads; system fonts remain available as per-glyph fallback.
         fonts.db_mut().set_sans_serif_family("IBM Plex Sans");
@@ -250,7 +311,7 @@ impl TextSystem {
         }
         let params = Params::new(size, weight, family, line_height, max_width);
         let key = shape_key(content, &params);
-        if let Some((c, p, v)) = inner.shapes.extents.get(&key) {
+        if let Some((c, p, v)) = inner.shapes.extents.get(key) {
             if p == &params && &**c == content {
                 return *v;
             }
@@ -260,9 +321,6 @@ impl TextSystem {
         for run in buffer.layout_runs() {
             w = w.max(run.line_w);
             h = h.max(run.line_top + run.line_height);
-        }
-        if inner.shapes.extents.len() >= SHAPE_CACHE_CAP {
-            inner.shapes.extents.clear();
         }
         inner
             .shapes
@@ -297,7 +355,7 @@ impl TextSystem {
         }
         let params = Params::new(size_px, weight, family, line_height_px, max_width_px);
         let key = shape_key(content, &params);
-        let cached = match inner.shapes.glyphs.get(&key) {
+        let cached = match inner.shapes.glyphs.get(key) {
             Some((c, p, v)) if p == &params && &**c == content => Some(v.clone()),
             _ => None,
         };
@@ -328,9 +386,6 @@ impl TextSystem {
                     }
                 }
                 let v: Arc<[PlacedGlyph]> = v.into();
-                if inner.shapes.glyphs.len() >= SHAPE_CACHE_CAP {
-                    inner.shapes.glyphs.clear();
-                }
                 inner
                     .shapes
                     .glyphs
@@ -430,4 +485,45 @@ fn shaped(
     buffer.set_text(&mut inner.fonts, content, &attrs, Shaping::Advanced);
     buffer.shape_until_scroll(&mut inner.fonts, false);
     buffer
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    /// A cyclic working set larger than one generation must stop missing (almost)
+    /// once the generation size has grown to fit it (the old clear-all cache missed
+    /// on every lookup of such a loop).
+    #[test]
+    fn working_set_larger_than_a_generation_stops_missing() {
+        let mut c: Generations<u32> = Generations::default();
+        let n = SHAPE_CACHE_CAP as u64 + 100;
+        let mut misses_last_pass = 0;
+        for pass in 0..6 {
+            misses_last_pass = 0;
+            for k in 0..n {
+                if c.get(k).is_none() {
+                    misses_last_pass += 1;
+                    c.insert(k, 0);
+                }
+            }
+            if pass == 5 {
+                break;
+            }
+        }
+        // Near-fit leaves a handful of misses at the generation seam, not a miss per lookup.
+        assert!(
+            misses_last_pass < n as usize / 20,
+            "{misses_last_pass} misses"
+        );
+    }
+
+    #[test]
+    fn small_working_set_hits_and_memory_is_bounded() {
+        let mut c: Generations<u32> = Generations::default();
+        for k in 0..(SHAPE_CACHE_CAP as u64 * 10) {
+            c.insert(k, 1);
+        }
+        assert!(c.young.len() + c.old.len() <= SHAPE_CACHE_CAP * 2);
+    }
 }

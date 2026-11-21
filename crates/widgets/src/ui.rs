@@ -123,6 +123,8 @@ struct Inner {
     clipboard: Rc<dyn Clipboard>,
     focused: Option<u64>,
     order: Vec<u64>,
+    /// Same ids as `order`, for O(1) duplicate checks while registering.
+    order_seen: std::collections::HashSet<u64>,
     cursor: Point,
     pressed: Option<(i32, i32)>,
     scroll: HashMap<u64, f32>,
@@ -182,6 +184,7 @@ impl Ui {
             clipboard: Rc::new(MemoryClipboard::default()),
             focused: None,
             order: Vec::new(),
+            order_seen: Default::default(),
             // Off-screen until the first pointer event, so nothing starts hovered.
             cursor: Point::new(-1.0e6, -1.0e6),
             pressed: None,
@@ -290,13 +293,14 @@ impl Ui {
     /// Focusable widgets register themselves while drawing, in tab order.
     pub(crate) fn register(&self, id: u64) {
         let mut s = self.0.borrow_mut();
-        if !s.order.contains(&id) {
+        if s.order_seen.insert(id) {
             s.order.push(id);
         }
     }
     pub(crate) fn begin_frame(&self) {
         let mut s = self.0.borrow_mut();
         s.order.clear();
+        s.order_seen.clear();
         s.overlay.clear();
         s.regions.clear();
         s.a11y.clear();
