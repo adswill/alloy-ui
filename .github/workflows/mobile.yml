@@ -83,6 +83,7 @@ jobs:
           xcrun simctl bootstatus "$dev" -b
           app=$(ls -d target/alloy-bundle/aarch64-apple-ios-sim/ios/build/Build/Products/Debug-iphonesimulator/*.app | head -1)
           xcrun simctl install "$dev" "$app"
+          echo "$dev" > smoke-out/device.txt
           xcrun simctl launch --console-pty "$dev" dev.alloyui.counter > smoke-out/launch.txt 2>&1 &
           sleep 15
           xcrun simctl io "$dev" screenshot smoke-out/ios.png
@@ -96,6 +97,14 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
           [ -s smoke-out/alive.txt ] || { echo "app is not running"; exit 1; }
           [ "$size" -gt 12000 ] || { echo "screenshot looks blank"; exit 1; }
+      - name: Why did the app stop? (crash reports and the simulator log)
+        if: failure()
+        run: |
+          dev=$(cat smoke-out/device.txt 2>/dev/null || true)
+          ls -la ~/Library/Logs/DiagnosticReports 2>/dev/null | tail -20
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*ounter* 2>/dev/null | head -2); do echo "=== $f"; head -60 "$f"; done
+          [ -n "$dev" ] && xcrun simctl spawn "$dev" log show --last 3m --style compact --predicate 'process CONTAINS[c] "counter" OR eventMessage CONTAINS "alloyui"' 2>&1 | tail -60 | tee smoke-out/simlog.txt
+          true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

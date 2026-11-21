@@ -26,7 +26,14 @@ fn newer_key_cancels_older_fetch() {
     let mut h = Harness::new(app, 400.0, 300.0);
     h.settle().expect_containing("found"); // the empty first key
     let (s0, f0) = (STARTED.load(SeqCst), FINISHED.load(SeqCst));
-    h.click("a").click("ab").wait_for("found ab");
+    h.click("a");
+    // The fetch for "a" runs on a worker thread; let it really start before "ab" cancels it,
+    // or a slow thread start (seen on Windows runners) means it never ran at all.
+    let t = std::time::Instant::now();
+    while STARTED.load(SeqCst) == s0 && t.elapsed() < std::time::Duration::from_secs(5) {
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    h.click("ab").wait_for("found ab");
     h.expect_no("found a");
     // Two keys started a fetch each, but only the last one ran to completion.
     assert_eq!(STARTED.load(SeqCst) - s0, 2);
