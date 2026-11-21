@@ -7,9 +7,12 @@ use crate::{
     keys::{self, Hotkey, Meta, Snap},
     view::{Node, View},
 };
-use alloy_ui_core::{Application, Command, Element, Subscription};
+use alloy_ui_core::{
+    Application, Command, Element, HostConfig, HostEvent, Subscription, WindowEffect,
+};
 use alloy_ui_platform::WindowSettings;
 use alloy_ui_widgets::{Container, Root, Ui};
+use std::path::PathBuf;
 use std::{future::Future, hash::Hasher, time::Duration};
 
 /// A side effect returned from `update`. Most messages need none: implement `App::update` and return nothing.
@@ -137,6 +140,57 @@ pub trait App: Sized + 'static {
         None
     }
 
+    /// Files dropped on the window from another app (a file manager, the desktop).
+    /// While they hover, [`files_hovering`](crate::files_hovering) is true.
+    fn on_drop(&self, _files: Vec<PathBuf>) -> Option<Self::Msg> {
+        None
+    }
+
+    /// Files started (`true`) or stopped (`false`) hovering over the window.
+    /// Rarely needed: [`files_hovering`](crate::files_hovering) reads the same fact in `view`.
+    fn on_drag_over(&self, _over: bool) -> Option<Self::Msg> {
+        None
+    }
+
+    /// A deep link was opened: the OS passed a `myapp://...` URL for a scheme the app
+    /// registered ([`url_schemes`](Self::url_schemes)), at launch or, for a
+    /// [`single_instance`](Self::single_instance) app, from a second launch.
+    fn on_open_url(&self, _url: String) -> Option<Self::Msg> {
+        None
+    }
+
+    /// The OS asked the app to open these files (file association, "Open with", or a second
+    /// launch of a [`single_instance`](Self::single_instance) app).
+    fn on_open_files(&self, _files: Vec<PathBuf>) -> Option<Self::Msg> {
+        None
+    }
+
+    /// `Some("com.example.app")` makes the app a single instance: launching it again hands
+    /// its arguments to the running copy (which comes to the front and gets
+    /// [`on_open_url`](Self::on_open_url) / [`on_open_files`](Self::on_open_files)) and exits.
+    fn single_instance(&self) -> Option<String> {
+        None
+    }
+
+    /// URL schemes this app opens (`vec!["myapp".into()]` for `myapp://...`). Registered for the
+    /// current user at start-up on Linux and Windows; on macOS they come from the bundle
+    /// (`url-schemes` in `[package.metadata.alloy]`, written by `alloy bundle`).
+    fn url_schemes(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// A see-through look for the window: Mica, acrylic, blur or plain transparency. The OS
+    /// decides what it can do; an effect it cannot provide leaves the window opaque.
+    fn window_effect(&self) -> WindowEffect {
+        WindowEffect::None
+    }
+
+    /// `true` follows the user's system accent colour (macOS, Windows, GNOME) instead of the
+    /// app's own. Reduced motion is always followed.
+    fn system_accent(&self) -> bool {
+        false
+    }
+
     /// Open an 800x600 window and run until it closes.
     fn run(self, title: &str) {
         self.run_sized(title, 800.0, 600.0);
@@ -145,7 +199,7 @@ pub trait App: Sized + 'static {
     /// Open a window of the given logical size and run until it closes.
     ///
     /// `--headless [file.png]` renders one frame to a PNG instead (after
-    /// pressing every `--click <text>`, `--rclick <text>`, `--hover <text>`, `--key <name>`, `--chord <keys>`, `--type <text>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
+    /// pressing every `--click <text>`, `--rclick <text>`, `--hover <text>`, `--key <name>`, `--chord <keys>`, `--type <text>`, `--drag <From>To>`, `--drop <file>`, `--open <url>` and `--advance <ms>` in order; transitions are settled unless `--advance` is given), for CI and docs.
     fn run_sized(self, title: &str, width: f32, height: f32) {
         let args: Vec<String> = std::env::args().skip(1).collect();
         if let Some(at) = args.iter().position(|a| a == "--headless") {
@@ -161,6 +215,16 @@ pub trait App: Sized + 'static {
                     "--hover" => drop(h.hover(&pair[1])),
                     "--key" => drop(h.key(&pair[1])),
                     "--advance" => drop(h.advance(16).advance(pair[1].parse().unwrap_or(0))),
+                    "--drag-hold" => match pair[1].split_once('>') {
+                        Some((from, to)) => drop(h.drag_hold(from.trim(), to.trim())),
+                        None => eprintln!("--drag-hold wants `From>To`"),
+                    },
+                    "--drag" => match pair[1].split_once('>') {
+                        Some((from, to)) => drop(h.drag(from.trim(), to.trim())),
+                        None => eprintln!("--drag wants `From>To`"),
+                    },
+                    "--drop" => drop(h.drop_files([&pair[1]])),
+                    "--open" => drop(h.open_url(&pair[1])),
                     _ => {}
                 }
             }
@@ -180,6 +244,33 @@ pub trait App: Sized + 'static {
             println!("wrote {path}");
             return;
         }
+        // Single instance first: a second launch must not open a window.
+        let _instance = match self.single_instance() {
+            Some(id) if std::env::var_os("ALLOY_NO_SINGLE_INSTANCE").is_none() => {
+                match alloy_ui_platform::instance::single_instance(&id) {
+                    alloy_ui_platform::instance::Single::Forwarded => return,
+                    alloy_ui_platform::instance::Single::Primary(guard) => Some(guard),
+                }
+            }
+            _ => None,
+        };
+        let schemes = self.url_schemes();
+        if !schemes.is_empty() {
+            // Registering can spawn helper tools: keep it off the start-up path.
+            let id = self
+                .single_instance()
+                .unwrap_or_else(|| title.to_lowercase().replace(' ', "-"));
+            let _ = std::thread::Builder::new()
+                .name("alloy-schemes".into())
+                .spawn(move || {
+                    for scheme in schemes {
+                        if let Err(e) = alloy_ui_platform::deeplink::register_scheme(&id, &scheme) {
+                            log::debug!("url scheme {scheme}: {e}");
+                        }
+                    }
+                });
+        }
+        alloy_ui_platform::request_window_effect(self.window_effect());
         let settings = WindowSettings {
             title: title.into(),
             size: alloy_ui_core::Size::new(width, height),
@@ -249,6 +340,11 @@ impl<A: App> Application for Shell<A> {
         cx::enter(&ui, || {
             let page: Node<A::Msg> = self.app.view_window(id.0).into();
             let bg = cx::palette().background;
+            let bg = if cx::page_alpha() < 1.0 {
+                bg.with_alpha(cx::page_alpha())
+            } else {
+                bg
+            };
             let page = Container::new(page.0)
                 .background(bg)
                 .width(alloy_ui_core::style::Length::Fill(1))
@@ -279,6 +375,22 @@ impl<A: App> Application for Shell<A> {
     fn subscription(&self) -> Vec<Subscription<A::Msg>> {
         self.app.subscriptions().into_iter().map(|s| s.0).collect()
     }
+
+    fn host_event(&self, event: HostEvent) -> Option<A::Msg> {
+        match event {
+            HostEvent::FilesDropped(f) => self.app.on_drop(f),
+            HostEvent::FilesHovering(b) => self.app.on_drag_over(b),
+            HostEvent::OpenUrl(u) => self.app.on_open_url(u),
+            HostEvent::OpenFiles(f) => self.app.on_open_files(f),
+        }
+    }
+
+    fn host_config(&self) -> HostConfig {
+        HostConfig {
+            effect: self.app.window_effect(),
+            system_accent: self.app.system_accent(),
+        }
+    }
 }
 
 /// Swap the current state for the latest snapshot on `from`, keeping the old one on `to`.
@@ -290,6 +402,34 @@ fn step<A: App>(app: &mut A, from: &mut Vec<Snap>, to: &mut Vec<Snap>) {
 }
 
 type Saver<S> = Box<dyn Fn(&S)>;
+
+type FilesAct<S> = std::sync::Arc<dyn Fn(&mut S, Vec<PathBuf>) + Send + Sync>;
+type UrlAct<S> = std::sync::Arc<dyn Fn(&mut S, String) + Send + Sync>;
+
+/// How a [`Sketch`] reacts to the host.
+struct Hooks<S> {
+    drop: Option<FilesAct<S>>,
+    open_files: Option<FilesAct<S>>,
+    open_url: Option<UrlAct<S>>,
+    instance: Option<String>,
+    schemes: Vec<String>,
+    effect: WindowEffect,
+    system_accent: bool,
+}
+
+impl<S> Default for Hooks<S> {
+    fn default() -> Self {
+        Hooks {
+            drop: None,
+            open_files: None,
+            open_url: None,
+            instance: None,
+            schemes: Vec::new(),
+            effect: WindowEffect::None,
+            system_accent: false,
+        }
+    }
+}
 
 type Cond<S> = Box<dyn Fn(&S) -> bool>;
 
@@ -308,6 +448,7 @@ pub struct Sketch<S: 'static, V> {
     save: Option<Saver<S>>,
     keys: Vec<(String, Option<String>, Act<S>)>,
     undo: Option<Undo<S>>,
+    hooks: Hooks<S>,
 }
 
 struct Undo<S> {
@@ -378,6 +519,56 @@ impl<S: 'static, V> Sketch<S, V> {
         self
     }
 
+    /// Run `f` with the files dropped on the window from another app:
+    /// `.on_drop(|s, files| s.import(files))`. Show a hint with [`files_hovering`](crate::files_hovering).
+    pub fn on_drop(mut self, f: impl Fn(&mut S, Vec<PathBuf>) + Send + Sync + 'static) -> Self {
+        self.hooks.drop = Some(std::sync::Arc::new(f));
+        self
+    }
+
+    /// Run `f` with a deep link (`myapp://...`) the OS opened in this app. Needs
+    /// [`url_scheme`](Self::url_scheme); pair with [`single_instance`](Self::single_instance)
+    /// so a link opened while the app runs reaches the running copy.
+    pub fn on_open_url(mut self, f: impl Fn(&mut S, String) + Send + Sync + 'static) -> Self {
+        self.hooks.open_url = Some(std::sync::Arc::new(f));
+        self
+    }
+
+    /// Run `f` with files the OS asked the app to open (file association, "Open with").
+    pub fn on_open_files(
+        mut self,
+        f: impl Fn(&mut S, Vec<PathBuf>) + Send + Sync + 'static,
+    ) -> Self {
+        self.hooks.open_files = Some(std::sync::Arc::new(f));
+        self
+    }
+
+    /// Only one copy runs: launching again hands the arguments to it and exits.
+    /// `id` is a reverse-DNS name such as `"com.example.notes"`.
+    pub fn single_instance(mut self, id: &str) -> Self {
+        self.hooks.instance = Some(id.into());
+        self
+    }
+
+    /// Handle `scheme://...` links (registered for the user at start-up on Linux and Windows;
+    /// on macOS list it under `url-schemes` in `[package.metadata.alloy]`).
+    pub fn url_scheme(mut self, scheme: &str) -> Self {
+        self.hooks.schemes.push(scheme.into());
+        self
+    }
+
+    /// A see-through window: `.window_effect(WindowEffect::Mica)`.
+    pub fn window_effect(mut self, effect: WindowEffect) -> Self {
+        self.hooks.effect = effect;
+        self
+    }
+
+    /// Follow the user's system accent colour.
+    pub fn system_accent(mut self) -> Self {
+        self.hooks.system_accent = true;
+        self
+    }
+
     /// Run `f` on the state every `period`, for as long as the app runs.
     pub fn tick(mut self, period: Duration, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         self.ticks.push(Tick {
@@ -426,6 +617,7 @@ where
         save: None,
         keys: Vec::new(),
         undo: None,
+        hooks: Hooks::default(),
     }
 }
 
@@ -476,6 +668,37 @@ where
 
     fn meta(&self, what: Meta) -> Option<Act<S>> {
         self.undo.as_ref().map(|_| keys::meta_act(what))
+    }
+
+    fn on_drop(&self, files: Vec<PathBuf>) -> Option<Act<S>> {
+        let f = self.hooks.drop.clone()?;
+        Some(Act::new(move |s| f(s, files.clone())))
+    }
+
+    fn on_open_files(&self, files: Vec<PathBuf>) -> Option<Act<S>> {
+        let f = self.hooks.open_files.clone()?;
+        Some(Act::new(move |s| f(s, files.clone())))
+    }
+
+    fn on_open_url(&self, url: String) -> Option<Act<S>> {
+        let f = self.hooks.open_url.clone()?;
+        Some(Act::new(move |s| f(s, url.clone())))
+    }
+
+    fn single_instance(&self) -> Option<String> {
+        self.hooks.instance.clone()
+    }
+
+    fn url_schemes(&self) -> Vec<String> {
+        self.hooks.schemes.clone()
+    }
+
+    fn window_effect(&self) -> WindowEffect {
+        self.hooks.effect
+    }
+
+    fn system_accent(&self) -> bool {
+        self.hooks.system_accent
     }
 
     fn subscriptions(&self) -> Vec<Sub<Act<S>>> {
