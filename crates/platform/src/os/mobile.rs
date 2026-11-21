@@ -2,7 +2,10 @@
 //! bar or tray. Those report an honest error so apps can fall back to
 //! in-window UI (sheets, tab bars), which is the mobile convention anyway.
 
-use crate::{menu::Menu, tray::TraySettings, PlatformError};
+use crate::{
+    clipboard::ClipContent, dialog::FileDialogOptions, menu::Menu, notify::Notification,
+    settings::SystemSettings, shortcut::Shortcut, tray::TraySettings, EffectOutcome, PlatformError,
+};
 use std::path::PathBuf;
 
 fn unsupported(what: &str) -> PlatformError {
@@ -47,3 +50,38 @@ pub fn set_tray(_w: &winit::window::Window, _t: &TraySettings) -> Result<(), Pla
     Err(unsupported("a tray icon"))
 }
 pub fn clear_tray() {}
+
+pub fn file_dialog(_o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError> {
+    Err(unsupported("the file picker"))
+}
+pub fn notify(_n: &Notification) -> Result<(), PlatformError> {
+    Err(unsupported("native notifications"))
+}
+pub fn register_hotkey(_keys: &str, _sc: &Shortcut) -> Result<(), PlatformError> {
+    Err(unsupported("global hotkeys"))
+}
+pub fn unregister_hotkeys() {}
+
+/// What desktop-only features (`os::ext`) do on a phone: nothing, honestly reported.
+pub mod ext {
+    use super::*;
+
+    pub fn read_settings() -> SystemSettings {
+        SystemSettings::default()
+    }
+    pub fn register_scheme(_app_id: &str, _scheme: &str, _exe: &str) -> Result<(), PlatformError> {
+        Err(unsupported("registering a URL scheme at run time"))
+    }
+    pub fn set_effect(
+        _w: &winit::window::Window,
+        _e: alloy_ui_core::WindowEffect,
+    ) -> EffectOutcome {
+        EffectOutcome::Unsupported
+    }
+    pub fn rich_read() -> Option<ClipContent> {
+        None
+    }
+    pub fn rich_write(_c: &ClipContent) -> bool {
+        false
+    }
+}
