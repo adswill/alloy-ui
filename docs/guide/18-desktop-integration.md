@@ -169,3 +169,9 @@ darkens while pressed by itself, and the label picks white or near-black for con
 Any box takes a hover colour too, so a row or card can react without being a button:
 `row![avatar("Ada"), text("Ada Lovelace")].pad(10.0).hover_bg(accent.with_alpha(0.12))`. On a box
 with no `.bg(..)` the colour fades in over what is behind it.
+
+## Type-to-filter choice: `combobox`
+
+`combobox(["Apple", "Banana", "Blueberry"], &s.fruit).hint("Fruit").act(|s, v| s.fruit = v)` is a
+text field that lists matching options as you type (case-insensitive, anywhere in the text, six at
+a time by default) and sets the value when one is clicked.
