@@ -199,7 +199,7 @@ fn settings() -> Result<String, String> {
             "/t",
             "REG_DWORD",
             "/d",
-            "4290537472",
+            "0xFFB86800",
             "/f",
         ]) {
             return Err("cannot write the accent registry value".into());
