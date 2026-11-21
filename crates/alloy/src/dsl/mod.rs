@@ -367,6 +367,21 @@ pub fn scroll<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
     )
 }
 
+/// [`scroll`] that also scrolls by dragging the content, like a touch screen: it follows the
+/// pointer, stretches past the ends with resistance and keeps coasting when let go. Buttons and
+/// other controls inside still take their own presses.
+#[track_caller]
+pub fn scroll_touch<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
+    let id = auto_id(11);
+    Node(
+        w::Scrollable::new(&cx::ui(), id, child.into().0)
+            .width(Length::Fill(1))
+            .height(Length::Fill(1))
+            .touch_drag()
+            .into_element(),
+    )
+}
+
 /// Flexible empty space inside a row: pushes siblings apart (use [`vspace`] in a column).
 pub fn space<M: 'static>() -> Node<M> {
     Node(w::Space::fill_w().into_element())

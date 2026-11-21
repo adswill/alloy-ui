@@ -28,6 +28,34 @@ pub mod theme;
 pub mod touch;
 pub mod tray;
 
+/// Hooks for the runtime smoke tests (`tests/desktop_smoke.rs`): they read the OS's live
+/// menu and tray state back and click items the way a user would. Not part of the public API.
+#[doc(hidden)]
+pub mod testing {
+    /// Titles of the top-level menus the OS holds for the app (macOS and Windows; empty on
+    /// Linux, where the menu bar lives in another process).
+    pub fn menu_outline() -> Vec<String> {
+        crate::os::menu_outline()
+    }
+    /// Click menu-bar item `id`; the app then receives `PlatformEvent::MenuAction(id)`.
+    pub fn activate_menu_item(id: &str) -> bool {
+        crate::os::activate_menu_item(id)
+    }
+    /// True when the tray icon exists in the OS (macOS and Windows).
+    pub fn tray_visible() -> bool {
+        crate::os::tray_visible()
+    }
+    /// Click tray-menu item `id`; the app then receives `PlatformEvent::MenuAction(id)`.
+    pub fn activate_tray_item(id: &str) -> bool {
+        crate::os::activate_tray_item(id)
+    }
+    /// Build the real macOS file panel for `o` without showing it and describe it.
+    #[cfg(target_os = "macos")]
+    pub fn dialog_panel_summary(o: &crate::dialog::FileDialogOptions) -> Option<String> {
+        crate::os::dialog_panel_summary(o)
+    }
+}
+
 /// Android entry points (`android_main` hands its `AndroidApp` to [`android::init`]).
 #[cfg(target_os = "android")]
 pub mod android {

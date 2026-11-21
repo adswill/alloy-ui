@@ -103,11 +103,15 @@ pub fn notify(n: &Notification) -> Result<(), PlatformError> {
 }
 
 pub fn register_hotkey(keys: &str, sc: &Shortcut) -> Result<(), PlatformError> {
+    if wayland() {
+        return super::wl_hotkey::register(keys, sc);
+    }
     super::x11_hotkey::register(keys, sc)
 }
 
 pub fn unregister_hotkeys() {
     super::x11_hotkey::release_all();
+    super::wl_hotkey::release_all();
 }
 
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {

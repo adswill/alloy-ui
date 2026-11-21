@@ -28,11 +28,39 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Linux system deps
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1 libasound2-dev ffmpeg
       - run: cargo fmt --all -- --check
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace --no-fail-fast
+      - name: Full icon packs
+        run: cargo test -p alloy-ui --features icons-full --test icons_full
+  desktop-runtime:
+    # Runs the desktop and system integration against the real OS: a real window, menu bar, tray,
+    # notifications, file dialogs (desktop_smoke), and clipboard, accent and reduced-motion
+    # settings, URL schemes, single-instance hand-off, global hotkeys, window effects
+    # (system_runtime). Always all three OSes. Linux runs under Xvfb with a session bus.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev xvfb xdotool xclip dbus-x11
+      - name: Platform tests on Xvfb with a session bus (smoke, X11 hotkeys, rich clipboard, fake GlobalShortcuts portal)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a dbus-run-session -- cargo test -p alloy-ui-platform -- --nocapture
+      - name: Runtime checks (real OS services)
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cargo test -p alloy-ui-platform --test desktop_smoke -- --nocapture
+          cargo test -p alloy-ui-platform --test system_runtime -- --nocapture
   mobile:
     # Cross-compile checks only: nothing runs on a device. Catches breakage of the
     # Android and iOS code paths on every PR (Ubuntu is enough for both targets).
@@ -67,3 +95,36 @@ jobs:
       - name: Known bugs (reported, non-blocking)
         continue-on-error: true
         run: cargo test -p alloy-ui-text-conformance --release --no-fail-fast -- --ignored
+  vscode:
+    # The VS Code extension: grammar, snippets (compiled against the real crate), the extension
+    # wiring and the real `alloy lsp` server over JSON-RPC. The packaged .vsix is uploaded as an
+    # artifact on every run; it is never published to the Marketplace from CI.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps (the snippet check builds alloy-ui)
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libwayland-dev
+      - run: cargo build -p alloy-ui-cli --bin alloy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: editors/vscode/package-lock.json
+      - run: npm ci
+        working-directory: editors/vscode
+      - name: Test (grammar, extension, language server, snippets)
+        run: npm test
+        working-directory: editors/vscode
+        env:
+          ALLOY_BIN: ${{ github.workspace }}/target/debug/alloy
+          CI: "true"
+      - name: Package the .vsix
+        run: npx vsce package --no-yarn --out alloy-vscode.vsix
+        working-directory: editors/vscode
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alloy-vscode-vsix
+          path: editors/vscode/alloy-vscode.vsix
+          if-no-files-found: error

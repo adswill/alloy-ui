@@ -4,7 +4,10 @@ A plugin is a normal Rust crate that adds widgets (and optionally translations) 
 There is no dynamic loading, no ABI, no manifest: the crate is compiled into the app, so it is
 type-checked against `alloy-ui`, costs nothing when it is not used, and works on every OS Alloy
 does. The worked example is [`examples/plugin-rating`](../examples/plugin-rating), a star
-rating widget with tests, about 230 lines.
+rating widget (a leaf widget with its own input handling), and
+[`examples/plugin-callout`](../examples/plugin-callout), a tinted note box around any content
+(a *container* widget: `children`, `arrange`, `ext::dispatch`, `ext::draw_children`). Both have
+tests and are about 200 lines.
 
 ## The shape of a plugin crate
 
@@ -32,7 +35,9 @@ alloy-ui = { version = "0.0.1", default-features = false }
    alloy_ui::plugin::install(&RatingPlugin);
    ```
 
-   `alloy_ui::plugin::installed()` lists `(name, version)` for an About box or bug report.
+   `alloy_ui::plugin::installed()` lists `(name, version)` for an About box or bug report;
+   `plugin::install_all(&[&A, &B])` installs several, and `plugin::is_installed("name")` lets
+   one plugin check for another. Give the plugin a `description()` for plugin lists.
 
 ## What `alloy_ui::ext` gives a widget
 
@@ -48,7 +53,7 @@ functions (see the rustdoc for each):
 | Screen-reader description | `ext::describe(ui, Role::Slider, name, &bounds, \|n\| ..)` |
 | Skip drawing when off-screen | `ext::culled(ui, &rect)` |
 | Colour maths on theme colours | `ext::mix`, `ext::over` |
-| Containers | `ext::draw_children`, `ext::dispatch`, `widgets::arrange_widget` |
+| Containers | `ext::preferred` (in `measure`), `ext::arrange_widget` (in `arrange`), `ext::dispatch`, `ext::draw_children` |
 | The app's `Ui`, theme, a stable id | `ext::ui()`, `ext::theme()`, `ext::auto_id(salt)` |
 
 Always read colours, radii and spacing from `ext::theme()` / `ui.theme()` rather than

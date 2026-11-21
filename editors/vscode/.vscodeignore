@@ -1,4 +1,5 @@
 test/**
-node_modules/**
 .vscode/**
 **/*.map
+.gitignore
+package-lock.json

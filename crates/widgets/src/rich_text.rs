@@ -87,7 +87,7 @@ pub enum BlockKind {
     /// A paragraph.
     #[default]
     Paragraph,
-    /// A heading, level 1 to 3.
+    /// A heading, level 1 to 6.
     Heading(u8),
     /// A bullet list item.
     Bullet,
@@ -95,6 +95,11 @@ pub enum BlockKind {
     Numbered,
     /// A block quote.
     Quote,
+    /// One line of a code block. Consecutive code blocks are one fenced block in Markdown;
+    /// the text is monospace and never inline-parsed.
+    Code,
+    /// An image. The runs hold its alt text and [`Block::src`] says where it comes from.
+    Image,
 }
 
 /// A paragraph, heading, list item or quote.
@@ -104,6 +109,8 @@ pub struct Block {
     pub kind: BlockKind,
     /// Its text.
     pub runs: Vec<Run>,
+    /// For an [`BlockKind::Image`], the source (a path or key the app resolves).
+    pub src: Option<String>,
 }
 
 impl Block {
@@ -140,6 +147,14 @@ impl Default for RichText {
 /// Where a flat offset sits: block index and character offset in that block.
 type At = (usize, usize);
 
+/// `![alt](src)` filling the whole line.
+fn parse_image(t: &str) -> Option<(String, String)> {
+    let r = t.strip_prefix("![")?;
+    let (alt, rest) = r.split_once("](")?;
+    let url = rest.strip_suffix(')')?;
+    (!url.is_empty() && !url.contains(')')).then(|| (alt.to_string(), url.to_string()))
+}
+
 fn split_chars(s: &str, n: usize) -> (&str, &str) {
     let i = s.char_indices().nth(n).map_or(s.len(), |x| x.0);
     s.split_at(i)
@@ -150,21 +165,48 @@ impl RichText {
     pub fn new() -> Self {
         Self::default()
     }
-    /// Parse a small Markdown subset: `#`..`###` headings, `-`/`*` bullets, `1.` numbered
-    /// items, `>` quotes, `**bold**`, `*italic*`, `` `code` `` and `[text](url)`.
+    /// Parse a small Markdown subset: `#`..`######` headings, `-`/`*` bullets, `1.` numbered
+    /// items, `>` quotes, fenced code blocks, `![alt](src)` images, `**bold**`, `*italic*`,
+    /// `` `code` `` and `[text](url)`.
     pub fn from_markdown(src: &str) -> Self {
         let mut blocks = Vec::new();
+        let mut fence = false;
         for line in src.lines() {
+            if line.trim_start().starts_with("```") {
+                fence = !fence;
+                continue;
+            }
+            if fence {
+                blocks.push(Block {
+                    kind: BlockKind::Code,
+                    runs: if line.is_empty() {
+                        vec![]
+                    } else {
+                        vec![Run::plain(line)]
+                    },
+                    src: None,
+                });
+                continue;
+            }
             let t = line.trim_end();
             if t.is_empty() {
                 continue;
             }
-            let (kind, rest) = if let Some(r) = t.strip_prefix("### ") {
-                (BlockKind::Heading(3), r)
-            } else if let Some(r) = t.strip_prefix("## ") {
-                (BlockKind::Heading(2), r)
-            } else if let Some(r) = t.strip_prefix("# ") {
-                (BlockKind::Heading(1), r)
+            if let Some((alt, url)) = parse_image(t) {
+                blocks.push(Block {
+                    kind: BlockKind::Image,
+                    runs: if alt.is_empty() {
+                        vec![]
+                    } else {
+                        vec![Run::plain(alt)]
+                    },
+                    src: Some(url),
+                });
+                continue;
+            }
+            let hashes = t.chars().take_while(|&c| c == '#').count();
+            let (kind, rest) = if (1..=6).contains(&hashes) && t[hashes..].starts_with(' ') {
+                (BlockKind::Heading(hashes as u8), &t[hashes + 1..])
             } else if let Some(r) = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")) {
                 (BlockKind::Bullet, r)
             } else if let Some(r) = t.strip_prefix("> ") {
@@ -181,6 +223,7 @@ impl RichText {
             blocks.push(Block {
                 kind,
                 runs: parse_inline(rest),
+                src: None,
             });
         }
         if blocks.is_empty() {
@@ -193,24 +236,48 @@ impl RichText {
         let mut out = String::new();
         let mut n = 0;
         let mut prev: Option<BlockKind> = None;
-        for b in &self.blocks {
+        for (i, b) in self.blocks.iter().enumerate() {
             n = if b.kind == BlockKind::Numbered {
                 n + 1
             } else {
                 0
             };
+            let next_code = self
+                .blocks
+                .get(i + 1)
+                .is_some_and(|x| x.kind == BlockKind::Code);
             if let Some(p) = prev {
-                // Consecutive items of one list stay on adjacent lines.
-                let tight = p == b.kind && matches!(p, BlockKind::Bullet | BlockKind::Numbered);
+                // Consecutive items of one list or code block stay on adjacent lines.
+                let tight = p == b.kind
+                    && matches!(p, BlockKind::Bullet | BlockKind::Numbered | BlockKind::Code);
                 out.push_str(if tight { "\n" } else { "\n\n" });
             }
+            if b.kind == BlockKind::Code {
+                if prev != Some(BlockKind::Code) {
+                    out.push_str("```\n");
+                }
+                out.push_str(&b.text());
+                if !next_code {
+                    out.push_str("\n```");
+                }
+                prev = Some(b.kind);
+                continue;
+            }
             prev = Some(b.kind);
+            if b.kind == BlockKind::Image {
+                out.push_str(&format!(
+                    "![{}]({})",
+                    b.text(),
+                    b.src.as_deref().unwrap_or("")
+                ));
+                continue;
+            }
             out.push_str(&match b.kind {
-                BlockKind::Paragraph => String::new(),
-                BlockKind::Heading(l) => format!("{} ", "#".repeat(l.clamp(1, 3) as usize)),
+                BlockKind::Heading(l) => format!("{} ", "#".repeat(l.clamp(1, 6) as usize)),
                 BlockKind::Bullet => "- ".into(),
                 BlockKind::Numbered => format!("{n}. "),
                 BlockKind::Quote => "> ".into(),
+                _ => String::new(),
             });
             for r in &b.runs {
                 let mut t = r.text.clone();
@@ -365,10 +432,17 @@ impl RichText {
                 let (l, r) = Self::split_runs(&self.blocks[bi].runs, off);
                 self.blocks[bi].runs = l;
                 let kind = match self.blocks[bi].kind {
-                    BlockKind::Heading(_) => BlockKind::Paragraph,
+                    BlockKind::Heading(_) | BlockKind::Image => BlockKind::Paragraph,
                     k => k,
                 };
-                self.blocks.insert(bi + 1, Block { kind, runs: r });
+                self.blocks.insert(
+                    bi + 1,
+                    Block {
+                        kind,
+                        runs: r,
+                        src: None,
+                    },
+                );
                 bi += 1;
                 off = 0;
             }
@@ -461,6 +535,32 @@ impl RichText {
         }
         None
     }
+    /// Insert an image with `alt` text and `src` as its own block after the block holding flat
+    /// position `at` (replacing that block if it is an empty paragraph). Returns the flat
+    /// position at the end of the image's alt text.
+    pub fn insert_image(&mut self, at: usize, alt: &str, src: &str) -> usize {
+        let (bi, _) = self.at(at);
+        let img = Block {
+            kind: BlockKind::Image,
+            runs: if alt.is_empty() {
+                vec![]
+            } else {
+                vec![Run::plain(alt)]
+            },
+            src: Some(src.into()),
+        };
+        let idx = if self.blocks[bi].kind == BlockKind::Paragraph && self.blocks[bi].is_empty() {
+            self.blocks[bi] = img;
+            bi
+        } else {
+            self.blocks.insert(bi + 1, img);
+            bi + 1
+        };
+        if idx + 1 == self.blocks.len() {
+            self.blocks.push(Block::default());
+        }
+        self.block_start(idx) + self.blocks[idx].len()
+    }
     /// The kind shared by every block touched by `a..z`, if they agree.
     pub fn kind_of(&self, a: usize, z: usize) -> Option<BlockKind> {
         let ps = self.pieces(a, z);
@@ -480,6 +580,9 @@ impl RichText {
     pub fn set_kind(&mut self, a: usize, z: usize, k: BlockKind) {
         for (b, ..) in self.pieces(a, z) {
             self.blocks[b].kind = k;
+            if k != BlockKind::Image {
+                self.blocks[b].src = None;
+            }
         }
     }
     /// The text of `a..z`, blocks joined with newlines.
@@ -635,5 +738,74 @@ mod tests {
         assert!(d.blocks.iter().all(|b| b.kind == BlockKind::Bullet));
         d.toggle_kind(0, d.len(), BlockKind::Bullet);
         assert!(d.blocks.iter().all(|b| b.kind == BlockKind::Paragraph));
+    }
+
+    #[test]
+    fn code_blocks_round_trip() {
+        let md = "intro\n\n```\nfn main() {\n\n    run();\n}\n```\n\nafter";
+        let d = RichText::from_markdown(md);
+        let kinds: Vec<_> = d.blocks.iter().map(|b| b.kind).collect();
+        assert_eq!(
+            kinds,
+            [
+                BlockKind::Paragraph,
+                BlockKind::Code,
+                BlockKind::Code,
+                BlockKind::Code,
+                BlockKind::Code,
+                BlockKind::Paragraph
+            ]
+        );
+        assert_eq!(
+            d.blocks[3].text(),
+            "    run();",
+            "indent kept, no inline parsing"
+        );
+        assert_eq!(d.to_markdown(), md);
+        let star = RichText::from_markdown("```rust\nlet a = *b*;\n```");
+        assert_eq!(star.blocks[0].text(), "let a = *b*;");
+    }
+
+    #[test]
+    fn images_and_deep_headings_round_trip() {
+        let md = "###### Tiny\n\n![A cat](cats/tom.png)\n\n#### Four";
+        let d = RichText::from_markdown(md);
+        assert_eq!(d.blocks[0].kind, BlockKind::Heading(6));
+        assert_eq!(d.blocks[1].kind, BlockKind::Image);
+        assert_eq!(d.blocks[1].src.as_deref(), Some("cats/tom.png"));
+        assert_eq!(d.blocks[1].text(), "A cat");
+        assert_eq!(d.blocks[2].kind, BlockKind::Heading(4));
+        assert_eq!(d.to_markdown(), md);
+        assert_eq!(
+            RichText::from_markdown("#nospace").blocks[0].kind,
+            BlockKind::Paragraph
+        );
+        assert_eq!(
+            RichText::from_markdown("####### seven").blocks[0].kind,
+            BlockKind::Paragraph
+        );
+    }
+
+    #[test]
+    fn insert_image_and_enter_after_it() {
+        let mut d = RichText::from_markdown("hello");
+        let p = d.insert_image(2, "pic", "a.png");
+        assert_eq!(d.blocks.len(), 3, "image plus trailing paragraph");
+        assert_eq!(d.blocks[1].kind, BlockKind::Image);
+        assert_eq!(p, d.block_start(1) + 3);
+        d.replace(p, p, "\n", Marks::default(), None);
+        assert_eq!(
+            d.blocks[2].kind,
+            BlockKind::Paragraph,
+            "enter leaves the image"
+        );
+        assert_eq!(d.blocks[1].src.as_deref(), Some("a.png"));
+        let mut e = RichText::new();
+        e.insert_image(0, "", "b.png");
+        assert_eq!(
+            e.blocks[0].kind,
+            BlockKind::Image,
+            "empty paragraph is replaced"
+        );
     }
 }

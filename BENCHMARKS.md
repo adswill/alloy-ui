@@ -467,3 +467,79 @@ Slim build, all examples, first paint and idle: counter 25 ms, todo 32, settings
 ### Plugins
 
 `docs/PLUGINS.md`, `alloy_ui::plugin` (`Plugin`, `install`, `installed`) and `alloy_ui::ext` (focus, press, state, a11y, colour helpers). Worked example: `examples/plugin-rating` (238 lines for a keyboard-, mouse- and screen-reader-aware star rating plus its translations; 5 tests and a doc-test, all passing headless).
+
+## Roadmap 46 to 50: virtualisation, size, start-up, mobile, plugins
+
+**46, variable row heights.** `VirtualList::variable(&HeightIndex)` (and `vlist(..).variable(..)`)
+takes rows of different heights. `HeightIndex` keeps one running total per row (8 bytes each),
+finds the row at a scroll offset with a binary search, and the offsets stay `f64`. Test
+`virtual_list_variable_heights_million_rows`: 1 000 000 rows of three heights, scrolled to the
+end, at most 20 rows built, a click lands on the row the index predicts. Building the index for a
+million rows is one pass over a closure; call it again when the data changes.
+
+**47, binary size: not met, measured honestly.** Linux x86_64 counter, stripped release:
+6 856 976 bytes (6.86 MB, 6.54 MiB). Where it goes (`cargo bloat`, `.text` 4.2 MB): naga 625 KiB,
+std 491 KiB, wgpu-core 354 KiB, winit 326 KiB, skrifa 248 KiB, swash 185 KiB, alloy platform
+180 KiB, tiny-skia 175 KiB; `.rodata` 1.2 MB (fonts are 0.5 MB of it); `.eh_frame` 0.64 MB;
+`.rela.dyn` 0.36 MB (PIE). Tried: `opt-level = "s"` instead of `"z"` is **larger** (7.43 MB), so
+`"z"` stays. Removing `.eh_frame` and `.eh_frame_hdr` after linking gives 6.13 MB and the binary
+still runs (the release profile aborts on panic), but it breaks `catch_unwind` and backtraces,
+so it is not applied. The remaining big pieces (naga, wgpu-core, std) are not removable without
+dropping the GPU renderer or building std from source on nightly. The CPU-only build
+(`--no-default-features --features soft-window`) stays at about 4.4 MB and is the way under
+5 MB today. `.cargo/config.toml` now sets `force-unwind-tables=no` for non-Windows targets only,
+because x86_64 Windows requires unwind tables and rustc rejects the flag there. Windows and
+macOS sizes are recorded by the `footprint` job in `.github/workflows/mobile.yml`.
+
+**48, cold start.** The GPU chain that needs no window (load the Vulkan/Metal/D3D runtime, pick
+an adapter, open the device, compile the shader, build the pipeline for `Bgra8Unorm`) now runs on
+a background thread started before the window is created (`render::prewarm`). The window uses it
+if its surface is supported by that adapter and wants that format, and otherwise rebuilds.
+Measured on Linux, Xvfb, Mesa llvmpipe (software), 12 runs each: median first paint 81.8 ms before
+and 83.2 ms after, which is no change within noise. The first frame itself got cheaper (44 ms to
+about 21 ms, the pipeline is already built) but the chain on the helper thread (instance 29 ms,
+device 15 ms, pipeline 15 ms) is now the long pole, and llvmpipe is not a GPU. Whether this helps
+on Metal, D3D12 and a real Vulkan driver, where window creation takes longer, is what the
+`footprint` job measures on the three runners; those numbers are in the job summaries, not here.
+The 50 ms target is **not shown to be met**.
+
+**49, mobile.** `.github/workflows/mobile.yml` builds the counter's Gradle project and APK from
+`alloy bundle --target x86_64-linux-android`, boots an API 30 emulator and launches it, then
+checks the process is alive, the log has no crash and the screenshot is not blank. The iOS job
+builds with XcodeGen and `xcodebuild` for the simulator, boots an iPhone simulator, launches and
+screenshots. Results of the first real runs are in the PR description.
+
+**50, plugins.** Second example plugin `alloy-ui-callout` (examples/plugin-callout): a container
+widget, which the first example (a leaf) does not cover. New helpers: `ext::preferred` and
+`ext::arrange_widget` (containers outside the framework had no way to measure or arrange),
+`Plugin::description`, `plugin::install_all`, `plugin::is_installed`. `docs/PLUGINS.md` updated.
+
+## Live charts, media and shared textures (roadmap 26 to 30)
+
+Linux x86_64 cloud container, **debug build** of the test suite (a regression guard, not a speed claim; release is several times faster), software Vulkan (llvmpipe) where a GPU is mentioned.
+
+| Check | Result |
+| --- | --- |
+| `StreamChart`, 4 lines x 2,000 samples, widget draw only | about 1 ms per frame, 4,948 draw commands |
+| `StreamChart`, 1 line x 100,000 samples (dense, drawn as pixel-column envelopes) | about 4 ms per frame, 1,394 draw commands. Before the envelope step it was one command per sample |
+| Video, 320x180 test clip through ffmpeg | decodes, plays forward and seeks both ways; the picture at 0 ms after a seek to 1.5 s and back is byte-identical to the first frame |
+| Audio engine, WAV decoded by symphonia | duration, seek to 2 s, 8 kHz to 16 kHz resample, mono and 6 channel mixes, volume, end of stream: all tested without a sound card |
+| Shared wgpu texture, llvmpipe | app clears the texture red, then blue; the renderer shows each with the same id and no re-registration |
+
+Not measured: output through a real sound card, video on macOS or Windows (needs `ffmpeg` installed there), the shared texture on a hardware GPU, frame rate of 1080p video (the decode worker is bounded to 960 px wide).
+
+### Data grid and code editor at large sizes (roadmap 21 and 22)
+
+`cargo test --release -p alloy-ui-widgets --test pro_widgets -- --nocapture row_model code_editor_stays`, Linux cloud container (shared CPU), CPU draw lists only, no GPU, one run:
+
+| What | Size | Result |
+|---|---|---|
+| `RowModel::rebuild` (filter + sort) | 1,000,000 rows, text cells | 2.6 s |
+| `RowModel::regroup` (collapse/expand a group) | 1,000,000 rows | 2.4 s |
+| Draw one grid frame from the model | 1,000,000 rows | 27 µs, 24 cells built |
+| Code editor, first draw | 200,000 lines | 85 ms |
+| Code editor, next draw | 200,000 lines | 16 ms |
+| Select every occurrence of a word | 200,000 lines | 0.88 s |
+| Type one character at every caret | many carets, 200,000 lines | 0.60 s |
+
+Honest reading: drawing is cost-of-the-window (27 µs, 16 ms), which is what the virtualised views are for. Rebuilding a million-row view is a two second job, not an interactive one: it pulls every cell through a `String` callback, so it should run on a background task and be applied when it finishes (debounce a filter box). Multi-caret edits on a 200k line file are sub-second, not instant. The grid has no filter row of its own; the model filters and the app supplies the text input.

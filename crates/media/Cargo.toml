@@ -1,0 +1,31 @@
+[package]
+name = "alloy-ui-media"
+description = "Audio and video playback for Alloy: symphonia and cpal for sound, an ffmpeg process for video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# Sound: decode with symphonia (pure Rust) and play through the OS audio API with cpal.
+default = ["audio", "ffmpeg"]
+audio = ["dep:symphonia", "dep:cpal"]
+# Video: decode frames by running the `ffmpeg` command-line tool (no linking, no codec
+# libraries in your binary; the user needs ffmpeg on their PATH).
+ffmpeg = []
+
+[dependencies]
+alloy-ui-widgets.workspace = true
+alloy-ui-render = { workspace = true }
+alloy-ui-core.workspace = true
+log = "0.4"
+thiserror = "2"
+symphonia = { version = "0.5", default-features = false, features = ["mp3", "flac", "wav", "ogg", "vorbis", "aac", "isomp4", "mkv", "pcm", "alac", "adpcm"], optional = true }
+cpal = { version = "0.15", optional = true }
+
+[dev-dependencies]
+alloy-ui-theme.workspace = true

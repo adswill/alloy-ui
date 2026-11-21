@@ -16,6 +16,10 @@ const BAR: f32 = 6.0;
 const BAR_ZONE: f32 = 14.0;
 /// Slot (in [`Ui`]) holding where on the thumb a drag took hold, in 1/16 px.
 const K_DRAG: u64 = 0x5C02_0000_0000;
+/// Memo (in [`Ui`]) of a touch-style drag: `[last_move_ms, last_y, velocity, active]`.
+const K_TOUCH: u64 = 0x5C04_0000_0000;
+/// Pointer travel (px) before a press on content becomes a scroll drag.
+const TOUCH_SLOP: f32 = 4.0;
 
 /// Scrolls one child vertically. Give the child `Fill` width and `Shrink`
 /// height so it is as wide as the viewport and as tall as its content.
@@ -24,6 +28,7 @@ pub struct Scrollable<M> {
     ui: Ui,
     id: u64,
     style: Style,
+    touch: bool,
     child: Vec<Element<M>>,
 }
 
@@ -39,8 +44,17 @@ impl<M: 'static> Scrollable<M> {
                 height: Length::Fill(1),
                 ..Style::default()
             },
+            touch: false,
             child: vec![child],
         }
+    }
+    /// Let a pointer drag on the content scroll it, the way a touch screen
+    /// does: it follows the pointer, stretches past the ends with resistance,
+    /// and keeps coasting when released. Presses that land on a button or
+    /// other control still go to the control.
+    pub fn touch_drag(mut self) -> Self {
+        self.touch = true;
+        self
     }
     /// Width sizing.
     pub fn width(mut self, w: Length) -> Self {
@@ -75,7 +89,8 @@ impl<M: 'static> Scrollable<M> {
     /// The child layout, shifted by the scroll offset and positioned at the viewport top.
     /// Where the content is drawn: the target followed by the scroll spring.
     fn shown(&self, layout: &Layout) -> f32 {
-        self.ui.scroll_shown(self.id, Self::max_offset(layout))
+        self.ui
+            .scroll_view(self.id, Self::max_offset(layout), layout.bounds.size.height)
     }
     /// The scrollbar thumb for the current drawn offset, if the content overflows.
     fn thumb(&self, layout: &Layout) -> Option<Rectangle> {
@@ -118,6 +133,71 @@ impl<M: 'static> Scrollable<M> {
                 .iter()
                 .map(|c| translate(c, 0.0, -off))
                 .collect(),
+        }
+    }
+}
+
+impl<M: 'static> Scrollable<M> {
+    /// Touch-style dragging. `Some(used)` when this event was handled here.
+    fn touch_event(
+        &mut self,
+        event: &Event,
+        layout: &Layout,
+        cursor: Point,
+        out: &mut Vec<M>,
+    ) -> Option<bool> {
+        let b = layout.bounds;
+        let key = self.id ^ K_TOUCH;
+        let m = self.ui.memo(key);
+        let wall = self.ui.wall_ms();
+        match event {
+            Event::MousePressed(MouseButton::Left)
+                if b.contains(cursor) && cursor.x < b.origin.x + b.size.width - BAR_ZONE =>
+            {
+                // Children first: a control keeps its press.
+                let shifted = self.shifted(layout);
+                if util::dispatch(&mut self.child, event, &shifted, cursor, out) {
+                    return Some(true);
+                }
+                self.ui.scroll_catch(self.id);
+                self.ui.set_memo(key, [wall as f32, cursor.y, 0.0, 1.0]);
+                Some(true)
+            }
+            Event::CursorMoved(p) if m[3] >= 1.0 => {
+                let dy = p.y - m[1];
+                // Not yet a drag: wait for the slop, remembering where the press began.
+                if m[3] < 2.0 && dy.abs() < TOUCH_SLOP {
+                    return Some(true);
+                }
+                let dt = (wall as f32 - m[0]).max(1.0) / 1000.0;
+                let inst = dy / dt;
+                let v = if m[3] < 2.0 {
+                    inst
+                } else {
+                    0.6 * inst + 0.4 * m[2]
+                };
+                self.ui.scroll_wheel_elastic(
+                    self.id,
+                    dy,
+                    Self::max_offset(layout),
+                    b.size.height,
+                    true,
+                );
+                self.ui.set_memo(key, [wall as f32, p.y, v, 2.0]);
+                Some(true)
+            }
+            Event::MouseReleased(MouseButton::Left) if m[3] >= 1.0 => {
+                self.ui.set_memo(key, [0.0; 4]);
+                if m[3] >= 2.0 {
+                    let quiet = wall as f32 - m[0] > 90.0;
+                    let v = if quiet { 0.0 } else { m[2] };
+                    // Pointer moving down means the offset is decreasing.
+                    self.ui.scroll_fling(self.id, -v);
+                    return Some(true);
+                }
+                None
+            }
+            _ => None,
         }
     }
 }
@@ -180,7 +260,9 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         if let Event::Scrolled { dy, .. } = event {
             if inside {
                 let before = self.offset(layout);
-                let moved = self.ui.scroll_wheel(self.id, *dy, max);
+                let moved = self
+                    .ui
+                    .scroll_wheel_elastic(self.id, *dy, max, b.size.height, false);
                 // Let nested scrollables go first; consume only if we moved.
                 let shifted = self.shifted(layout);
                 if util::dispatch(&mut self.child, event, &shifted, cursor, out) {
@@ -190,6 +272,11 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
                 return moved;
             }
             return false;
+        }
+        if self.touch {
+            if let Some(used) = self.touch_event(event, layout, cursor, out) {
+                return used;
+            }
         }
         let is_pointer = matches!(
             event,

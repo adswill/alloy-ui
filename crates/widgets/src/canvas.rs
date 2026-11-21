@@ -1,9 +1,15 @@
 //! Vector drawing: [`Path`], [`Frame`] and the [`Canvas`] widget.
 //!
 //! A [`Canvas`] is a rectangle the app draws into with a closure. Coordinates
-//! are logical pixels relative to the canvas's top-left corner, y down. Fills
-//! are anti-aliased polygons (convex or concave); strokes are round-capped
-//! and round-joined.
+//! are logical pixels relative to the canvas's top-left corner, y down.
+//!
+//! * [`Frame::fill`] and [`Frame::fill_with`] fill any path under the non-zero or even-odd
+//!   [`FillRule`](alloy_ui_core::FillRule): holes, overlapping sub-paths and self-crossing
+//!   outlines all fill correctly, with a colour or a [`LinearGradient`].
+//! * [`Frame::stroke_with`] strokes with a [`Stroke`](crate::stroke::Stroke): width, butt, round or
+//!   square caps, miter, round or bevel joins, miter limit and dash patterns, as one shape
+//!   (translucent strokes do not darken where they overlap).
+//! * [`Frame::stroke`] is the quick round-capped, round-joined line.
 //!
 //! ```ignore
 //! Canvas::new(&ui, Length::Fill(1), Length::Fixed(160.0), |f| {
@@ -15,8 +21,8 @@
 
 use crate::{ui::Ui, util};
 use alloy_ui_core::{
-    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, FontFamily, Layout,
-    MouseButton, Point, Rectangle, Size, Widget,
+    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, FillRule, FontFamily,
+    Layout, MouseButton, PathPaint, Point, Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
 use alloy_ui_theme::Palette;
@@ -29,6 +35,51 @@ enum Seg {
     Quad(Point, Point),
     Cubic(Point, Point, Point),
     Close,
+}
+
+/// A linear gradient along a line, for [`Frame::fill_with`] and [`Frame::stroke_with`].
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinearGradient {
+    from: Point,
+    to: Point,
+    stops: Vec<(f32, Color)>,
+}
+
+impl LinearGradient {
+    /// A gradient from `from` to `to` with no stops yet.
+    pub fn new(from: Point, to: Point) -> Self {
+        Self {
+            from,
+            to,
+            stops: Vec::new(),
+        }
+    }
+    /// Add a colour stop at `offset` (0 to 1); add them in increasing order.
+    pub fn stop(mut self, offset: f32, color: Color) -> Self {
+        self.stops.push((offset.clamp(0.0, 1.0), color));
+        self
+    }
+}
+
+/// What a path is painted with: one colour or a gradient.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Paint {
+    /// One colour.
+    Solid(Color),
+    /// A linear gradient.
+    Linear(LinearGradient),
+}
+
+impl From<Color> for Paint {
+    fn from(c: Color) -> Self {
+        Paint::Solid(c)
+    }
+}
+
+impl From<LinearGradient> for Paint {
+    fn from(g: LinearGradient) -> Self {
+        Paint::Linear(g)
+    }
 }
 
 /// A sequence of lines and curves, built with chained calls.
@@ -326,13 +377,52 @@ impl Frame {
             fill: color,
         });
     }
-    /// Fill every closed sub-path of `path`.
+    /// Fill `path` with the non-zero rule: sub-paths drawn in opposite directions cut
+    /// holes, overlapping ones in the same direction merge, and self-crossing outlines fill
+    /// correctly.
     pub fn fill(&mut self, path: &Path, color: Color) {
-        for (pts, _) in path.flatten() {
-            if pts.len() >= 3 {
-                self.polygon(&pts, color);
-            }
+        self.fill_with(path, FillRule::NonZero, color);
+    }
+    /// Fill `path` under `rule` with a colour or a [`LinearGradient`]. With
+    /// [`FillRule::EvenOdd`] every nested sub-path flips inside and outside, whichever way
+    /// it is drawn.
+    pub fn fill_with(&mut self, path: &Path, rule: FillRule, paint: impl Into<Paint>) {
+        let contours: Vec<Vec<Point>> = path
+            .flatten()
+            .into_iter()
+            .filter(|(p, _)| p.len() >= 3)
+            .map(|(p, _)| p)
+            .collect();
+        self.push_path(contours, rule, paint.into());
+    }
+    /// Stroke `path` with a [`crate::Stroke`] style (width, caps, joins, dashes) and a colour or
+    /// gradient. The stroke is one shape, so a translucent colour does not darken where
+    /// segments overlap.
+    pub fn stroke_with(&mut self, path: &Path, style: &crate::Stroke, paint: impl Into<Paint>) {
+        let contours = crate::stroke::pieces(&path.flatten(), style);
+        self.push_path(contours, FillRule::NonZero, paint.into());
+    }
+    fn push_path(&mut self, contours: Vec<Vec<Point>>, rule: FillRule, paint: Paint) {
+        if contours.is_empty() {
+            return;
         }
+        let contours = contours
+            .into_iter()
+            .map(|c| c.into_iter().map(|p| self.at(p)).collect())
+            .collect();
+        let paint = match paint {
+            Paint::Solid(c) => PathPaint::Solid(c),
+            Paint::Linear(g) => PathPaint::Linear {
+                from: self.at(g.from),
+                to: self.at(g.to),
+                stops: g.stops,
+            },
+        };
+        self.cmds.push(DrawCommand::PolygonPath {
+            contours,
+            rule,
+            paint,
+        });
     }
     /// Stroke `path` with round caps and joins.
     pub fn stroke(&mut self, path: &Path, width: f32, color: Color) {

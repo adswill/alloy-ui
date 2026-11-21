@@ -360,7 +360,8 @@ fn text_input_typing_selection_and_clipboard() {
     assert_eq!(h.key(Key::Backspace), vec![Msg::Text("hello".into())]);
     // select all + replace
     let m = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     h.send(Event::KeyPressed(Key::Character("a".into()), m));
@@ -398,7 +399,8 @@ fn text_input_shift_arrows_select_and_cut() {
         h.send(Event::KeyPressed(Key::Named("ArrowLeft".into()), shift));
     }
     let cut = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     assert_eq!(
@@ -497,6 +499,22 @@ fn scrollable_scrolls_clamps_and_clips() {
 }
 
 #[test]
+fn trackpad_deltas_track_directly_and_wheel_notches_glide() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    h.draw();
+    h.mv(10.0, 10.0);
+    // A trackpad reports arbitrary pixels: shown at once, no spring lag.
+    h.send(Event::Scrolled { dx: 0.0, dy: -13.0 });
+    assert_eq!(ui.scroll_offset(9), 13.0);
+    assert_eq!(ui.scroll_shown(9, 1000.0), 13.0);
+    // A wheel notch is a whole line: the target moves, the drawn offset glides after it.
+    h.send(Event::Scrolled { dx: 0.0, dy: -40.0 });
+    assert_eq!(ui.scroll_offset(9), 53.0);
+    assert!(ui.scroll_shown(9, 1000.0) < 53.0);
+}
+
+#[test]
 fn scrollable_offsets_child_content() {
     let ui = ui();
     let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
@@ -508,18 +526,18 @@ fn scrollable_offsets_child_content() {
     };
     assert_eq!(first_y(&h), Some(0.0));
     h.mv(10.0, 10.0);
-    h.send(Event::Scrolled { dx: 0.0, dy: -30.0 });
+    h.send(Event::Scrolled { dx: 0.0, dy: -40.0 });
     // Smooth scrolling: the offset target moved, the view eases toward it.
-    assert_eq!(ui.scroll_offset(9), 30.0);
+    assert_eq!(ui.scroll_offset(9), 40.0);
     assert_eq!(first_y(&h), Some(0.0));
     assert!(h.animating());
     h.tick(1016);
     let mid = first_y(&h).unwrap();
-    assert!((-30.0..0.0).contains(&mid), "mid-glide at {mid}");
+    assert!((-40.0..0.0).contains(&mid), "mid-glide at {mid}");
     for i in 2..120 {
         h.tick(1000 + i * 16); // about 2 s of frames
     }
-    assert_eq!(first_y(&h), Some(-30.0));
+    assert_eq!(first_y(&h), Some(-40.0));
     assert!(!h.animating(), "idle once settled");
 }
 
@@ -906,7 +924,8 @@ fn editor_select_all_and_paste_keeps_newlines() {
     let mut h = Harness::new(&ui, editor(&ui, "zz"), 300.0, 200.0);
     h.click(290.0, 8.0);
     let m = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     h.send(Event::KeyPressed(Key::Character("a".into()), m));
@@ -1031,7 +1050,8 @@ fn text_input_undo_redo_round_trip() {
     let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
     assert_eq!(h.key(Key::Backspace), vec![Msg::Text("ab".into())]);
     let ctrl = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     let z = Key::Character("z".into());
@@ -1043,7 +1063,8 @@ fn text_input_undo_redo_round_trip() {
     );
     let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
     let shift = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         shift: true,
         ..Default::default()
     };

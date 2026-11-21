@@ -12,12 +12,28 @@ pub enum Command<M> {
     None,
     /// Run futures in the background; each result becomes a message.
     Perform(Vec<BoxFuture<M>>),
+    /// Run a future under `key`. Starting one while an earlier future with the same key is
+    /// still running cancels the earlier one first, so only the latest result arrives
+    /// (search-as-you-type, refresh buttons).
+    PerformKeyed(u64, BoxFuture<M>),
+    /// Cancel the running future started with this key, if any. Its message never arrives.
+    Cancel(u64),
     /// Ask the runtime to close every window and exit.
     Exit,
     /// Open a window; its content comes from [`Application::view_window`].
     OpenWindow(WindowId, WindowSpec),
     /// Close a window. Closing the last window exits.
     CloseWindow(WindowId),
+}
+
+/// Background work the shell must start or stop; see [`Runtime::take_tasks`].
+pub enum TaskRequest<M> {
+    /// Run this future; nothing can cancel it.
+    Spawn(BoxFuture<M>),
+    /// Run this future under `key`, cancelling any earlier one with the same key.
+    Keyed(u64, BoxFuture<M>),
+    /// Cancel the future running under this key.
+    Cancel(u64),
 }
 
 /// Identifies a window. [`WindowId::MAIN`] is the one every app starts with.
@@ -66,6 +82,11 @@ impl<M> Command<M> {
     /// Run one future in the background.
     pub fn perform(fut: impl Future<Output = M> + Send + 'static) -> Self {
         Command::Perform(vec![Box::pin(fut)])
+    }
+
+    /// Run one future under `key`; a newer one with the same key replaces it.
+    pub fn perform_keyed(key: u64, fut: impl Future<Output = M> + Send + 'static) -> Self {
+        Command::PerformKeyed(key, Box::pin(fut))
     }
 }
 
@@ -168,7 +189,7 @@ struct Win<M> {
 /// routes events to widgets, runs `update`, and decides when to redraw.
 ///
 /// The runtime is platform-free. The shell feeds it [`Event`](crate::Event)s,
-/// spawns the futures in [`Runtime::take_futures`], carries out
+/// runs the work in [`Runtime::take_tasks`], carries out
 /// [`Runtime::take_window_requests`], and presents the windows in
 /// [`Runtime::take_dirty`]. A window is redrawn only when its draw list
 /// changed, which keeps idle CPU near zero. Methods without a window argument
@@ -177,7 +198,7 @@ pub struct Runtime<A: Application> {
     app: A,
     windows: std::collections::BTreeMap<WindowId, Win<A::Message>>,
     layouter: Layouter<A::Message>,
-    futures: Vec<BoxFuture<A::Message>>,
+    tasks: Vec<TaskRequest<A::Message>>,
     requests: Vec<WindowRequest>,
     dirty: std::collections::BTreeSet<WindowId>,
     inspect: bool,
@@ -190,7 +211,7 @@ impl<A: Application> Runtime<A> {
             app,
             windows: Default::default(),
             layouter,
-            futures: Vec::new(),
+            tasks: Vec::new(),
             requests: Vec::new(),
             dirty: Default::default(),
             inspect: false,
@@ -265,9 +286,10 @@ impl<A: Application> Runtime<A> {
         self.app.subscription()
     }
 
-    /// Futures requested by `update` since the last call; the shell spawns them.
-    pub fn take_futures(&mut self) -> Vec<BoxFuture<A::Message>> {
-        std::mem::take(&mut self.futures)
+    /// Background work requested by `update` since the last call, in order; the shell
+    /// starts and cancels tasks accordingly.
+    pub fn take_tasks(&mut self) -> Vec<TaskRequest<A::Message>> {
+        std::mem::take(&mut self.tasks)
     }
 
     /// Window opens and closes requested by `update` since the last call.
@@ -302,7 +324,9 @@ impl<A: Application> Runtime<A> {
         for m in messages {
             match self.app.update(m) {
                 Command::None => {}
-                Command::Perform(mut f) => self.futures.append(&mut f),
+                Command::Perform(f) => self.tasks.extend(f.into_iter().map(TaskRequest::Spawn)),
+                Command::PerformKeyed(k, f) => self.tasks.push(TaskRequest::Keyed(k, f)),
+                Command::Cancel(k) => self.tasks.push(TaskRequest::Cancel(k)),
                 Command::Exit => exit = true,
                 Command::OpenWindow(id, spec) => {
                     if !self.windows.contains_key(&id) {

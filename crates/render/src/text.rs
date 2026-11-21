@@ -244,9 +244,15 @@ const BUNDLED_FONTS: [&[u8]; 11] = [
     include_bytes!("../fonts/AlloySans-Italic.ttf"),
     include_bytes!("../fonts/AlloySans-SemiBoldItalic.ttf"),
     include_bytes!("../fonts/AlloyMono-Italic.ttf"),
-    include_bytes!("../fonts/Lucide-subset.ttf"),
-    include_bytes!("../fonts/Phosphor-subset.ttf"),
+    LUCIDE,
+    PHOSPHOR,
 ];
+
+// Icon fonts. By default the small subsets of the built-in `Icon` set; the `icons-*-full`
+// features embed the whole pack instead. `build.rs` swaps in a tree-shaken pack when
+// `ALLOY_ICONS_SUBSET` names a directory made by tools/icons/shake.py.
+const LUCIDE: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Lucide.ttf"));
+const PHOSPHOR: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/Phosphor.ttf"));
 
 impl Default for TextSystem {
     fn default() -> Self {

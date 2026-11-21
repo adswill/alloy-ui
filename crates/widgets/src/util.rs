@@ -230,3 +230,53 @@ pub(crate) fn label_cmd(
         max_width: None,
     }
 }
+
+/// A one-or-two-line chart tooltip on the overlay layer: `head` (optional, bold) over `value`,
+/// placed beside `anchor` and kept inside `within`.
+pub(crate) fn chart_tip(
+    ui: &crate::ui::Ui,
+    anchor: Point,
+    within: Rectangle,
+    head: &str,
+    value: &str,
+) {
+    use alloy_ui_core::{Border, Size};
+    let t = ui.theme();
+    let p = &t.palette;
+    let cap = t.typography.caption;
+    let m = ui.metrics();
+    let w = |s: &str, wt: u16| m.width_styled(s, cap.size, wt, alloy_ui_core::FontFamily::Sans);
+    let pad = 8.0;
+    let inner = w(head, 600).max(w(value, 600));
+    let lines = if head.is_empty() { 1.0 } else { 2.0 };
+    let (bw, bh) = (inner + 2.0 * pad, lines * cap.line_height + 2.0 * pad);
+    let mut x = anchor.x + 12.0;
+    if x + bw > within.origin.x + within.size.width {
+        x = anchor.x - 12.0 - bw;
+    }
+    x = x.max(within.origin.x);
+    let y = (anchor.y - bh - 10.0).max(within.origin.y);
+    let mut cmds = vec![DrawCommand::Quad {
+        bounds: Rectangle::new(Point::new(x, y), Size::new(bw, bh)),
+        fill: p.surface_raised,
+        radius: t.radii.medium,
+        border: Some(Border {
+            color: p.border,
+            width: 1.0,
+        }),
+        shadow: Some(t.elevation.medium),
+    }];
+    let mut ty = y + pad;
+    if !head.is_empty() {
+        cmds.push(label_cmd(
+            Point::new(x + pad, ty),
+            head,
+            &cap,
+            400,
+            p.text_secondary,
+        ));
+        ty += cap.line_height;
+    }
+    cmds.push(label_cmd(Point::new(x + pad, ty), value, &cap, 600, p.text));
+    ui.overlay(None, None, cmds);
+}

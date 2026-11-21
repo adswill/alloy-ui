@@ -190,23 +190,9 @@ impl Viz {
                 self.day = d;
                 self.cal_view = CalView::Day;
             }
-            CalAction::Create { date, minute } => {
-                let id = self.entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
-                self.entries
-                    .push(entry(id, "New event", date, minute, minute + 60));
+            edit => {
+                edit.apply(&mut self.entries);
             }
-            CalAction::Move { id, date, start } => {
-                if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
-                    let dur = e.end - e.start;
-                    (e.date, e.start, e.end) = (date, start, start + dur);
-                }
-            }
-            CalAction::Resize { id, end } => {
-                if let Some(e) = self.entries.iter_mut().find(|e| e.id == id) {
-                    e.end = end.max(e.start + 15);
-                }
-            }
-            CalAction::Open(_) => {}
         }
     }
 

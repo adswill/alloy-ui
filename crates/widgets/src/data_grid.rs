@@ -2,6 +2,7 @@
 
 use crate::{
     badge::Tone,
+    grid_model::{RowModel, ViewRow},
     text_edit::{apply_key, primary, sanitize, Edit, KeyOutcome},
     ui::Ui,
     util::{self, focus_ring, mix},
@@ -103,6 +104,8 @@ pub struct GridColumn {
     pub sortable: bool,
     /// Takes the width left over when the columns do not fill the grid.
     pub flex: bool,
+    /// Stays at the left edge while the other columns scroll under it.
+    pub pinned: bool,
 }
 
 impl GridColumn {
@@ -115,7 +118,15 @@ impl GridColumn {
             editable: false,
             sortable: true,
             flex: false,
+            pinned: false,
         }
+    }
+    /// Pin to the left edge: the column stays in view while the rest scroll horizontally.
+    /// Pinned columns draw in the order given, before the unpinned ones, so pin leading
+    /// columns.
+    pub fn pinned(mut self) -> Self {
+        self.pinned = true;
+        self
     }
     /// Right-align (for numbers).
     pub fn right(mut self) -> Self {
@@ -279,6 +290,9 @@ pub struct DataGrid<M> {
     on_edit: Option<EditFn<M>>,
     on_select: Option<Rc<dyn Fn(Selection) -> M>>,
     multi: bool,
+    /// Present when built from a [`RowModel`]: the view rows (data and group headers).
+    view: Option<Rc<Vec<ViewRow>>>,
+    on_group: Option<Rc<dyn Fn(String) -> M>>,
 }
 
 impl<M: 'static> DataGrid<M> {
@@ -304,7 +318,37 @@ impl<M: 'static> DataGrid<M> {
             on_edit: None,
             on_select: None,
             multi: true,
+            view: None,
+            on_group: None,
         }
+    }
+    /// A grid over a [`RowModel`]: rows are the model's filtered, sorted and grouped view.
+    /// `cell(source_row, column)` reads your data by *source* row; group headers draw
+    /// themselves. [`DataGrid::on_edit`] then reports the *source* row, while selections
+    /// stay in view rows (map them with [`RowModel::source`]). Header clicks still call
+    /// [`DataGrid::on_sort`]; apply the sort to the model and rebuild it.
+    pub fn from_model<C: Into<GridCell>>(
+        ui: &Ui,
+        id: u64,
+        columns: Vec<GridColumn>,
+        model: &RowModel,
+        cell: impl Fn(usize, usize) -> C + 'static,
+    ) -> Self {
+        let view = model.view();
+        let v = view.clone();
+        let mut g = Self::new(ui, id, columns, view.len(), move |r, c| match v.get(r) {
+            Some(ViewRow::Data(src)) => cell(*src, c).into(),
+            _ => GridCell::Text(String::new()),
+        });
+        g.view = Some(view);
+        g.sort = model.sorted();
+        g
+    }
+    /// A click (or Enter, Left or Right) on a group header reports its key; toggle it on the
+    /// [`RowModel`] and rebuild.
+    pub fn on_toggle_group(mut self, f: impl Fn(String) -> M + 'static) -> Self {
+        self.on_group = Some(Rc::new(f));
+        self
     }
     /// Show an arrow on `column`; `ascending` picks the direction. Clicking the sorted column
     /// again reports the opposite direction.
@@ -343,6 +387,32 @@ impl<M: 'static> DataGrid<M> {
     }
 
     // ------------------------------------------------------------ geometry
+
+    /// The group header at view row `r`: `(key, count, collapsed)`.
+    fn group_at(&self, r: usize) -> Option<(&str, usize, bool)> {
+        match self.view.as_ref()?.get(r)? {
+            ViewRow::Group {
+                key,
+                count,
+                collapsed,
+            } => Some((key.as_str(), *count, *collapsed)),
+            ViewRow::Data(_) => None,
+        }
+    }
+    /// The source row for view row `r` (the row itself without a model).
+    fn src_row(&self, r: usize) -> usize {
+        match self.view.as_ref().and_then(|v| v.get(r)) {
+            Some(ViewRow::Data(s)) => *s,
+            _ => r,
+        }
+    }
+    /// Total width of the pinned columns.
+    fn pinned_w(&self, w: &[f32]) -> f32 {
+        (0..self.columns.len())
+            .filter(|&i| self.columns[i].pinned)
+            .map(|i| w[i])
+            .sum()
+    }
 
     fn state(&self) -> GridState {
         let n = self.columns.len();
@@ -394,11 +464,18 @@ impl<M: 'static> DataGrid<M> {
     }
     /// The x of each column's left edge relative to the grid, after horizontal scroll.
     fn lefts(&self, w: &[f32], scroll_x: f32) -> Vec<f32> {
-        let mut x = -scroll_x;
+        let pinned = self.pinned_w(w);
+        let (mut px, mut sx) = (0.0, pinned - scroll_x);
         w.iter()
-            .map(|cw| {
-                let l = x;
-                x += cw;
+            .enumerate()
+            .map(|(i, cw)| {
+                let x = if self.columns[i].pinned {
+                    &mut px
+                } else {
+                    &mut sx
+                };
+                let l = *x;
+                *x += cw;
                 l
             })
             .collect()
@@ -409,7 +486,15 @@ impl<M: 'static> DataGrid<M> {
     }
     fn col_at(&self, b: &Rectangle, w: &[f32], sx: f32, x: f32) -> Option<usize> {
         let l = self.lefts(w, sx);
-        (0..w.len()).find(|&i| x - b.origin.x >= l[i] && x - b.origin.x < l[i] + w[i])
+        let pinned = self.pinned_w(w);
+        let hit = |i: usize| x - b.origin.x >= l[i] && x - b.origin.x < l[i] + w[i];
+        // Pinned columns sit on top, so they win over whatever scrolled under them.
+        (0..w.len())
+            .find(|&i| self.columns[i].pinned && hit(i))
+            .or_else(|| {
+                (0..w.len())
+                    .find(|&i| !self.columns[i].pinned && hit(i) && x - b.origin.x >= pinned)
+            })
     }
     fn pad(&self) -> f32 {
         self.ui.theme().spacing.md
@@ -536,7 +621,7 @@ impl<M: 'static> DataGrid<M> {
             s.sel.rows().collect()
         };
         let mut text = String::new();
-        for r in rows {
+        for r in rows.into_iter().filter(|&r| self.group_at(r).is_none()) {
             let line: Vec<String> = (0..self.columns.len())
                 .map(|c| (self.cell)(r, c).text())
                 .collect();
@@ -546,10 +631,36 @@ impl<M: 'static> DataGrid<M> {
         self.ui.clipboard().set(text.trim_end().to_string());
     }
 
+    /// Paste tab-separated clipboard text with its top-left at the active cell, one
+    /// `on_edit` per editable cell it lands on.
+    fn paste(&self, s: &GridState, out: &mut Vec<M>) {
+        let (Some(f), Some(text), true) = (&self.on_edit, self.ui.clipboard().get(), s.has_active)
+        else {
+            return;
+        };
+        let (r0, c0) = s.active;
+        let mut r = r0;
+        for line in text.lines() {
+            while r < self.rows && self.group_at(r).is_some() {
+                r += 1;
+            }
+            if r >= self.rows {
+                break;
+            }
+            for (j, val) in line.split('\t').enumerate() {
+                let c = c0 + j;
+                if c < self.columns.len() && self.columns[c].editable {
+                    out.push(f(self.src_row(r), c, val.to_string()));
+                }
+            }
+            r += 1;
+        }
+    }
+
     // ------------------------------------------------------------ editing
 
     fn begin_edit(&self, s: &mut GridState, row: usize, col: usize, seed: Option<&str>) {
-        if self.on_edit.is_none() || !self.columns[col].editable {
+        if self.on_edit.is_none() || !self.columns[col].editable || self.group_at(row).is_some() {
             return;
         }
         s.editing = Some((row, col));
@@ -569,7 +680,7 @@ impl<M: 'static> DataGrid<M> {
     fn finish_edit(&self, s: &mut GridState, commit: bool, out: &mut Vec<M>) {
         if let (Some((r, c)), true, Some(f)) = (s.editing.take(), commit, &self.on_edit) {
             if (self.cell)(r, c).text() != s.text {
-                out.push(f(r, c, s.text.clone()));
+                out.push(f(self.src_row(r), c, s.text.clone()));
             }
         }
     }
@@ -674,6 +785,18 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
                         break 'ev true;
                     }
                     self.finish_edit(&mut s, true, out);
+                    if let Some((key, _, _)) = self.group_at(r) {
+                        // A group header: select it and toggle the group.
+                        s.active = (r, c);
+                        s.has_active = true;
+                        s.anchor = r;
+                        s.sel = Selection::only(r..r + 1);
+                        self.emit_select(&s, out);
+                        if let Some(f) = &self.on_group {
+                            out.push(f(key.to_string()));
+                        }
+                        break 'ev true;
+                    }
                     let m = self.mods();
                     if mods_clicks == 2 && s.active == (r, c) {
                         self.begin_edit(&mut s, r, c, None);
@@ -817,6 +940,27 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
                         }
                     }
                     match k {
+                        Key::Enter if self.group_at(r).is_some() && self.on_group.is_some() => {
+                            if let (Some((key, _, _)), Some(f)) = (self.group_at(r), &self.on_group)
+                            {
+                                out.push(f(key.to_string()));
+                            }
+                            true
+                        }
+                        Key::Named(n)
+                            if self.group_at(r).is_some()
+                                && self.on_group.is_some()
+                                && (n == "ArrowLeft" || n == "ArrowRight") =>
+                        {
+                            if let (Some((key, _, collapsed)), Some(f)) =
+                                (self.group_at(r), &self.on_group)
+                            {
+                                if (n == "ArrowLeft") != collapsed {
+                                    out.push(f(key.to_string()));
+                                }
+                            }
+                            true
+                        }
                         Key::Enter | Key::Named(_)
                             if matches!(k, Key::Enter)
                                 || matches!(k, Key::Named(n) if n == "F2") =>
@@ -842,9 +986,17 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
                             self.copy_selection(&s);
                             true
                         }
+                        Key::Character(ch) if cmd && ch.eq_ignore_ascii_case("v") => {
+                            self.paste(&s, out);
+                            true
+                        }
                         Key::Named(n) => {
                             let ext = m.shift;
                             let moved = match (n.as_str(), cmd) {
+                                ("ArrowDown", true) => Some((self.rows - 1, c)),
+                                ("ArrowUp", true) => Some((0, c)),
+                                ("ArrowRight", true) => Some((r, ncols - 1)),
+                                ("ArrowLeft", true) => Some((r, 0)),
                                 ("ArrowDown", _) => Some((r + 1, c)),
                                 ("ArrowUp", _) => Some((r.saturating_sub(1), c)),
                                 ("ArrowRight", _) => Some((r, (c + 1).min(ncols - 1))),
@@ -901,8 +1053,11 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
             let l = self.lefts(&w, 0.0);
             let (cl, cw) = (l[s.active.1], w[s.active.1]);
             let vw = b.size.width - BAR - 4.0;
-            if cl < s.scroll_x {
-                s.scroll_x = cl;
+            let pw = self.pinned_w(&w);
+            if self.columns[s.active.1].pinned {
+                // Pinned columns are always in view.
+            } else if cl - pw < s.scroll_x {
+                s.scroll_x = cl - pw;
             } else if cl + cw > s.scroll_x + vw {
                 s.scroll_x = (cl + cw - vw).max(0.0);
             }
@@ -984,125 +1139,213 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
                     0.0,
                 ));
             }
-            for (c, col) in self.columns.iter().enumerate() {
-                let x = b.origin.x + lefts[c];
-                if x + w[c] < b.origin.x || x > right {
-                    continue;
-                }
-                let inner = w[c] - 2.0 * pad;
-                let editing = s.editing == Some((r, c));
-                if !editing {
-                    let cell = (self.cell)(r, c);
-                    let place = |tw: f32| match col.align {
-                        Align::End => x + w[c] - pad - tw,
-                        Align::Center => x + (w[c] - tw) / 2.0,
-                        _ => x + pad,
-                    };
-                    match cell {
-                        GridCell::Text(txt) => {
-                            let txt = self.fit(&txt, inner, 400);
-                            let tw = if col.align == Align::Start {
-                                0.0
-                            } else {
-                                self.text_w(&txt, 400)
-                            };
-                            out.push(cell_text(place(tw), y, txt, 400, p.text));
-                        }
-                        GridCell::Status(tone, txt) => {
-                            let ink = tone.color(&t);
-                            let txt = self.fit(&txt, inner - 14.0, 400);
-                            let tw = self.text_w(&txt, 400) + 14.0;
-                            let x0 = place(tw);
-                            out.push(quad(
-                                Rectangle::new(
-                                    Point::new(x0, y + rh / 2.0 - 3.5),
-                                    Size::new(7.0, 7.0),
-                                ),
-                                if tone == Tone::Neutral {
-                                    p.border_strong
-                                } else {
-                                    ink
-                                },
-                                3.5,
-                            ));
-                            out.push(cell_text(x0 + 14.0, y, txt, 400, p.text));
-                        }
-                        GridCell::Bar(v) => {
-                            let v = v.clamp(0.0, 1.0);
-                            let label = format!("{:.0}%", v * 100.0);
-                            let lw = self.text_w(&label, 400);
-                            let track = (inner - lw - 10.0).clamp(12.0, 160.0);
-                            let x0 = place(track + lw + 10.0);
-                            let tr = Rectangle::new(
-                                Point::new(x0, y + rh / 2.0 - 2.5),
-                                Size::new(track, 5.0),
-                            );
-                            out.push(quad(tr, p.border.with_alpha(0.8), 2.5));
-                            if v > 0.0 {
-                                out.push(quad(
-                                    Rectangle::new(tr.origin, Size::new((track * v).max(5.0), 5.0)),
-                                    p.accent,
-                                    2.5,
-                                ));
-                            }
-                            out.push(cell_text(
-                                x0 + track + 10.0,
-                                y,
-                                label,
-                                400,
-                                p.text_secondary,
-                            ));
-                        }
-                    }
-                }
-                if s.active == (r, c) && s.has_active && (focused || editing) {
+            if let Some((key, count, collapsed)) = self.group_at(r) {
+                // A group header: a full-width band with a chevron, the key and the count.
+                out.push(quad(row, p.surface_raised, 0.0));
+                let (cx, cy) = (b.origin.x + pad + 5.0, y + rh / 2.0);
+                let tri = if collapsed {
+                    vec![
+                        Point::new(cx - 3.0, cy - 5.0),
+                        Point::new(cx + 4.0, cy),
+                        Point::new(cx - 3.0, cy + 5.0),
+                    ]
+                } else {
+                    vec![
+                        Point::new(cx - 5.0, cy - 3.0),
+                        Point::new(cx + 5.0, cy - 3.0),
+                        Point::new(cx, cy + 4.0),
+                    ]
+                };
+                out.push(DrawCommand::Polygon {
+                    points: tri,
+                    fill: p.text_secondary,
+                });
+                let label = self.fit(key, (b.size.width - 2.0 * pad - 90.0).max(40.0), 600);
+                let lw = self.text_w(&label, 600);
+                out.push(cell_text(b.origin.x + pad + 20.0, y, label, 600, p.text));
+                out.push(cell_text(
+                    b.origin.x + pad + 20.0 + lw + 10.0,
+                    y,
+                    format!("{count}"),
+                    400,
+                    p.text_secondary,
+                ));
+                if s.active.0 == r && s.has_active && focused {
                     out.push(DrawCommand::Quad {
                         bounds: Rectangle::new(
-                            Point::new(x + 0.5, y + 0.5),
-                            Size::new(w[c] - 1.0, rh - 1.0),
+                            Point::new(b.origin.x + 0.5, y + 0.5),
+                            Size::new(b.size.width - 1.0, rh - 1.0),
                         ),
-                        fill: if editing {
-                            p.surface_raised
-                        } else {
-                            Color::TRANSPARENT
-                        },
+                        fill: Color::TRANSPARENT,
                         radius: t.radii.small,
                         border: Some(Border {
                             color: p.accent,
-                            width: if editing { 1.5 } else { 1.0 },
+                            width: 1.0,
                         }),
                         shadow: None,
                     });
                 }
-                if editing {
-                    let e = self.ui.edit(self.id ^ 0xED17);
-                    let x0 = x + pad;
-                    let before: String = s.text.chars().take(e.caret).collect();
-                    let cx = x0 + self.text_w(&before, 400);
-                    if e.has_selection() {
-                        let (a, z) = e.range();
-                        let pa: String = s.text.chars().take(a).collect();
-                        let pz: String = s.text.chars().take(z).collect();
-                        let (xa, xz) = (x0 + self.text_w(&pa, 400), x0 + self.text_w(&pz, 400));
-                        out.push(quad(
-                            Rectangle::new(Point::new(xa, y + 4.0), Size::new(xz - xa, rh - 8.0)),
-                            p.selection,
-                            t.radii.small,
-                        ));
-                    }
+                continue;
+            }
+            let pw = self.pinned_w(&w);
+            for pass in 0..2u8 {
+                if pass == 1 && pw <= 0.0 {
+                    break;
+                }
+                if pass == 0 {
                     out.push(DrawCommand::PushClip(Rectangle::new(
-                        Point::new(x + 2.0, y),
-                        Size::new(w[c] - 4.0, rh),
+                        Point::new(b.origin.x + pw, body.origin.y),
+                        Size::new((b.size.width - pw).max(0.0), body.size.height),
                     )));
-                    out.push(cell_text(x0, y, s.text.clone(), 400, p.text));
-                    if (self.ui.now().saturating_sub(e.blink_epoch) / 530) % 2 == 0 {
-                        out.push(quad(
-                            Rectangle::new(Point::new(cx, y + 6.0), Size::new(1.5, rh - 12.0)),
-                            p.text,
-                            0.0,
-                        ));
+                } else {
+                    // Pinned cells cover whatever scrolled under them.
+                    let pr = Rectangle::new(Point::new(b.origin.x, y), Size::new(pw, rh));
+                    out.push(quad(pr, p.surface, 0.0));
+                    if selected {
+                        out.push(quad(pr, p.selection, 0.0));
+                    } else if hot {
+                        out.push(quad(pr, p.hover, 0.0));
                     }
+                }
+                for (c, col) in self.columns.iter().enumerate() {
+                    if col.pinned != (pass == 1) {
+                        continue;
+                    }
+                    let x = b.origin.x + lefts[c];
+                    if x + w[c] < b.origin.x || x > right {
+                        continue;
+                    }
+                    let inner = w[c] - 2.0 * pad;
+                    let editing = s.editing == Some((r, c));
+                    if !editing {
+                        let cell = (self.cell)(r, c);
+                        let place = |tw: f32| match col.align {
+                            Align::End => x + w[c] - pad - tw,
+                            Align::Center => x + (w[c] - tw) / 2.0,
+                            _ => x + pad,
+                        };
+                        match cell {
+                            GridCell::Text(txt) => {
+                                let txt = self.fit(&txt, inner, 400);
+                                let tw = if col.align == Align::Start {
+                                    0.0
+                                } else {
+                                    self.text_w(&txt, 400)
+                                };
+                                out.push(cell_text(place(tw), y, txt, 400, p.text));
+                            }
+                            GridCell::Status(tone, txt) => {
+                                let ink = tone.color(&t);
+                                let txt = self.fit(&txt, inner - 14.0, 400);
+                                let tw = self.text_w(&txt, 400) + 14.0;
+                                let x0 = place(tw);
+                                out.push(quad(
+                                    Rectangle::new(
+                                        Point::new(x0, y + rh / 2.0 - 3.5),
+                                        Size::new(7.0, 7.0),
+                                    ),
+                                    if tone == Tone::Neutral {
+                                        p.border_strong
+                                    } else {
+                                        ink
+                                    },
+                                    3.5,
+                                ));
+                                out.push(cell_text(x0 + 14.0, y, txt, 400, p.text));
+                            }
+                            GridCell::Bar(v) => {
+                                let v = v.clamp(0.0, 1.0);
+                                let label = format!("{:.0}%", v * 100.0);
+                                let lw = self.text_w(&label, 400);
+                                let track = (inner - lw - 10.0).clamp(12.0, 160.0);
+                                let x0 = place(track + lw + 10.0);
+                                let tr = Rectangle::new(
+                                    Point::new(x0, y + rh / 2.0 - 2.5),
+                                    Size::new(track, 5.0),
+                                );
+                                out.push(quad(tr, p.border.with_alpha(0.8), 2.5));
+                                if v > 0.0 {
+                                    out.push(quad(
+                                        Rectangle::new(
+                                            tr.origin,
+                                            Size::new((track * v).max(5.0), 5.0),
+                                        ),
+                                        p.accent,
+                                        2.5,
+                                    ));
+                                }
+                                out.push(cell_text(
+                                    x0 + track + 10.0,
+                                    y,
+                                    label,
+                                    400,
+                                    p.text_secondary,
+                                ));
+                            }
+                        }
+                    }
+                    if s.active == (r, c) && s.has_active && (focused || editing) {
+                        out.push(DrawCommand::Quad {
+                            bounds: Rectangle::new(
+                                Point::new(x + 0.5, y + 0.5),
+                                Size::new(w[c] - 1.0, rh - 1.0),
+                            ),
+                            fill: if editing {
+                                p.surface_raised
+                            } else {
+                                Color::TRANSPARENT
+                            },
+                            radius: t.radii.small,
+                            border: Some(Border {
+                                color: p.accent,
+                                width: if editing { 1.5 } else { 1.0 },
+                            }),
+                            shadow: None,
+                        });
+                    }
+                    if editing {
+                        let e = self.ui.edit(self.id ^ 0xED17);
+                        let x0 = x + pad;
+                        let before: String = s.text.chars().take(e.caret).collect();
+                        let cx = x0 + self.text_w(&before, 400);
+                        if e.has_selection() {
+                            let (a, z) = e.range();
+                            let pa: String = s.text.chars().take(a).collect();
+                            let pz: String = s.text.chars().take(z).collect();
+                            let (xa, xz) = (x0 + self.text_w(&pa, 400), x0 + self.text_w(&pz, 400));
+                            out.push(quad(
+                                Rectangle::new(
+                                    Point::new(xa, y + 4.0),
+                                    Size::new(xz - xa, rh - 8.0),
+                                ),
+                                p.selection,
+                                t.radii.small,
+                            ));
+                        }
+                        out.push(DrawCommand::PushClip(Rectangle::new(
+                            Point::new(x + 2.0, y),
+                            Size::new(w[c] - 4.0, rh),
+                        )));
+                        out.push(cell_text(x0, y, s.text.clone(), 400, p.text));
+                        if (self.ui.now().saturating_sub(e.blink_epoch) / 530) % 2 == 0 {
+                            out.push(quad(
+                                Rectangle::new(Point::new(cx, y + 6.0), Size::new(1.5, rh - 12.0)),
+                                p.text,
+                                0.0,
+                            ));
+                        }
+                        out.push(DrawCommand::PopClip);
+                    }
+                }
+                if pass == 0 {
                     out.push(DrawCommand::PopClip);
+                } else {
+                    // A hairline marks where the pinned columns end.
+                    out.push(quad(
+                        Rectangle::new(Point::new(b.origin.x + pw - 1.0, y), Size::new(1.0, rh)),
+                        p.border_strong.with_alpha(0.7),
+                        0.0,
+                    ));
                 }
             }
         }
@@ -1120,89 +1363,123 @@ impl<M: 'static> Widget<M> for DataGrid<M> {
             0.0,
         ));
         let label = t.typography.label;
-        for (c, col) in self.columns.iter().enumerate() {
-            let x = b.origin.x + lefts[c];
-            if x + w[c] < b.origin.x || x > right {
-                continue;
+        let pw = self.pinned_w(&w);
+        for pass in 0..2u8 {
+            if pass == 1 && pw <= 0.0 {
+                break;
             }
-            let cellr = Rectangle::new(Point::new(x, b.origin.y), Size::new(w[c], HEADER_H - 1.0));
-            let sorted = self.sort.filter(|s| s.0 == c).map(|s| s.1);
-            if col.sortable
-                && self.on_sort.is_some()
-                && cellr.contains(cursor)
-                && s.drag == Drag::None
-            {
-                out.push(quad(cellr, p.hover, 0.0));
+            if pass == 0 {
+                out.push(DrawCommand::PushClip(Rectangle::new(
+                    Point::new(b.origin.x + pw, b.origin.y),
+                    Size::new((b.size.width - pw).max(0.0), HEADER_H),
+                )));
+            } else {
+                out.push(quad(
+                    Rectangle::new(b.origin, Size::new(pw, HEADER_H - 1.0)),
+                    p.surface_raised,
+                    0.0,
+                ));
             }
-            let arrow = sorted.map(|up| if up { "\u{2191}" } else { "\u{2193}" });
-            let tw = self
-                .ui
-                .metrics()
-                .width_styled(&col.title, label.size, 600, FontFamily::Sans);
-            let aw = if arrow.is_some() { 16.0 } else { 0.0 };
-            let inner = w[c] - 2.0 * pad - aw;
-            let title = if tw > inner {
-                self.fit(&col.title, inner, 600)
-            } else {
-                col.title.clone()
-            };
-            let tw = tw.min(inner);
-            let x0 = match col.align {
-                Align::End => x + w[c] - pad - tw - aw,
-                _ => x + pad,
-            };
-            let ink = if sorted.is_some() {
-                p.text
-            } else {
-                p.text_secondary
-            };
-            out.push(DrawCommand::Text {
-                family: FontFamily::Sans,
-                weight: 600,
-                line_height: Some(HEADER_H - 1.0),
-                origin: Point::new(x0, b.origin.y),
-                content: title,
-                size: label.size,
-                color: ink,
-                max_width: None,
-            });
-            if let Some(a) = arrow {
+            for (c, col) in self.columns.iter().enumerate() {
+                if col.pinned != (pass == 1) {
+                    continue;
+                }
+                let x = b.origin.x + lefts[c];
+                if x + w[c] < b.origin.x || x > right {
+                    continue;
+                }
+                let cellr =
+                    Rectangle::new(Point::new(x, b.origin.y), Size::new(w[c], HEADER_H - 1.0));
+                let sorted = self.sort.filter(|s| s.0 == c).map(|s| s.1);
+                if col.sortable
+                    && self.on_sort.is_some()
+                    && cellr.contains(cursor)
+                    && s.drag == Drag::None
+                {
+                    out.push(quad(cellr, p.hover, 0.0));
+                }
+                let arrow = sorted.map(|up| if up { "\u{2191}" } else { "\u{2193}" });
+                let tw =
+                    self.ui
+                        .metrics()
+                        .width_styled(&col.title, label.size, 600, FontFamily::Sans);
+                let aw = if arrow.is_some() { 16.0 } else { 0.0 };
+                let inner = w[c] - 2.0 * pad - aw;
+                let title = if tw > inner {
+                    self.fit(&col.title, inner, 600)
+                } else {
+                    col.title.clone()
+                };
+                let tw = tw.min(inner);
+                let x0 = match col.align {
+                    Align::End => x + w[c] - pad - tw - aw,
+                    _ => x + pad,
+                };
+                let ink = if sorted.is_some() {
+                    p.text
+                } else {
+                    p.text_secondary
+                };
                 out.push(DrawCommand::Text {
                     family: FontFamily::Sans,
                     weight: 600,
                     line_height: Some(HEADER_H - 1.0),
-                    origin: Point::new(x0 + tw + 6.0, b.origin.y),
-                    content: a.into(),
+                    origin: Point::new(x0, b.origin.y),
+                    content: title,
                     size: label.size,
-                    color: p.accent,
+                    color: ink,
                     max_width: None,
                 });
+                if let Some(a) = arrow {
+                    out.push(DrawCommand::Text {
+                        family: FontFamily::Sans,
+                        weight: 600,
+                        line_height: Some(HEADER_H - 1.0),
+                        origin: Point::new(x0 + tw + 6.0, b.origin.y),
+                        content: a.into(),
+                        size: label.size,
+                        color: p.accent,
+                        max_width: None,
+                    });
+                }
+                // Column divider; brighter under the pointer or while dragging.
+                let edge = Rectangle::new(
+                    Point::new(x + w[c] - 1.0, b.origin.y + 8.0),
+                    Size::new(1.0, HEADER_H - 17.0),
+                );
+                let live = matches!(s.drag, Drag::Resize(i, ..) if i == c)
+                    || (head.contains(cursor)
+                        && (cursor.x - (x + w[c])).abs() <= HANDLE
+                        && s.drag == Drag::None);
+                out.push(if live {
+                    quad(
+                        Rectangle::new(
+                            Point::new(x + w[c] - 1.0, b.origin.y),
+                            Size::new(2.0, HEADER_H - 1.0),
+                        ),
+                        p.accent.with_alpha(if matches!(s.drag, Drag::Resize(..)) {
+                            0.9
+                        } else {
+                            0.55
+                        }),
+                        0.0,
+                    )
+                } else {
+                    quad(edge, p.border, 0.0)
+                });
             }
-            // Column divider; brighter under the pointer or while dragging.
-            let edge = Rectangle::new(
-                Point::new(x + w[c] - 1.0, b.origin.y + 8.0),
-                Size::new(1.0, HEADER_H - 17.0),
-            );
-            let live = matches!(s.drag, Drag::Resize(i, ..) if i == c)
-                || (head.contains(cursor)
-                    && (cursor.x - (x + w[c])).abs() <= HANDLE
-                    && s.drag == Drag::None);
-            out.push(if live {
-                quad(
-                    Rectangle::new(
-                        Point::new(x + w[c] - 1.0, b.origin.y),
-                        Size::new(2.0, HEADER_H - 1.0),
-                    ),
-                    p.accent.with_alpha(if matches!(s.drag, Drag::Resize(..)) {
-                        0.9
-                    } else {
-                        0.55
-                    }),
-                    0.0,
-                )
+            if pass == 0 {
+                out.push(DrawCommand::PopClip);
             } else {
-                quad(edge, p.border, 0.0)
-            });
+                out.push(quad(
+                    Rectangle::new(
+                        Point::new(b.origin.x + pw - 1.0, b.origin.y),
+                        Size::new(1.0, HEADER_H - 1.0),
+                    ),
+                    p.border_strong.with_alpha(0.7),
+                    0.0,
+                ));
+            }
         }
         self.ui.set_clip(outer);
         out.push(DrawCommand::PopClip);

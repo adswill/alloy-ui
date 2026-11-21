@@ -165,17 +165,52 @@ pub(crate) struct Painter {
     scratch: Option<Scratch>,
     atlas: Atlas,
     images: HashMap<u64, GpuImage>,
+    /// Streamed pixel surfaces already uploaded: id to (version, width, height).
+    streamed: HashMap<u64, (u64, u32, u32)>,
+    shared: std::sync::Arc<crate::shared::SharedGpu>,
     next_id: u64,
     pub(crate) text: TextSystem,
 }
 
-impl Painter {
-    pub(crate) fn new(
-        device: wgpu::Device,
-        queue: wgpu::Queue,
-        format: wgpu::TextureFormat,
-        text: TextSystem,
-    ) -> Self {
+/// The surface-independent GPU objects the first frame needs: shader module, bind group
+/// layouts and the render pipeline for one target format. Building them is the slowest part
+/// of a cold start (the WGSL is parsed, validated and compiled), so [`crate::prewarm`] builds
+/// them on a background thread while the window is being created.
+pub(crate) struct Parts {
+    pub(crate) format: wgpu::TextureFormat,
+    pipeline: wgpu::RenderPipeline,
+    globals_layout: wgpu::BindGroupLayout,
+    tex_layout: wgpu::BindGroupLayout,
+}
+
+/// What [`crate::prewarm`] builds on its thread: an instance, an adapter chosen without
+/// knowing the window, its device, and the pipeline for the format nearly every surface offers.
+pub(crate) struct Warm {
+    pub(crate) ctx: GpuContext,
+    pub(crate) parts: Parts,
+}
+
+impl Warm {
+    /// The format a surface almost always offers first among the non-sRGB ones (Metal, D3D12
+    /// and most Vulkan drivers); a surface that wants another just rebuilds the pipeline.
+    pub(crate) const GUESS: wgpu::TextureFormat = wgpu::TextureFormat::Bgra8Unorm;
+
+    pub(crate) fn build() -> Option<Self> {
+        let mut t = std::time::Instant::now();
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
+        crate::perf_mark("warm.instance", &mut t);
+        let adapter = request_adapter(&instance, None, false)?;
+        crate::perf_mark("warm.adapter", &mut t);
+        let ctx = GpuContext::from_adapter(instance, adapter).ok()?;
+        crate::perf_mark("warm.device", &mut t);
+        let parts = Parts::build(&ctx.device, Self::GUESS);
+        crate::perf_mark("warm.pipeline", &mut t);
+        Some(Self { ctx, parts })
+    }
+}
+
+impl Parts {
+    pub(crate) fn build(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("alloy-ui shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SRC.into()),
@@ -267,6 +302,39 @@ impl Painter {
             multiview: None,
             cache: None,
         });
+        Self {
+            format,
+            pipeline,
+            globals_layout,
+            tex_layout,
+        }
+    }
+}
+
+impl Painter {
+    pub(crate) fn new(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        format: wgpu::TextureFormat,
+        text: TextSystem,
+    ) -> Self {
+        let parts = Parts::build(&device, format);
+        Self::with_parts(device, queue, parts, text)
+    }
+
+    /// A painter using pipeline objects that were already built (see [`Parts`]).
+    pub(crate) fn with_parts(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        parts: Parts,
+        text: TextSystem,
+    ) -> Self {
+        let Parts {
+            format,
+            pipeline,
+            globals_layout,
+            tex_layout,
+        } = parts;
         let globals_buf = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("globals"),
             size: std::mem::size_of::<Globals>() as u64,
@@ -300,6 +368,12 @@ impl Painter {
         };
         let instance_cap = 1024;
         let instances = make_instance_buffer(&device, instance_cap);
+        let shared = crate::shared::SharedGpu::new(
+            device.clone(),
+            queue.clone(),
+            tex_layout.clone(),
+            sampler.clone(),
+        );
         Self {
             device,
             queue,
@@ -314,8 +388,66 @@ impl Painter {
             scratch: None,
             atlas,
             images: HashMap::new(),
+            streamed: HashMap::new(),
+            shared,
             next_id: 1,
             text,
+        }
+    }
+
+    /// The shared-texture registry for this painter's device.
+    pub(crate) fn shared(&self) -> std::sync::Arc<crate::shared::SharedGpu> {
+        self.shared.clone()
+    }
+
+    /// Make sure the streamed surface `id` (if it is one) has its latest frame on the GPU.
+    /// True when `id` can be drawn: a registered image, a streamed surface, or neither (false).
+    fn sync_streamed(&mut self, id: u64) -> bool {
+        let Some(d) = crate::pixels::get(id) else {
+            return self.images.contains_key(&id);
+        };
+        match self.streamed.get(&id) {
+            Some(&(v, w, h)) if v == d.version && (w, h) == (d.width, d.height) => return true,
+            Some(&(_, w, h)) if (w, h) == (d.width, d.height) => {
+                if let Some(img) = self.images.get(&id) {
+                    upload(&self.queue, &img.texture, [0, 0], w, h, &d.rgba);
+                    self.streamed.insert(id, (d.version, w, h));
+                    return true;
+                }
+            }
+            _ => {}
+        }
+        // New surface, or the size changed: make a fresh texture.
+        if let Some(old) = self.images.remove(&id) {
+            old.texture.destroy();
+        }
+        let tex = make_texture(&self.device, d.width, d.height, "streamed surface");
+        upload(&self.queue, &tex, [0, 0], d.width, d.height, &d.rgba);
+        let bind_group = make_bind_group(&self.device, &self.tex_layout, &tex, &self.sampler);
+        self.images.insert(
+            id,
+            GpuImage {
+                texture: tex,
+                bind_group,
+            },
+        );
+        self.streamed.insert(id, (d.version, d.width, d.height));
+        true
+    }
+
+    /// Free the textures of surfaces that have been dropped.
+    fn sweep_streamed(&mut self) {
+        let gone: Vec<u64> = self
+            .streamed
+            .keys()
+            .copied()
+            .filter(|id| !crate::pixels::exists(*id))
+            .collect();
+        for id in gone {
+            self.streamed.remove(&id);
+            if let Some(img) = self.images.remove(&id) {
+                img.texture.destroy();
+            }
         }
     }
 
@@ -439,7 +571,7 @@ impl Painter {
                 }
                 Source::None => (None, [0.0, 0.0, 1.0, 1.0]),
                 Source::Image(id) => {
-                    if !self.images.contains_key(&id) {
+                    if !self.shared.contains(id) && !self.sync_streamed(id) {
                         continue;
                     }
                     (Some(Binding::Image(id)), [0.0, 0.0, 1.0, 1.0])
@@ -553,6 +685,7 @@ impl Painter {
         scale: f32,
         clear: Color,
     ) {
+        self.sweep_streamed();
         let prims = flatten(list, scale, width, height, &mut self.text);
         let can_copy = target.is_some();
         let (mut inst, mut batches, overflow) = self.build(&prims, can_copy);
@@ -679,11 +812,18 @@ impl Painter {
     }
 
     fn draw_batch(&self, pass: &mut wgpu::RenderPass<'_>, b: &Batch) {
+        let shared_bg = match b.binding {
+            Binding::Image(id) if !self.images.contains_key(&id) => self.shared.bind_group(id),
+            _ => None,
+        };
         let bg = match b.binding {
             Binding::Atlas => &self.atlas.bind_group,
             Binding::Image(id) => match self.images.get(&id) {
                 Some(i) => &i.bind_group,
-                None => return,
+                None => match &shared_bg {
+                    Some(b) => b,
+                    None => return,
+                },
             },
             Binding::Snap => match &self.scratch {
                 Some(s) => &s.snap_bg,

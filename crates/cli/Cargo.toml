@@ -6,6 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+default-run = "alloy"
 
 [lints]
 workspace = true
@@ -18,7 +19,13 @@ path = "src/lib.rs"
 name = "alloy"
 path = "src/main.rs"
 
+# `cargo alloy <command>` is the same tool, so `cargo alloy test` works once installed.
+[[bin]]
+name = "cargo-alloy"
+path = "src/cargo_alloy.rs"
+
 [dependencies]
+alloy-ui-core.workspace = true
 alloy-ui-ipc.workspace = true
 alloy-ui-ship = { path = "../ship", version = "0.0.1", default-features = false }
 flate2 = "1.1.11"

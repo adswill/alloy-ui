@@ -194,6 +194,7 @@ define_class!(
         #[unsafe(method(handleURL:withReply:))]
         fn handle_url(&self, event: &NSAppleEventDescriptor, _reply: &NSAppleEventDescriptor) {
             let url = direct_object(event).and_then(|d| d.stringValue());
+            log::debug!("open-URL Apple Event: {url:?}");
             if let Some(u) = url {
                 super::push_pending(PlatformEvent::Open(vec![u.to_string()]));
             }
@@ -202,6 +203,7 @@ define_class!(
         /// `kCoreEventClass` / `kAEOpenDocuments`: files were opened with the app.
         #[unsafe(method(handleOpenDocuments:withReply:))]
         fn handle_docs(&self, event: &NSAppleEventDescriptor, _reply: &NSAppleEventDescriptor) {
+            log::debug!("open-documents Apple Event");
             let Some(list) = direct_object(event) else {
                 return;
             };

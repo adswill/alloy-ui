@@ -107,3 +107,37 @@ impl App for Page {
 ```
 
 For fake data while you build the UI, `Service::mock` (a `Record` type's `mock`) gives you a backend with a delay and failures on demand: see the `status` example.
+
+## Futures that feed your state: `Cmd::perform_keyed`
+
+`resource` is for data a view shows. When the result must go through `update` (a search that fills your own struct, an upload that returns an id), return a command from `update_cmd`. `Cmd::perform(fut)` runs it; `Cmd::perform_keyed(key, fut)` runs it under a key, and starting another with the same key **cancels the one still running**, so only the latest result arrives. `Cmd::cancel(key)` stops it without starting another.
+
+```rust
+use alloy_ui::prelude::*;
+
+#[derive(Default)]
+struct Search { shown: String }
+
+#[derive(Clone)]
+enum Msg { Typed(String), Found(String), Cancel }
+
+impl App for Search {
+    type Msg = Msg;
+    fn update_cmd(&mut self, m: Msg) -> Cmd<Msg> {
+        match m {
+            Msg::Typed(q) => Cmd::perform_keyed("search", async move {
+                sleep(secs(0.3)).await; // a newer keystroke cancels us during this wait
+                Msg::Found(format!("results for {q}"))
+            }),
+            Msg::Found(r) => { self.shown = r; Cmd::none() }
+            Msg::Cancel => Cmd::cancel("search"),
+        }
+    }
+    fn view(&self) -> impl View<Msg> {
+        col![button("Search").on(Msg::Typed("rust".into())), button("Cancel").on(Msg::Cancel), text(self.shown.clone())]
+    }
+}
+# fn main() { let _ = Search::default(); }
+```
+
+The key is anything hashable (`"search"`, an enum, a `(Kind, id)` pair), so several independent streams can run at once. A cancelled future is dropped at its next wake-up, and its message is never delivered, even if it had just finished; `await` points are where it stops. Tests drive these with `Harness::settle()`, which waits for the commands too.

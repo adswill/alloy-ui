@@ -1,9 +1,10 @@
 //! Line and bar charts with real axes, plus a sparkline.
 
 use crate::util::{self, label_cmd};
+use crate::zoom::Zoom;
 use crate::{a11y::Role, ui::Ui};
 use alloy_ui_core::{
-    style::Style, Border, Color, DrawCommand, DrawList, Element, FontFamily, Layout, Point,
+    style::Style, Border, Color, DrawCommand, DrawList, Element, Event, FontFamily, Layout, Point,
     Rectangle, Size, Widget,
 };
 use alloy_ui_layout::Length;
@@ -134,6 +135,7 @@ pub struct Chart {
     unit: String,
     y_min: Option<f32>,
     y_max: Option<f32>,
+    zoom: Option<u64>,
 }
 
 impl Chart {
@@ -149,7 +151,15 @@ impl Chart {
             unit: String::new(),
             y_min: None,
             y_max: None,
+            zoom: None,
         }
+    }
+    /// Let the user zoom (scroll) and pan (drag) along the x axis. `id` keeps the view across
+    /// rebuilds. While zoomed a "Reset zoom" chip appears (or press `0`, Home or Esc). The y
+    /// axis rescales to the visible samples.
+    pub fn zoomable(mut self, id: u64) -> Self {
+        self.zoom = Some(id);
+        self
     }
     /// A line chart of `series`.
     pub fn line(ui: &Ui, series: impl Into<Vec<Series>>) -> Self {
@@ -232,6 +242,41 @@ impl Chart {
     }
 }
 
+impl Chart {
+    /// This chart restricted to samples `start..start + len`, with the zoom turned off.
+    fn sliced(&self, start: usize, len: usize) -> Chart {
+        let cut = |v: &[f32]| {
+            v.get(start..(start + len).min(v.len()))
+                .unwrap_or(&[])
+                .to_vec()
+        };
+        Chart {
+            ui: self.ui.clone(),
+            kind: self.kind,
+            series: self
+                .series
+                .iter()
+                .map(|s| Series {
+                    values: cut(&s.values),
+                    ..s.clone()
+                })
+                .collect(),
+            x_labels: self
+                .x_labels
+                .get(start..(start + len).min(self.x_labels.len()))
+                .unwrap_or(&[])
+                .to_vec(),
+            height: self.height,
+            area: self.area,
+            legend: self.legend,
+            unit: self.unit.clone(),
+            y_min: self.y_min,
+            y_max: self.y_max,
+            zoom: None,
+        }
+    }
+}
+
 impl<M> Widget<M> for Chart {
     fn style(&self) -> Style {
         util::sized(Length::Fill(1), Length::Fixed(self.height))
@@ -239,7 +284,41 @@ impl<M> Widget<M> for Chart {
     fn measure(&self, _available: Size) -> Size {
         Size::new(240.0, self.height)
     }
+    fn on_event(
+        &mut self,
+        event: &Event,
+        layout: &Layout,
+        cursor: Point,
+        _out: &mut Vec<M>,
+    ) -> bool {
+        let Some(id) = self.zoom else {
+            return false;
+        };
+        Zoom::new(&self.ui, id, self.n()).on_event(
+            event,
+            &layout.bounds,
+            cursor,
+            self.ui.is_focused(Some(id)),
+        )
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
+        let Some(id) = self.zoom else {
+            return self.paint(layout, out, None);
+        };
+        self.ui.register(id);
+        let z = Zoom::new(&self.ui, id, self.n());
+        let (s, l) = z.window();
+        if z.zoomed() {
+            self.sliced(s, l).paint(layout, out, Some(&z));
+        } else {
+            self.paint(layout, out, Some(&z));
+        }
+        z.draw_chip(&layout.bounds, out);
+    }
+}
+
+impl Chart {
+    fn paint(&self, layout: &Layout, out: &mut DrawList, rec: Option<&Zoom>) {
         let t = self.ui.theme();
         let p = &t.palette;
         let cap = t.typography.caption;
@@ -320,6 +399,9 @@ impl<M> Widget<M> for Chart {
                 (b.size.height - legend_h - xl_h - cap.line_height / 2.0).max(1.0),
             ),
         );
+        if let Some(z) = rec {
+            z.record_plot(plot.origin.x, plot.size.width);
+        }
         let y_of = |v: f32| plot.origin.y + plot.size.height * (1.0 - (v - lo) / span);
 
         // Gridlines and y labels. The zero/base line is the only strong one.
@@ -712,6 +794,35 @@ impl<M> Widget<M> for Sparkline {
             border: None,
             shadow: None,
         });
+        // Hover: ring the nearest point and say what it is.
+        let cur = self.ui.cursor();
+        if b.contains(cur) {
+            let i = (0..n)
+                .min_by(|a, z| {
+                    (pts[*a].x - cur.x)
+                        .abs()
+                        .total_cmp(&(pts[*z].x - cur.x).abs())
+                })
+                .unwrap_or(0);
+            let q = pts[i];
+            out.push(DrawCommand::Quad {
+                bounds: Rectangle::new(Point::new(q.x - 4.0, q.y - 4.0), Size::new(8.0, 8.0)),
+                fill: t.palette.surface,
+                radius: 4.0,
+                border: Some(Border {
+                    color: c,
+                    width: 2.0,
+                }),
+                shadow: None,
+            });
+            util::chart_tip(
+                &self.ui,
+                q,
+                b,
+                &format!("Point {} of {n}", i + 1),
+                &format_exact(self.values[i]),
+            );
+        }
     }
 }
 

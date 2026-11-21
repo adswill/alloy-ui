@@ -315,6 +315,49 @@ fn virtual_list_builds_only_visible_rows() {
     assert_eq!(s.msgs, vec![Msg::Pick(expect)]);
 }
 
+/// Rows of three different heights, a million of them: only the visible rows are built, a click
+/// lands on the right row, and the end of the list is reachable.
+#[test]
+fn virtual_list_variable_heights_million_rows() {
+    use alloy_ui_widgets::HeightIndex;
+    const N: usize = 1_000_000;
+    let h = |i: usize| 20.0 + (i % 3) as f32 * 14.0;
+    let ix = HeightIndex::new(N, h);
+    assert_eq!(ix.row_at(0.0), 0);
+    assert_eq!(ix.row_at(ix.top(777_777) + 1.0), 777_777);
+    assert_eq!(ix.row_at(ix.total() + 50.0), N - 1);
+    let built = Rc::new(Cell::new(0usize));
+    let (b, ix2) = (built.clone(), ix.clone());
+    let mut s = Scene::new(Theme::light(), move |ui| {
+        let b = b.clone();
+        VirtualList::new(ui, 3, 0, move |i| {
+            b.set(b.get() + 1);
+            Text::new(&Ui::new(Theme::light()), format!("Row {i}")).into_element()
+        })
+        .variable(&ix2)
+        .on_select(Msg::Pick)
+        .into_element()
+    });
+    s.draw();
+    s.mv(100.0, 100.0);
+    s.send(Event::Scrolled {
+        dx: 0.0,
+        dy: -(ix.total() as f32),
+    });
+    let target = s.ui.scroll_offset_f64(3);
+    assert!(target > 20_000_000.0, "scrolled to {target}");
+    s.ui.scroll_jump_f64(3, target, f64::MAX);
+    built.set(0);
+    s.draw();
+    assert!(built.get() <= 20, "built {} rows at the end", built.get());
+    // The pixel under the pointer belongs to the row the index says it does.
+    s.msgs.clear();
+    s.click(100.0, 14.0);
+    let expect = ix.row_at(s.ui.scroll_offset_f64(3) + 14.0);
+    assert_eq!(s.msgs, vec![Msg::Pick(expect)]);
+    assert!(expect > N - 60, "clicked row {expect}");
+}
+
 #[test]
 fn virtual_list_keyboard_and_scrollbar() {
     let mut s = Scene::new(Theme::light(), |ui| {

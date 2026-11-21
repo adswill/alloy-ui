@@ -4,7 +4,7 @@ use crate::ui::*;
 use crate::Studio;
 use alloy_ui::i18n;
 use alloy_ui::prelude::*;
-use alloy_ui::{entry, CalAction, CalView};
+use alloy_ui::{entry, CalAction, CalView, Entry};
 
 fn calendar_action(s: &mut Studio, a: CalAction) {
     let step = |v: CalView| match v {
@@ -42,6 +42,18 @@ fn calendar_action(s: &mut Studio, a: CalAction) {
         CalAction::Resize { id, end } => {
             if let Some(e) = s.work.entries.iter_mut().find(|e| e.id == id) {
                 e.end = end.max(e.start + 15);
+            }
+        }
+        CalAction::CreateAllDay { date } => {
+            let id = s.work.entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+            s.work
+                .entries
+                .push(Entry::all_day(id, "New all-day event", date, 1));
+            toast("All-day event created").undo();
+        }
+        CalAction::Span { id, days } => {
+            if let Some(e) = s.work.entries.iter_mut().find(|e| e.id == id) {
+                e.days = days;
             }
         }
         CalAction::Open(_) => {}

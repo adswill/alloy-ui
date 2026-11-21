@@ -1,23 +1,51 @@
 name: website
-# Manual only. Enable Pages (Settings > Pages > Source: GitHub Actions) first, then run this by hand.
-on: workflow_dispatch
+# Rebuilds the docs site from the repository's Markdown and publishes it to the gh-pages branch
+# whenever the site, the guide or the cookbook changes on main. Also runnable by hand.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "docs/**"
+      - "comparison/README.md"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
   pages: write
-  id-token: write
 concurrency:
   group: pages
   cancel-in-progress: true
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/setup-python@v5
         with:
-          path: website
-      - id: deployment
-        uses: actions/deploy-pages@v4
+          python-version: "3.12"
+      - name: Build the site
+        run: |
+          pip install markdown pygments
+          python3 website/build.py
+          touch website/.nojekyll
+      - name: Publish to gh-pages
+        run: |
+          cd website
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Publish site from ${GITHUB_SHA::7}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" gh-pages
+      - name: Turn on Pages for the gh-pages branch (first run only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh api "repos/${{ github.repository }}/pages" >/dev/null 2>&1; then
+            echo "Pages already enabled."
+          elif gh api -X POST "repos/${{ github.repository }}/pages" -f "source[branch]=gh-pages" -f "source[path]=/" >/dev/null 2>&1; then
+            echo "Pages enabled on gh-pages."
+          else
+            echo "::warning::Could not enable Pages automatically. One click: Settings > Pages > Source: Deploy from a branch > gh-pages > / (root)."
+          fi

@@ -404,3 +404,71 @@ fn theme_presets_light_and_dark() {
         }
     }
 }
+
+fn sheet_page(ui: &Ui, snap: usize) -> Element<()> {
+    let t = ui.theme();
+    let body = Column::new(vec![
+        Text::new(ui, "Details").into_element(),
+        Button::new(ui, "Share")
+            .variant(Variant::Primary)
+            .on_press(())
+            .id(21)
+            .into_element(),
+        Button::new(ui, "Archive")
+            .on_press(())
+            .id(22)
+            .into_element(),
+    ])
+    .spacing(t.spacing.sm)
+    .into_element();
+    Sheet::new(ui, 20, &[0.2, 0.55, 0.9], body)
+        .start_at(snap)
+        .scrim()
+        .into_element()
+}
+
+#[test]
+fn sheet_at_each_snap_point() {
+    for (i, name) in ["low", "mid", "high"].into_iter().enumerate() {
+        check(
+            &format!("sheet_{name}"),
+            &render(Theme::light(), |ui| sheet_page(ui, i), |_| {}),
+        );
+    }
+    check(
+        "sheet_mid_dark",
+        &render(Theme::dark(), |ui| sheet_page(ui, 1), |_| {}),
+    );
+}
+
+#[test]
+fn scroll_stretched_past_the_top_by_a_trackpad_pull() {
+    let build = |ui: &Ui| {
+        let rows: Vec<Element<()>> = (0..30)
+            .map(|i| {
+                Button::new(ui, format!("Row {i}"))
+                    .on_press(())
+                    .id(100 + i as u64)
+                    .into_element()
+            })
+            .collect();
+        Scrollable::new(
+            ui,
+            30,
+            Column::new(rows)
+                .spacing(6.0)
+                .width(Length::Fill(1))
+                .into_element(),
+        )
+        .into_element()
+    };
+    let setup = |ui: &Ui| {
+        // Freeze the gesture clock so the pull is still in progress when drawn.
+        ui.use_tick_clock();
+        ui.scroll_wheel_elastic(30, 60.0, 600.0, H as f32, true);
+    };
+    check(
+        "scroll_overscroll_top",
+        &render(Theme::light(), build, setup),
+    );
+}

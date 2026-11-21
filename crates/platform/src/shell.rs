@@ -417,6 +417,43 @@ pub fn request_window_effect(effect: alloy_ui_core::WindowEffect) {
     }
 }
 
+/// `alloy dev` restarts the app on every save. When it sets `ALLOY_DEV_WINDOW` to a file, the
+/// main window remembers where it was (position and logical size) in that file and reopens
+/// there, so a restart looks like a reload instead of a window jumping back to the default spot.
+/// Unset in normal runs: nothing is read or written.
+mod dev_geometry {
+    use super::*;
+
+    fn file() -> Option<std::path::PathBuf> {
+        std::env::var_os("ALLOY_DEV_WINDOW").map(Into::into)
+    }
+
+    pub fn restore(a: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+        let Some(txt) = file().and_then(|f| std::fs::read_to_string(f).ok()) else {
+            return a;
+        };
+        let v: Vec<f64> = txt
+            .split_whitespace()
+            .filter_map(|t| t.parse().ok())
+            .collect();
+        match v[..] {
+            [x, y, w, h] if w >= 100.0 && h >= 100.0 => a
+                .with_inner_size(LogicalSize::new(w, h))
+                .with_position(winit::dpi::PhysicalPosition::new(x, y)),
+            _ => a,
+        }
+    }
+
+    pub fn save(w: &Window) {
+        let Some(f) = file() else { return };
+        let scale = w.scale_factor();
+        let size = w.inner_size().to_logical::<f64>(scale);
+        if let Ok(p) = w.outer_position() {
+            let _ = std::fs::write(f, format!("{} {} {} {}", p.x, p.y, size.width, size.height));
+        }
+    }
+}
+
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
     let effect = INITIAL_EFFECT.lock().map(|e| *e).unwrap_or_default();
     Window::default_attributes()
@@ -648,7 +685,7 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         }
         #[cfg(target_os = "macos")]
         crate::os::install_open_handler();
-        match el.create_window(attributes(&self.settings)) {
+        match el.create_window(dev_geometry::restore(attributes(&self.settings))) {
             Ok(w) => {
                 let w = Arc::new(w);
                 self.ids.insert(w.id(), WindowKey::MAIN);
@@ -731,6 +768,11 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                 None
             }
             WindowEvent::Resized(s) => {
+                if key == WindowKey::MAIN {
+                    if let Some(c) = &self.ctx {
+                        dev_geometry::save(&c.window);
+                    }
+                }
                 let l = s.to_logical::<f32>(scale);
                 self.dispatch(el, I(Event::Resized(Size::new(l.width, l.height))));
                 // Rotation, keyboard and bar changes all arrive as a resize.
@@ -742,6 +784,14 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
                     }
                     _ => None,
                 }
+            }
+            WindowEvent::Moved(_) => {
+                if key == WindowKey::MAIN {
+                    if let Some(c) = &self.ctx {
+                        dev_geometry::save(&c.window);
+                    }
+                }
+                None
             }
             WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                 Some(PlatformEvent::ScaleFactorChanged(scale_factor))
@@ -874,6 +924,11 @@ pub fn run<H: ShellHandler + 'static>(
     make: impl FnOnce(ShellProxy) -> H + 'static,
 ) -> Result<(), PlatformError> {
     let t0 = Instant::now();
+    // A link that launches the app arrives as an Apple Event while the app starts, so the
+    // handler goes in before the event loop exists; `resumed` installs it again in case AppKit
+    // replaced it while finishing the launch.
+    #[cfg(target_os = "macos")]
+    crate::os::install_open_handler();
     let mut builder = EventLoop::<Wake>::with_user_event();
     #[cfg(windows)]
     {

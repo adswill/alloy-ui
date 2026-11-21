@@ -58,3 +58,12 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06", "and
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSObject", "NSGeometry"] }
 objc2-ui-kit = { version = "0.3", features = ["UIView", "UIResponder", "UIPasteboard", "UIGeometry"] }
+
+# Both open real windows or use real OS services, so they need the main thread: own `main`.
+[[test]]
+name = "desktop_smoke"
+harness = false
+
+[[test]]
+name = "system_runtime"
+harness = false

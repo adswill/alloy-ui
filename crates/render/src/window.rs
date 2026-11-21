@@ -191,28 +191,43 @@ impl GpuWindow {
         W: HasWindowHandle + HasDisplayHandle + Send + Sync + 'static,
     {
         let mut t = std::time::Instant::now();
-        let instance = crate::take_instance();
-        crate::perf_mark("gpu.instance(wait)", &mut t);
+        let warm = crate::take_warm();
+        crate::perf_mark("gpu.warm(wait)", &mut t);
+        let instance = match &warm {
+            Some(w) => w.ctx.instance.clone(),
+            None => wgpu::Instance::new(&wgpu::InstanceDescriptor::default()),
+        };
         let surface = instance
             .create_surface(window)
             .map_err(|e| RenderError::Surface(e.to_string()))?;
         crate::perf_mark("gpu.surface", &mut t);
-        Self::finish(instance, surface, width, height)
+        Self::finish(instance, surface, warm, width, height)
     }
 
     fn finish(
         instance: wgpu::Instance,
         surface: wgpu::Surface<'static>,
+        warm: Option<crate::gpu::Warm>,
         width: u32,
         height: u32,
     ) -> Result<Self, RenderError> {
         let mut t = std::time::Instant::now();
-        let adapter = request_adapter(&instance, Some(&surface), false)
-            .or_else(|| request_adapter(&instance, Some(&surface), true))
-            .ok_or_else(|| RenderError::NoAdapter("none compatible with the surface".into()))?;
-        crate::perf_mark("gpu.adapter", &mut t);
-        let ctx = GpuContext::from_adapter(instance, adapter)?;
-        crate::perf_mark("gpu.device", &mut t);
+        // The prewarmed adapter was picked without a window: use it when it can present to
+        // this one (almost always), otherwise choose again with the surface in hand.
+        let (ctx, mut parts) = match warm {
+            Some(w) if w.ctx.adapter.is_surface_supported(&surface) => (w.ctx, Some(w.parts)),
+            _ => {
+                let adapter = request_adapter(&instance, Some(&surface), false)
+                    .or_else(|| request_adapter(&instance, Some(&surface), true))
+                    .ok_or_else(|| {
+                        RenderError::NoAdapter("none compatible with the surface".into())
+                    })?;
+                crate::perf_mark("gpu.adapter", &mut t);
+                let ctx = GpuContext::from_adapter(instance, adapter)?;
+                crate::perf_mark("gpu.device", &mut t);
+                (ctx, None)
+            }
+        };
         let caps = surface.get_capabilities(&ctx.adapter);
         // Prefer a non-sRGB format so colours match the CPU reference.
         let format = caps
@@ -250,7 +265,11 @@ impl GpuWindow {
         crate::perf_mark("gpu.surface-config", &mut t);
         let text = crate::take_text_system();
         crate::perf_mark("text-system", &mut t);
-        let painter = Painter::new(ctx.device.clone(), ctx.queue.clone(), format, text);
+        let painter = match parts.take().filter(|p| p.format == format) {
+            Some(p) => Painter::with_parts(ctx.device.clone(), ctx.queue.clone(), p, text),
+            None => Painter::new(ctx.device.clone(), ctx.queue.clone(), format, text),
+        };
+        crate::shared::set_global(&painter.shared());
         crate::perf_mark("gpu.pipeline", &mut t);
         Ok(Self {
             surface,

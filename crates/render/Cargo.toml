@@ -19,6 +19,10 @@ gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
 soft-window = ["dep:softbuffer"]
 # OpenGL backend for machines with no Vulkan (off by default: ~0.4 MB; the CPU path covers them).
 gles = ["gpu", "wgpu/gles"]
+# Embed the whole Lucide / Phosphor pack (about 1.0 / 0.5 MB) instead of the small built-in subset.
+# `ALLOY_ICONS_SUBSET=<dir>` (see tools/icons/shake.py) embeds only the icons an app names.
+icons-lucide-full = []
+icons-phosphor-full = []
 
 [dependencies]
 alloy-ui-core.workspace = true
@@ -33,12 +37,13 @@ pollster = { version = "0.4", optional = true }
 softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen", "kms"], optional = true }
 
 # Each OS gets only its own wgpu backend.
-[target.'cfg(target_os = "macos")'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["metal"], optional = true }
 [target.'cfg(windows)'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["dx12"], optional = true }
-[target.'cfg(not(any(target_os = "macos", windows)))'.dependencies]
+[target.'cfg(not(any(target_os = "macos", target_os = "ios", windows)))'.dependencies]
 wgpu = { version = "25", default-features = false, features = ["vulkan"], optional = true }
 
 [dev-dependencies]
+wgpu = { version = "25", default-features = false, features = ["wgsl"] }
 naga = { version = "25", features = ["wgsl-in"] }

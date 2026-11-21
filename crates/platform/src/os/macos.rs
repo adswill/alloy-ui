@@ -102,38 +102,14 @@ pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
 /// Show an `NSOpenPanel`, `NSSavePanel` or folder chooser. AppKit panels only work on the main
 /// thread; from any other thread the same dialog is shown through `osascript`.
 pub fn file_dialog(o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError> {
-    use objc2_app_kit::{NSModalResponseOK, NSOpenPanel, NSSavePanel};
-    use objc2_foundation::{NSArray, NSURL};
+    use objc2_app_kit::NSModalResponseOK;
     let Some(mtm) = MainThreadMarker::new() else {
         return Ok(capture("osascript", &["-e", &dialog::applescript(o)])
             .map(|s| dialog::parse_lines(&s))
             .unwrap_or_default());
     };
-    let start = o
-        .dir
-        .as_ref()
-        .map(|d| NSURL::fileURLWithPath(&NSString::from_str(&d.display().to_string())));
-    let types: Vec<_> = o
-        .filters
-        .iter()
-        .flat_map(|f| f.extensions.iter())
-        .map(|e| NSString::from_str(e))
-        .collect();
-    let types = (!types.is_empty()).then(|| NSArray::from_retained_slice(&types));
-    let title = o.title.as_deref().map(NSString::from_str);
     if o.kind == DialogKind::Save {
-        let panel = NSSavePanel::savePanel(mtm);
-        panel.setNameFieldStringValue(&NSString::from_str(&o.name));
-        if let Some(t) = &title {
-            panel.setMessage(Some(t));
-        }
-        if let Some(u) = &start {
-            panel.setDirectoryURL(Some(u));
-        }
-        #[allow(deprecated)] // UTType needs another framework crate; extensions are enough here
-        if let Some(t) = &types {
-            panel.setAllowedFileTypes(Some(t));
-        }
+        let panel = save_panel(mtm, o);
         if panel.runModal() != NSModalResponseOK {
             return Ok(Vec::new());
         }
@@ -144,21 +120,7 @@ pub fn file_dialog(o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError>
             .into_iter()
             .collect());
     }
-    let panel = NSOpenPanel::openPanel(mtm);
-    let folder = o.kind == DialogKind::Folder;
-    panel.setCanChooseFiles(!folder);
-    panel.setCanChooseDirectories(folder);
-    panel.setAllowsMultipleSelection(o.kind == DialogKind::OpenFiles);
-    if let Some(t) = &title {
-        panel.setMessage(Some(t));
-    }
-    if let Some(u) = &start {
-        panel.setDirectoryURL(Some(u));
-    }
-    #[allow(deprecated)] // as above
-    if let (Some(t), false) = (&types, folder) {
-        panel.setAllowedFileTypes(Some(t));
-    }
+    let panel = open_panel_for(mtm, o);
     if panel.runModal() != NSModalResponseOK {
         return Ok(Vec::new());
     }
@@ -168,6 +130,87 @@ pub fn file_dialog(o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError>
         .filter_map(|u| u.path())
         .map(|p| PathBuf::from(p.to_string()))
         .collect())
+}
+
+fn allowed_types(o: &FileDialogOptions) -> Option<Retained<objc2_foundation::NSArray<NSString>>> {
+    let types: Vec<_> = o
+        .filters
+        .iter()
+        .flat_map(|f| f.extensions.iter())
+        .map(|e| NSString::from_str(e))
+        .collect();
+    (!types.is_empty()).then(|| objc2_foundation::NSArray::from_retained_slice(&types))
+}
+
+fn start_dir(o: &FileDialogOptions) -> Option<Retained<objc2_foundation::NSURL>> {
+    o.dir.as_ref().map(|d| {
+        objc2_foundation::NSURL::fileURLWithPath(&NSString::from_str(&d.display().to_string()))
+    })
+}
+
+/// An `NSSavePanel` set up from `o` (not shown).
+fn save_panel(
+    mtm: MainThreadMarker,
+    o: &FileDialogOptions,
+) -> Retained<objc2_app_kit::NSSavePanel> {
+    let panel = objc2_app_kit::NSSavePanel::savePanel(mtm);
+    panel.setNameFieldStringValue(&NSString::from_str(&o.name));
+    if let Some(t) = &o.title {
+        panel.setMessage(Some(&NSString::from_str(t)));
+    }
+    if let Some(u) = start_dir(o) {
+        panel.setDirectoryURL(Some(&u));
+    }
+    #[allow(deprecated)] // UTType needs another framework crate; extensions are enough here
+    if let Some(t) = allowed_types(o) {
+        panel.setAllowedFileTypes(Some(&t));
+    }
+    panel
+}
+
+/// An `NSOpenPanel` set up from `o` (not shown).
+fn open_panel_for(
+    mtm: MainThreadMarker,
+    o: &FileDialogOptions,
+) -> Retained<objc2_app_kit::NSOpenPanel> {
+    let panel = objc2_app_kit::NSOpenPanel::openPanel(mtm);
+    let folder = o.kind == DialogKind::Folder;
+    panel.setCanChooseFiles(!folder);
+    panel.setCanChooseDirectories(folder);
+    panel.setAllowsMultipleSelection(o.kind == DialogKind::OpenFiles);
+    if let Some(t) = &o.title {
+        panel.setMessage(Some(&NSString::from_str(t)));
+    }
+    if let Some(u) = start_dir(o) {
+        panel.setDirectoryURL(Some(&u));
+    }
+    #[allow(deprecated)] // as above
+    if let (Some(t), false) = (allowed_types(o), folder) {
+        panel.setAllowedFileTypes(Some(&t));
+    }
+    panel
+}
+
+/// Build the real AppKit panel for `o` without showing it and describe what it was
+/// configured to do (`kind files dirs multi message`), for the runtime smoke test.
+pub fn dialog_panel_summary(o: &FileDialogOptions) -> Option<String> {
+    let mtm = MainThreadMarker::new()?;
+    if o.kind == DialogKind::Save {
+        let p = save_panel(mtm, o);
+        return Some(format!(
+            "save name={} message={}",
+            p.nameFieldStringValue(),
+            p.message()
+        ));
+    }
+    let p = open_panel_for(mtm, o);
+    Some(format!(
+        "open files={} dirs={} multi={} message={}",
+        p.canChooseFiles(),
+        p.canChooseDirectories(),
+        p.allowsMultipleSelection(),
+        p.message()
+    ))
 }
 
 /// Post to Notification Center. `osascript` works from an unbundled binary and any
@@ -211,8 +254,23 @@ pub fn is_dark() -> Option<bool> {
     ))
 }
 
-/// Menu-item tag (index + 1) -> action id.
+/// Menu-bar item tag (index + 1) -> action id.
 static IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// Tray-menu item tag (`TRAY_BASE` + index + 1) -> action id. Kept apart from `IDS` so that
+/// re-installing the menu bar never invalidates the tray menu (and the other way round).
+static TRAY_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+const TRAY_BASE: isize = 1_000_000;
+
+/// Look an item tag up in the menu-bar or tray table.
+fn id_for_tag(tag: isize) -> Option<String> {
+    let (table, i) = if tag > TRAY_BASE {
+        (&TRAY_IDS, tag - TRAY_BASE)
+    } else {
+        (&IDS, tag)
+    };
+    let i = usize::try_from(i).ok()?.checked_sub(1)?;
+    table.lock().ok()?.get(i).cloned()
+}
 
 define_class!(
     // SAFETY: NSObject has no subclassing requirements; the class only reads
@@ -225,11 +283,8 @@ define_class!(
     impl Target {
         #[unsafe(method(menuAction:))]
         fn menu_action(&self, sender: &NSMenuItem) {
-            let tag = sender.tag();
-            if let Ok(ids) = IDS.lock() {
-                if let Some(id) = usize::try_from(tag).ok().and_then(|t| t.checked_sub(1)).and_then(|i| ids.get(i)) {
-                    super::push_pending(PlatformEvent::MenuAction(id.clone()));
-                }
+            if let Some(id) = id_for_tag(sender.tag()) {
+                super::push_pending(PlatformEvent::MenuAction(id));
             }
         }
 
@@ -274,6 +329,7 @@ fn build(
     items: &[MenuItem],
     tgt: &Target,
     ids: &mut Vec<String>,
+    base: isize,
 ) -> Retained<NSMenu> {
     let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str(title));
     menu.setAutoenablesItems(false);
@@ -283,7 +339,7 @@ fn build(
             MenuItem::Submenu(sub) => {
                 let mi = NSMenuItem::new(mtm);
                 mi.setTitle(&NSString::from_str(&sub.title));
-                mi.setSubmenu(Some(&build(mtm, &sub.title, &sub.items, tgt, ids)));
+                mi.setSubmenu(Some(&build(mtm, &sub.title, &sub.items, tgt, ids, base)));
                 menu.addItem(&mi);
             }
             MenuItem::Action {
@@ -303,7 +359,7 @@ fn build(
                         &NSString::from_str(&key),
                     )
                 };
-                mi.setTag(ids.len() as isize);
+                mi.setTag(base + ids.len() as isize);
                 mi.setEnabled(*enabled);
                 // SAFETY: `tgt` responds to `menuAction:` and is kept alive by `KEEP`.
                 unsafe { mi.setTarget(Some(tgt)) };
@@ -327,7 +383,7 @@ pub fn set_menu(_w: &winit::window::Window, menus: &[Menu]) -> Result<(), Platfo
     let bar = NSMenu::new(mtm);
     for m in menus {
         let holder = NSMenuItem::new(mtm);
-        holder.setSubmenu(Some(&build(mtm, &m.title, &m.items, &tgt, &mut ids)));
+        holder.setSubmenu(Some(&build(mtm, &m.title, &m.items, &tgt, &mut ids, 0)));
         bar.addItem(&holder);
     }
     *IDS.lock()
@@ -356,10 +412,18 @@ pub fn set_tray(_w: &winit::window::Window, t: &TraySettings) -> Result<(), Plat
     button.setImage(Some(&image));
     button.setToolTip(Some(&NSString::from_str(&t.tooltip)));
     if let Some(menu) = &t.menu {
-        let mut ids = IDS
+        let mut ids = Vec::new();
+        item.setMenu(Some(&build(
+            mtm,
+            &menu.title,
+            &menu.items,
+            &tgt,
+            &mut ids,
+            TRAY_BASE,
+        )));
+        *TRAY_IDS
             .lock()
-            .map_err(|_| PlatformError("state poisoned".into()))?;
-        item.setMenu(Some(&build(mtm, &menu.title, &menu.items, &tgt, &mut ids)));
+            .map_err(|_| PlatformError("state poisoned".into()))? = ids;
     } else {
         // SAFETY: `trayClicked:` is defined on Target; button retains target weakly, KEEP holds it.
         unsafe {
@@ -551,5 +615,89 @@ pub fn unregister_hotkeys() {
     for (_, r) in list.drain(..) {
         // SAFETY: `r` came from RegisterEventHotKey and is released exactly once here.
         unsafe { carbon::UnregisterEventHotKey(r as *mut std::ffi::c_void) };
+    }
+}
+
+// ---- Test hooks (see `crate::testing`): read the live AppKit state back and click items. ----
+
+fn find_tag(menu: &NSMenu, tag: isize) -> Option<(Retained<NSMenu>, isize)> {
+    let at = menu.indexOfItemWithTag(tag);
+    if at >= 0 {
+        return Some((objc2::Message::retain(menu), at));
+    }
+    (0..menu.numberOfItems()).find_map(|i| {
+        menu.itemAtIndex(i)
+            .and_then(|it| it.submenu())
+            .and_then(|sub| find_tag(&sub, tag))
+    })
+}
+
+/// Titles of the top-level menus AppKit holds for the application.
+pub fn menu_outline() -> Vec<String> {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return Vec::new();
+    };
+    let Some(bar) = NSApplication::sharedApplication(mtm).mainMenu() else {
+        return Vec::new();
+    };
+    (0..bar.numberOfItems())
+        .filter_map(|i| bar.itemAtIndex(i)?.submenu())
+        .map(|m| m.title().to_string())
+        .collect()
+}
+
+/// Click the menu-bar item `id` the way AppKit does when a user picks it.
+pub fn activate_menu_item(id: &str) -> bool {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return false;
+    };
+    let Some(bar) = NSApplication::sharedApplication(mtm).mainMenu() else {
+        return false;
+    };
+    let Some(pos) = IDS.lock().ok().and_then(|v| v.iter().position(|x| x == id)) else {
+        return false;
+    };
+    match find_tag(&bar, pos as isize + 1) {
+        Some((menu, at)) => {
+            menu.performActionForItemAtIndex(at);
+            true
+        }
+        None => false,
+    }
+}
+
+/// True when a status item with an image is on the menu bar.
+pub fn tray_visible() -> bool {
+    KEEP.with(|k| {
+        k.borrow()
+            .as_ref()
+            .and_then(|(_, item)| item.as_ref())
+            .and_then(|item| MainThreadMarker::new().and_then(|m| item.button(m)))
+            .is_some_and(|b| b.image().is_some())
+    })
+}
+
+/// Click the tray-menu item `id`.
+pub fn activate_tray_item(id: &str) -> bool {
+    let Some(pos) = TRAY_IDS
+        .lock()
+        .ok()
+        .and_then(|v| v.iter().position(|x| x == id))
+    else {
+        return false;
+    };
+    let menu = MainThreadMarker::new().and_then(|mtm| {
+        KEEP.with(|k| {
+            k.borrow()
+                .as_ref()
+                .and_then(|(_, item)| item.as_ref().and_then(|i| i.menu(mtm)))
+        })
+    });
+    match menu.and_then(|m| find_tag(&m, TRAY_BASE + pos as isize + 1)) {
+        Some((menu, at)) => {
+            menu.performActionForItemAtIndex(at);
+            true
+        }
+        None => false,
     }
 }

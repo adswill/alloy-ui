@@ -330,13 +330,18 @@ impl CpuRenderer {
             Source::Glyph(k) => self.text.bitmap(k),
             _ => None,
         };
+        let streamed = match p.source {
+            Source::Image(id) if !self.images.contains_key(&id) => crate::pixels::get(id),
+            _ => None,
+        };
         let tex: Option<(&[u8], u32, u32)> = match p.source {
             Source::None => None,
             Source::Glyph(_) => glyph.as_ref().map(|g| (&g.rgba[..], g.width, g.height)),
             Source::Image(id) => self
                 .images
                 .get(&id)
-                .map(|s| (&s.rgba[..], s.width, s.height)),
+                .map(|s| (&s.rgba[..], s.width, s.height))
+                .or_else(|| streamed.as_ref().map(|s| (&s.rgba[..], s.width, s.height))),
         };
         if p.source != Source::None && tex.is_none() {
             return;
@@ -434,8 +439,24 @@ impl CpuRenderer {
                             let edge = if (flags >> i) & 1 == 1 {
                                 cover(d)
                             } else {
-                                let tie = n[0] > 0.0 || (n[0] == 0.0 && n[1] > 0.0);
-                                if d < 0.0 || (d == 0.0 && tie) {
+                                // Evaluate from the lexicographically smaller endpoint so the
+                                // neighbour sharing this edge gets bit-identical arithmetic, and
+                                // let the side with a positive orientation claim exact ties.
+                                let (lo, hi) = if (p0[0], p0[1]) <= (p1[0], p1[1]) {
+                                    (p0, p1)
+                                } else {
+                                    (p1, p0)
+                                };
+                                let third = [c, a, b][i];
+                                let c0 = (hi[0] - lo[0]) * (pt.1 - lo[1])
+                                    - (hi[1] - lo[1]) * (pt.0 - lo[0]);
+                                let side = (hi[0] - lo[0]) * (third[1] - lo[1])
+                                    - (hi[1] - lo[1]) * (third[0] - lo[0]);
+                                let _ = d;
+                                if (c0 > 0.0 && side > 0.0)
+                                    || (c0 < 0.0 && side < 0.0)
+                                    || (c0 == 0.0 && side > 0.0)
+                                {
                                     1.0
                                 } else {
                                     0.0
