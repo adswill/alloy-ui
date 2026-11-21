@@ -38,6 +38,12 @@ pub struct Entry {
     pub end: u32,
     /// Colour role.
     pub tone: Tone,
+    /// An all-day entry: shown as a banner above the time grid (and as a bar in the month),
+    /// ignoring `start` and `end`.
+    pub all_day: bool,
+    /// How many consecutive days it covers, from `date` (at least 1). More than one day makes it
+    /// a banner too.
+    pub days: u32,
 }
 
 impl Entry {
@@ -51,7 +57,31 @@ impl Entry {
             start,
             end: end.max(start + 15),
             tone: Tone::Accent,
+            all_day: false,
+            days: 1,
         }
+    }
+    /// An all-day entry covering `days` days from `date` (`days` of 0 counts as 1).
+    pub fn all_day(id: u64, title: impl Into<String>, date: Date, days: u32) -> Self {
+        Self {
+            all_day: true,
+            days: days.max(1),
+            ..Self::new(id, title, date, 0, 24 * 60)
+        }
+    }
+    /// Make the entry span `days` consecutive days from its date. A multi-day entry is shown as a
+    /// banner, not on the time grid.
+    pub fn spanning(mut self, days: u32) -> Self {
+        self.days = days.max(1);
+        self
+    }
+    /// Shown as a banner (all day or more than one day)?
+    pub fn is_banner(&self) -> bool {
+        self.all_day || self.days > 1
+    }
+    /// Last day covered.
+    pub fn last_date(&self) -> Date {
+        Date::from_days(self.date.to_days() + self.days.max(1) as i64 - 1)
     }
     /// Colour the entry with `tone`.
     pub fn tone(mut self, tone: Tone) -> Self {
@@ -92,6 +122,18 @@ pub enum CalAction {
         /// New start in minutes after midnight; the duration is kept.
         start: u32,
     },
+    /// An all-day or multi-day entry's right edge was dragged: its new length in days.
+    Span {
+        /// The entry.
+        id: u64,
+        /// New number of days (at least 1).
+        days: u32,
+    },
+    /// An empty spot in the all-day band was clicked: create an all-day entry on `date`.
+    CreateAllDay {
+        /// The day.
+        date: Date,
+    },
     /// An entry's bottom edge was dragged: its new end in minutes.
     Resize {
         /// The entry.
@@ -101,6 +143,60 @@ pub enum CalAction {
     },
 }
 
+/// A banner entry clipped to one row of days.
+struct Bar<'a> {
+    e: &'a Entry,
+    c0: usize,
+    c1: usize,
+    lane: usize,
+    cut_l: bool,
+    cut_r: bool,
+}
+
+/// What dropping would do: the action, new first day, then start and end minutes (timed) and
+/// span in days (banners; 0 for timed entries).
+type DropAt = (CalAction, Date, u32, u32, u32);
+
+impl CalAction {
+    /// Apply an edit action to `entries`: `Move`, `Resize`, `Span`, `Create` (a one-hour entry
+    /// titled "New event") and `CreateAllDay`. Returns true if the list changed; navigation
+    /// and `Open` are yours to handle.
+    pub fn apply(&self, entries: &mut Vec<Entry>) -> bool {
+        let next = || entries.iter().map(|e| e.id).max().unwrap_or(0) + 1;
+        match *self {
+            CalAction::Move { id, date, start } => {
+                let Some(e) = entries.iter_mut().find(|e| e.id == id) else {
+                    return false;
+                };
+                let dur = e.end - e.start;
+                (e.date, e.start, e.end) = (date, start, start + dur);
+            }
+            CalAction::Resize { id, end } => {
+                let Some(e) = entries.iter_mut().find(|e| e.id == id) else {
+                    return false;
+                };
+                e.end = end.max(e.start + SNAP);
+            }
+            CalAction::Span { id, days } => {
+                let Some(e) = entries.iter_mut().find(|e| e.id == id) else {
+                    return false;
+                };
+                e.days = days.max(1);
+            }
+            CalAction::Create { date, minute } => {
+                let id = next();
+                entries.push(Entry::new(id, "New event", date, minute, minute + 60));
+            }
+            CalAction::CreateAllDay { date } => {
+                let id = next();
+                entries.push(Entry::all_day(id, "New event", date, 1));
+            }
+            _ => return false,
+        }
+        true
+    }
+}
+
 type Handler<M> = Rc<dyn Fn(CalAction) -> M>;
 
 /// A calendar with a toolbar (title, previous, today, next, view switch) and
@@ -108,7 +204,9 @@ type Handler<M> = Rc<dyn Fn(CalAction) -> M>;
 /// inside the period shown, `view` the grid, and every interaction arrives as
 /// a [`CalAction`]. In week and day views, drag an entry to move it (15 minute
 /// snap, across days), drag its bottom edge to resize it, click an empty slot
-/// to create one. PageUp, PageDown and Home page and jump to today.
+/// to create one. All-day and multi-day entries sit in a band above the time grid (and as
+/// bars across the month): drag one to move it, drag its right edge to change its length.
+/// PageUp, PageDown and Home page and jump to today.
 pub struct Calendar<M> {
     ui: Ui,
     id: u64,
@@ -151,6 +249,9 @@ const K_DRAG: u64 = 0xCA10_0005;
 const K_GRAB: u64 = 0xCA10_0006;
 const K_CD: u64 = 0xCA10_0007;
 const K_CM: u64 = 0xCA10_0008;
+const K_GRABD: u64 = 0xCA10_0009;
+const ROW: f32 = 20.0;
+const MAX_BAND_ROWS: usize = 4;
 const K_SCROLL: u64 = 0xCA10_5C01;
 
 const MODE_MOVE: i64 = 0;
@@ -317,12 +418,108 @@ impl<M: 'static> Calendar<M> {
     fn grid_view(&self, b: &Rectangle) -> Rectangle {
         let body = self.body(b);
         Rectangle::new(
+            Point::new(body.origin.x + GUTTER, body.origin.y + self.head_h()),
+            Size::new(
+                (body.size.width - GUTTER).max(0.0),
+                (body.size.height - self.head_h()).max(0.0),
+            ),
+        )
+    }
+    /// Day heads plus the all-day band.
+    fn head_h(&self) -> f32 {
+        let rows = self
+            .bars(&self.days())
+            .iter()
+            .map(|b| b.lane + 1)
+            .max()
+            .unwrap_or(1)
+            .min(MAX_BAND_ROWS);
+        DAY_HEAD + rows as f32 * ROW + 8.0
+    }
+    /// The all-day band under the day heads (week and day views).
+    fn band(&self, b: &Rectangle) -> Rectangle {
+        let body = self.body(b);
+        Rectangle::new(
             Point::new(body.origin.x + GUTTER, body.origin.y + DAY_HEAD),
             Size::new(
                 (body.size.width - GUTTER).max(0.0),
-                (body.size.height - DAY_HEAD).max(0.0),
+                self.head_h() - DAY_HEAD,
             ),
         )
+    }
+    /// Banner entries across `days` (consecutive dates, one row), packed into lanes.
+    fn bars(&self, days: &[Date]) -> Vec<Bar<'_>> {
+        let (Some(first), Some(last)) = (days.first(), days.last()) else {
+            return Vec::new();
+        };
+        let (f, l) = (first.to_days(), last.to_days());
+        let mut es: Vec<&Entry> = self
+            .entries
+            .iter()
+            .filter(|e| e.is_banner() && e.date.to_days() <= l && e.last_date().to_days() >= f)
+            .collect();
+        es.sort_by_key(|e| (e.date.to_days(), std::cmp::Reverse(e.days), e.id));
+        let mut ends: Vec<usize> = Vec::new();
+        let mut out = Vec::new();
+        for e in es {
+            let c0 = (e.date.to_days() - f).max(0) as usize;
+            let c1 = (e.last_date().to_days() - f).min(l - f) as usize;
+            let lane = match ends.iter().position(|&z| z < c0) {
+                Some(i) => {
+                    ends[i] = c1;
+                    i
+                }
+                None => {
+                    ends.push(c1);
+                    ends.len() - 1
+                }
+            };
+            out.push(Bar {
+                e,
+                c0,
+                c1,
+                lane,
+                cut_l: e.date.to_days() < f,
+                cut_r: e.last_date().to_days() > l,
+            });
+        }
+        out
+    }
+    /// A band bar's rectangle in the week or day view.
+    fn band_rect(&self, b: &Rectangle, bar: &Bar) -> Rectangle {
+        let band = self.band(b);
+        let cw = self.col_w(b);
+        Rectangle::new(
+            Point::new(
+                band.origin.x + bar.c0 as f32 * cw + if bar.cut_l { 0.0 } else { 2.0 },
+                band.origin.y + 4.0 + bar.lane as f32 * ROW,
+            ),
+            Size::new(
+                (bar.c1 - bar.c0 + 1) as f32 * cw
+                    - if bar.cut_l { 0.0 } else { 2.0 }
+                    - if bar.cut_r { 0.0 } else { 2.0 },
+                ROW - 2.0,
+            ),
+        )
+    }
+    /// The banner under `p` in the band: `(id, on the right edge)`.
+    fn band_hit(&self, b: &Rectangle, p: Point) -> Option<(u64, bool)> {
+        if !self.band(b).contains(p) {
+            return None;
+        }
+        for bar in self.bars(&self.days()).iter().rev() {
+            if bar.lane >= MAX_BAND_ROWS {
+                continue;
+            }
+            let r = self.band_rect(b, bar);
+            if r.contains(p) {
+                return Some((
+                    bar.e.id,
+                    !bar.cut_r && p.x > r.origin.x + r.size.width - 7.0,
+                ));
+            }
+        }
+        None
     }
     fn scroll(&self, b: &Rectangle) -> f32 {
         let max = (self.grid_h() - self.grid_view(b).size.height).max(0.0);
@@ -351,7 +548,7 @@ impl<M: 'static> Calendar<M> {
         let mut es: Vec<&Entry> = self
             .entries
             .iter()
-            .filter(|e| e.date == date && Some(e.id) != skip)
+            .filter(|e| e.date == date && !e.is_banner() && Some(e.id) != skip)
             .collect();
         es.sort_by_key(|e| (e.start, e.end));
         let mut out: Vec<(&Entry, usize, usize)> = Vec::new();
@@ -445,6 +642,30 @@ impl<M: 'static> Calendar<M> {
     fn month_chip_rows(&self, cell: &Rectangle) -> usize {
         (((cell.size.height - 28.0) / 20.0).floor().max(0.0)) as usize
     }
+    /// Banner bars of week row `row` of the month grid.
+    fn month_bars(&self, row: usize) -> Vec<Bar<'_>> {
+        let days = self.days();
+        self.bars(&days[row * 7..row * 7 + 7])
+    }
+    /// Rows of each month week taken by banner bars.
+    fn month_lanes(&self, row: usize) -> usize {
+        self.month_bars(row)
+            .iter()
+            .map(|b| b.lane + 1)
+            .max()
+            .unwrap_or(0)
+    }
+    /// A month bar's rectangle: it runs across the cells it covers on row `row`.
+    fn month_bar_rect(&self, b: &Rectangle, row: usize, bar: &Bar) -> Rectangle {
+        let first = self.month_cell(b, row * 7 + bar.c0);
+        let last = self.month_cell(b, row * 7 + bar.c1);
+        let x0 = first.origin.x + if bar.cut_l { 0.0 } else { 4.0 };
+        let x1 = last.origin.x + last.size.width - if bar.cut_r { 0.0 } else { 4.0 };
+        Rectangle::new(
+            Point::new(x0, first.origin.y + 28.0 + bar.lane as f32 * 20.0),
+            Size::new(x1 - x0, 18.0),
+        )
+    }
     fn month_chip(&self, cell: &Rectangle, row: usize) -> Rectangle {
         Rectangle::new(
             Point::new(
@@ -461,15 +682,28 @@ impl<M: 'static> Calendar<M> {
             if !cell.contains(p) {
                 continue;
             }
-            let es: Vec<&Entry> = self.entries.iter().filter(|e| e.date == *d).collect();
-            let rows = self.month_chip_rows(&cell);
+            let row = i / 7;
+            let nb = self.month_lanes(row);
+            for bar in self.month_bars(row).iter().rev() {
+                if bar.lane < self.month_chip_rows(&cell)
+                    && self.month_bar_rect(b, row, bar).contains(p)
+                {
+                    return Some((*d, Some(bar.e.id)));
+                }
+            }
+            let es: Vec<&Entry> = self
+                .entries
+                .iter()
+                .filter(|e| e.date == *d && !e.is_banner())
+                .collect();
+            let rows = self.month_chip_rows(&cell).saturating_sub(nb);
             let shown = if es.len() > rows && rows > 0 {
                 rows - 1
             } else {
                 es.len().min(rows)
             };
             for (k, e) in es.iter().take(shown).enumerate() {
-                if self.month_chip(&cell, k).contains(p) {
+                if self.month_chip(&cell, nb + k).contains(p) {
                     return Some((*d, Some(e.id)));
                 }
             }
@@ -484,21 +718,69 @@ impl<M: 'static> Calendar<M> {
         }
     }
     fn clear_press(&self) {
-        for k in [K_PRESS, K_MODE, K_PX, K_PY, K_DRAG, K_GRAB, K_CD, K_CM] {
+        for k in [
+            K_PRESS, K_MODE, K_PX, K_PY, K_DRAG, K_GRAB, K_CD, K_CM, K_GRABD,
+        ] {
             self.set(k, None);
         }
     }
     fn find(&self, id: u64) -> Option<&Entry> {
         self.entries.iter().find(|e| e.id == id)
     }
+    /// Is `p` on the right edge of banner `e`'s last bar segment in the month grid?
+    fn month_edge(&self, b: &Rectangle, e: &Entry, p: Point) -> bool {
+        let days = self.days();
+        let Some(i) = days.iter().position(|d| *d == e.last_date()) else {
+            return false;
+        };
+        let row = i / 7;
+        self.month_bars(row)
+            .iter()
+            .find(|bar| bar.e.id == e.id)
+            .is_some_and(|bar| {
+                let r = self.month_bar_rect(b, row, bar);
+                r.contains(p) && p.x > r.origin.x + r.size.width - 7.0
+            })
+    }
     /// What dropping the dragged entry at the cursor would do.
-    fn drag_result(&self, b: &Rectangle, p: Point) -> Option<(CalAction, Date, u32, u32)> {
+    fn drag_result(&self, b: &Rectangle, p: Point) -> Option<DropAt> {
         let id = self.slot(K_PRESS)? as u64;
         if self.slot(K_PRESS)? < 0 || self.slot(K_DRAG).is_none() {
             return None;
         }
         let e = self.find(id)?;
-        match (self.view, self.slot(K_MODE)) {
+        let mode = self.slot(K_MODE);
+        let grab_d = self.slot(K_GRABD).unwrap_or(0);
+        // The day under the cursor.
+        let day_at = |p: Point| -> Option<Date> {
+            if self.view == CalView::Month {
+                self.month_hit(b, p).map(|h| h.0)
+            } else {
+                let col = self.col_at(b, p.x);
+                self.days().get(col).copied()
+            }
+        };
+        if e.is_banner() {
+            let d = day_at(p)?;
+            return Some(if mode == Some(MODE_RESIZE) {
+                let days = (d.to_days() - e.date.to_days() + 1).max(1) as u32;
+                (CalAction::Span { id, days }, e.date, e.start, e.end, days)
+            } else {
+                let date = Date::from_days(d.to_days() - grab_d);
+                (
+                    CalAction::Move {
+                        id,
+                        date,
+                        start: e.start,
+                    },
+                    date,
+                    e.start,
+                    e.end,
+                    e.days,
+                )
+            });
+        }
+        match (self.view, mode) {
             (CalView::Month, _) => {
                 let (d, _) = self.month_hit(b, p)?;
                 Some((
@@ -510,12 +792,13 @@ impl<M: 'static> Calendar<M> {
                     d,
                     e.start,
                     e.end,
+                    0,
                 ))
             }
             (_, Some(MODE_RESIZE)) => {
                 let end = Self::snap(self.minute_at(b, p.y))
                     .clamp(e.start + SNAP, self.hi_min().max(e.start + SNAP));
-                Some((CalAction::Resize { id, end }, e.date, e.start, end))
+                Some((CalAction::Resize { id, end }, e.date, e.start, end, 0))
             }
             _ => {
                 let days = self.days();
@@ -532,6 +815,7 @@ impl<M: 'static> Calendar<M> {
                     d,
                     start,
                     start + dur,
+                    0,
                 ))
             }
         }
@@ -581,12 +865,33 @@ impl<M: 'static> Widget<M> for Calendar<M> {
                     match entry {
                         Some(id) => {
                             self.set(K_PRESS, Some(id as i64));
-                            self.set(K_MODE, Some(MODE_MOVE));
+                            let e = self.find(id);
+                            let edge =
+                                e.is_some_and(|e| e.is_banner() && self.month_edge(&b, e, cursor));
+                            self.set(K_MODE, Some(if edge { MODE_RESIZE } else { MODE_MOVE }));
+                            if let Some(e) = e {
+                                self.set(K_GRABD, Some(d.to_days() - e.date.to_days()));
+                            }
                         }
                         None => {
                             self.set(K_PRESS, Some(CLICK));
                             self.set(K_CD, Some(d.to_days()));
                         }
+                    }
+                } else if self.band(&b).contains(cursor) {
+                    self.set(K_PX, Some((cursor.x * 8.0) as i64));
+                    self.set(K_PY, Some((cursor.y * 8.0) as i64));
+                    let day = self.days()[self.col_at(&b, cursor.x)];
+                    if let Some((id, edge)) = self.band_hit(&b, cursor) {
+                        self.set(K_PRESS, Some(id as i64));
+                        self.set(K_MODE, Some(if edge { MODE_RESIZE } else { MODE_MOVE }));
+                        if let Some(e) = self.find(id) {
+                            self.set(K_GRABD, Some(day.to_days() - e.date.to_days()));
+                        }
+                    } else {
+                        self.set(K_PRESS, Some(CLICK));
+                        self.set(K_CD, Some(day.to_days()));
+                        self.set(K_CM, Some(-1));
                     }
                 } else if self.grid_view(&b).contains(cursor) {
                     self.set(K_PX, Some((cursor.x * 8.0) as i64));
@@ -631,7 +936,8 @@ impl<M: 'static> Widget<M> for Calendar<M> {
                 };
                 let result = self.drag_result(&b, cursor);
                 let click_day = self.slot(K_CD).map(Date::from_days);
-                let click_min = self.slot(K_CM).unwrap_or(0) as u32;
+                let band_click = self.slot(K_CM) == Some(-1);
+                let click_min = self.slot(K_CM).unwrap_or(0).max(0) as u32;
                 let (px, py) = (
                     self.slot(K_PX).unwrap_or(0) as f32 / 8.0,
                     self.slot(K_PY).unwrap_or(0) as f32 / 8.0,
@@ -646,6 +952,8 @@ impl<M: 'static> Widget<M> for Calendar<M> {
                     if let Some(d) = click_day {
                         if self.view == CalView::Month {
                             self.emit(out, CalAction::Day(d));
+                        } else if band_click {
+                            self.emit(out, CalAction::CreateAllDay { date: d });
                         } else {
                             self.emit(
                                 out,
@@ -809,8 +1117,25 @@ impl<M: 'static> Widget<M> for Calendar<M> {
         }
 
         // Time readout while dragging.
-        if let (Some((_, _, s, e)), CalView::Week | CalView::Day) = (result.as_ref(), self.view) {
-            let text = format!("{} – {}", clock(*s), clock(*e));
+        if let (Some((_, date, s, e, span)), CalView::Week | CalView::Day) =
+            (result.as_ref(), self.view)
+        {
+            let text = if *span > 0 {
+                let last = Date::from_days(date.to_days() + *span as i64 - 1);
+                if *span == 1 {
+                    format!("{} {}", WEEKDAYS[date.weekday() as usize], date.day)
+                } else {
+                    format!(
+                        "{} {} – {} {}",
+                        WEEKDAYS[date.weekday() as usize],
+                        date.day,
+                        WEEKDAYS[last.weekday() as usize],
+                        last.day
+                    )
+                }
+            } else {
+                format!("{} – {}", clock(*s), clock(*e))
+            };
             let w = width_of(&text, cap.size, 600) + 16.0;
             let h = cap.line_height + 10.0;
             let x = (cur.x + 14.0).min(b.origin.x + b.size.width - w);
@@ -842,7 +1167,7 @@ impl<M: 'static> Calendar<M> {
         out: &mut DrawList,
         b: &Rectangle,
         dragged: Option<u64>,
-        result: Option<&(CalAction, Date, u32, u32)>,
+        result: Option<&DropAt>,
     ) {
         let t = self.ui.theme();
         let p = &t.palette;
@@ -875,7 +1200,7 @@ impl<M: 'static> Calendar<M> {
                 p.text_secondary,
             ));
         }
-        let drop_day = result.map(|r| r.1);
+        let drop_range = result.map(|r| (r.1.to_days(), r.1.to_days() + r.4.max(1) as i64 - 1));
         for (i, d) in days.iter().enumerate() {
             let cell = self.month_cell(b, i);
             let other = d.month != self.anchor.month;
@@ -896,7 +1221,7 @@ impl<M: 'static> Calendar<M> {
                     shadow: None,
                 });
             }
-            if drop_day == Some(*d) {
+            if drop_range.is_some_and(|(a, z)| (a..=z).contains(&d.to_days())) {
                 out.push(DrawCommand::Quad {
                     bounds: Rectangle::new(
                         Point::new(cell.origin.x + 1.0, cell.origin.y + 1.0),
@@ -952,12 +1277,17 @@ impl<M: 'static> Calendar<M> {
                 ));
             }
             // Entry chips.
+            let nb = self.month_lanes(i / 7).min(self.month_chip_rows(&cell));
             let es: Vec<&Entry> = {
-                let mut v: Vec<&Entry> = self.entries.iter().filter(|e| e.date == *d).collect();
+                let mut v: Vec<&Entry> = self
+                    .entries
+                    .iter()
+                    .filter(|e| e.date == *d && !e.is_banner())
+                    .collect();
                 v.sort_by_key(|e| e.start);
                 v
             };
-            let rows_fit = self.month_chip_rows(&cell);
+            let rows_fit = self.month_chip_rows(&cell).saturating_sub(nb);
             let shown = if es.len() > rows_fit && rows_fit > 0 {
                 rows_fit - 1
             } else {
@@ -965,7 +1295,7 @@ impl<M: 'static> Calendar<M> {
             };
             out.push(DrawCommand::PushClip(cell));
             for (k, e) in es.iter().take(shown).enumerate() {
-                let r = self.month_chip(&cell, k);
+                let r = self.month_chip(&cell, nb + k);
                 let ink = e.tone.color(&t);
                 let hot = r.contains(self.ui.cursor()) && dragged.is_none();
                 let faded = dragged == Some(e.id);
@@ -989,7 +1319,7 @@ impl<M: 'static> Calendar<M> {
                 ));
             }
             if es.len() > shown {
-                let r = self.month_chip(&cell, shown);
+                let r = self.month_chip(&cell, nb + shown);
                 out.push(label_cmd(
                     Point::new(
                         r.origin.x + 6.0,
@@ -1003,7 +1333,46 @@ impl<M: 'static> Calendar<M> {
             }
             out.push(DrawCommand::PopClip);
         }
-        let _ = rows;
+        // Banner bars across the weeks, then the ghost of one being dragged.
+        for row in 0..rows {
+            let cell0 = self.month_cell(b, row * 7);
+            for bar in self.month_bars(row) {
+                if bar.lane >= self.month_chip_rows(&cell0) {
+                    continue;
+                }
+                let r = self.month_bar_rect(b, row, &bar);
+                self.draw_bar(out, bar.e, r, dragged == Some(bar.e.id), false, &bar);
+            }
+        }
+        if let (Some(id), Some(res)) = (dragged, result) {
+            if let Some(e) = self.find(id).filter(|e| e.is_banner()) {
+                let ghost = Entry {
+                    date: res.1,
+                    days: res.4.max(1),
+                    ..e.clone()
+                };
+                for row in 0..rows {
+                    let cell0 = self.month_cell(b, row * 7);
+                    let days = self.days();
+                    let (f, l) = (days[row * 7].to_days(), days[row * 7 + 6].to_days());
+                    if ghost.date.to_days() > l || ghost.last_date().to_days() < f {
+                        continue;
+                    }
+                    let bar = Bar {
+                        e: &ghost,
+                        c0: (ghost.date.to_days() - f).max(0) as usize,
+                        c1: (ghost.last_date().to_days() - f).min(6) as usize,
+                        lane: self
+                            .month_lanes(row)
+                            .min(self.month_chip_rows(&cell0).max(1) - 1),
+                        cut_l: ghost.date.to_days() < f,
+                        cut_r: ghost.last_date().to_days() > l,
+                    };
+                    let r = self.month_bar_rect(b, row, &bar);
+                    self.draw_bar(out, &ghost, r, false, true, &bar);
+                }
+            }
+        }
         // Chip in hand.
         if let Some(id) = dragged {
             if let Some(e) = self.find(id) {
@@ -1049,7 +1418,7 @@ impl<M: 'static> Calendar<M> {
         out: &mut DrawList,
         b: &Rectangle,
         dragged: Option<u64>,
-        result: Option<&(CalAction, Date, u32, u32)>,
+        result: Option<&DropAt>,
     ) {
         let t = self.ui.theme();
         let p = &t.palette;
@@ -1133,6 +1502,77 @@ impl<M: 'static> Calendar<M> {
             border: None,
             shadow: None,
         });
+        // All-day band: label in the gutter, column hairlines, bars, then the drag ghost.
+        let band = self.band(b);
+        let lw = m.width_styled("all-day", cap.size, 400, FontFamily::Sans);
+        out.push(label_cmd(
+            Point::new(
+                body.origin.x + GUTTER - 10.0 - lw,
+                band.origin.y + 4.0 + (ROW - 2.0 - cap.line_height) / 2.0,
+            ),
+            "all-day",
+            &cap,
+            400,
+            p.text_secondary,
+        ));
+        for i in 0..days.len() {
+            out.push(DrawCommand::Quad {
+                bounds: Rectangle::new(
+                    Point::new(band.origin.x + i as f32 * cw - 0.5, band.origin.y),
+                    Size::new(1.0, band.size.height - 1.0),
+                ),
+                fill: p.border,
+                radius: 0.0,
+                border: None,
+                shadow: None,
+            });
+        }
+        out.push(DrawCommand::PushClip(band));
+        for bar in self.bars(&days) {
+            if bar.lane >= MAX_BAND_ROWS {
+                continue;
+            }
+            let r = self.band_rect(b, &bar);
+            self.draw_bar(out, bar.e, r, dragged == Some(bar.e.id), false, &bar);
+        }
+        if let (Some(id), Some(res)) = (dragged, result) {
+            if let Some(e) = self.find(id).filter(|e| e.is_banner()) {
+                let ghost = Entry {
+                    date: res.1,
+                    days: res.4.max(1),
+                    ..e.clone()
+                };
+                let lane = self
+                    .bars(&days)
+                    .iter()
+                    .filter(|x| x.e.id != id)
+                    .map(|x| x.lane + 1)
+                    .max()
+                    .unwrap_or(0)
+                    .min(MAX_BAND_ROWS - 1);
+                let f = days[0].to_days();
+                let bar = Bar {
+                    e: &ghost,
+                    c0: (ghost.date.to_days() - f).clamp(0, days.len() as i64 - 1) as usize,
+                    c1: (ghost.last_date().to_days() - f).clamp(0, days.len() as i64 - 1) as usize,
+                    lane: lane.min(
+                        self.bars(&days)
+                            .iter()
+                            .find(|x| x.e.id == id)
+                            .map_or(lane, |x| x.lane),
+                    ),
+                    cut_l: ghost.date.to_days() < f,
+                    cut_r: ghost.last_date().to_days() > days[days.len() - 1].to_days(),
+                };
+                if ghost.last_date().to_days() >= f
+                    && ghost.date.to_days() <= days[days.len() - 1].to_days()
+                {
+                    let r = self.band_rect(b, &bar);
+                    self.draw_bar(out, &ghost, r, false, true, &bar);
+                }
+            }
+        }
+        out.push(DrawCommand::PopClip);
 
         out.push(DrawCommand::PushClip(Rectangle::new(
             Point::new(body.origin.x + 1.0, v.origin.y),
@@ -1211,8 +1651,11 @@ impl<M: 'static> Calendar<M> {
             }
         }
         // Ghost at the drop position.
-        if let (Some(id), Some((_, date, s, en))) = (dragged, result) {
-            if let (Some(e), Some(col)) = (self.find(id), days.iter().position(|d| d == date)) {
+        if let (Some(id), Some((_, date, s, en, _))) = (dragged, result) {
+            if let (Some(e), Some(col)) = (
+                self.find(id).filter(|e| !e.is_banner()),
+                days.iter().position(|d| d == date),
+            ) {
                 let ghost = Entry {
                     date: *date,
                     start: *s,
@@ -1250,6 +1693,79 @@ impl<M: 'static> Calendar<M> {
                     });
                 }
             }
+        }
+        out.push(DrawCommand::PopClip);
+    }
+
+    /// An all-day or multi-day bar. Ends that run off the visible row are squared off and carry
+    /// an arrow so the entry reads as continuing.
+    fn draw_bar(
+        &self,
+        out: &mut DrawList,
+        e: &Entry,
+        r: Rectangle,
+        faded: bool,
+        ghost: bool,
+        bar: &Bar,
+    ) {
+        let t = self.ui.theme();
+        let p = &t.palette;
+        let cap = t.typography.caption;
+        let ink = e.tone.color(&t);
+        let hot = r.contains(self.ui.cursor()) && !ghost && self.slot(K_DRAG).is_none();
+        let a = if faded { 0.4 } else { 1.0 };
+        out.push(DrawCommand::Quad {
+            bounds: r,
+            fill: mix(
+                p.surface,
+                ink,
+                if ghost {
+                    0.34
+                } else if hot {
+                    0.3
+                } else {
+                    0.22
+                },
+            )
+            .with_alpha(a),
+            radius: t.radii.small + 1.0,
+            border: Some(Border {
+                color: ink.with_alpha(if ghost { 0.9 } else { 0.5 } * a),
+                width: 1.0,
+            }),
+            shadow: ghost.then_some(t.elevation.medium),
+        });
+        out.push(DrawCommand::PushClip(r));
+        let title = if bar.cut_l {
+            format!("‹ {}", e.title)
+        } else {
+            e.title.clone()
+        };
+        out.push(label_cmd(
+            Point::new(
+                r.origin.x + 6.0,
+                r.origin.y + (r.size.height - cap.line_height) / 2.0,
+            ),
+            title,
+            &cap,
+            600,
+            if faded { p.text_secondary } else { p.text },
+        ));
+        if bar.cut_r {
+            let w = self
+                .ui
+                .metrics()
+                .width_styled("›", cap.size, 600, FontFamily::Sans);
+            out.push(label_cmd(
+                Point::new(
+                    r.origin.x + r.size.width - w - 6.0,
+                    r.origin.y + (r.size.height - cap.line_height) / 2.0,
+                ),
+                "›",
+                &cap,
+                600,
+                p.text_secondary,
+            ));
         }
         out.push(DrawCommand::PopClip);
     }

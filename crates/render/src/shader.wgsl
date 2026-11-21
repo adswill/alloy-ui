@@ -150,8 +150,17 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
             if (((flags >> i) & 1u) == 1u) {
                 cov = min(cov, cover(d));
             } else {
-                let tie = n.x > 0.0 || (n.x == 0.0 && n.y > 0.0);
-                let inside = d < 0.0 || (d == 0.0 && tie);
+                // Same arithmetic for both neighbours: from the lexicographically
+                // smaller endpoint; the positively oriented side claims exact ties.
+                let fwd = p0.x < p1.x || (p0.x == p1.x && p0.y <= p1.y);
+                let lo = select(p1, p0, fwd);
+                let hi = select(p0, p1, fwd);
+                var third = c;
+                if (i == 1u) { third = a; }
+                if (i == 2u) { third = b; }
+                let c0 = (hi.x - lo.x) * (in.p.y - lo.y) - (hi.y - lo.y) * (in.p.x - lo.x);
+                let side = (hi.x - lo.x) * (third.y - lo.y) - (hi.y - lo.y) * (third.x - lo.x);
+                let inside = (c0 > 0.0 && side > 0.0) || (c0 < 0.0 && side < 0.0) || (c0 == 0.0 && side > 0.0);
                 cov = min(cov, select(0.0, 1.0, inside));
             }
         }

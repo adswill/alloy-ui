@@ -206,12 +206,24 @@ pub enum DrawCommand {
     },
     /// A filled simple polygon (convex or concave, either winding), edges
     /// anti-aliased. This is the primitive under pies, areas, canvas paths and
-    /// 3D meshes. Self-intersecting outlines are not supported.
+    /// 3D meshes. The outline must be simple: for holes, overlaps and self-crossing outlines
+    /// use [`DrawCommand::PolygonPath`].
     Polygon {
         /// Outline vertices in order; fewer than three draws nothing.
         points: Vec<Point>,
         /// Fill colour (include alpha).
         fill: Color,
+    },
+    /// A filled path: any number of closed contours resolved under a fill rule, so
+    /// holes, overlaps and self-intersections fill correctly, with an optional linear
+    /// gradient. Edges are anti-aliased only on the outline of the filled region.
+    PolygonPath {
+        /// The closed contours (the last vertex joins the first).
+        contours: Vec<Vec<Point>>,
+        /// Which side of the contours is inside.
+        rule: FillRule,
+        /// Solid colour or linear gradient.
+        paint: PathPaint,
     },
     /// An image by handle id registered with the renderer.
     Image {
@@ -224,6 +236,59 @@ pub enum DrawCommand {
     PushClip(Rectangle),
     /// End the innermost clip.
     PopClip,
+}
+
+/// How a [`DrawCommand::PolygonPath`] decides what is inside.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FillRule {
+    /// Inside where the contours wind around a point a non-zero net number of times.
+    #[default]
+    NonZero,
+    /// Inside where a ray from the point crosses an odd number of edges.
+    EvenOdd,
+}
+
+/// The paint of a [`DrawCommand::PolygonPath`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum PathPaint {
+    /// One colour (include alpha).
+    Solid(Color),
+    /// Colours blended along the line `from` to `to`; before `from` the first stop
+    /// holds and after `to` the last.
+    Linear {
+        /// Where the first stop sits.
+        from: Point,
+        /// Where the last stop sits.
+        to: Point,
+        /// `(offset 0..=1, colour)` stops in increasing offset order.
+        stops: Vec<(f32, Color)>,
+    },
+}
+
+impl PathPaint {
+    /// The colour at `t` (0 to 1) along a linear gradient's stops.
+    pub fn at(stops: &[(f32, Color)], t: f32) -> Color {
+        let Some(first) = stops.first() else {
+            return Color::TRANSPARENT;
+        };
+        if t <= first.0 {
+            return first.1;
+        }
+        for w in stops.windows(2) {
+            if t <= w[1].0 {
+                let span = (w[1].0 - w[0].0).max(1e-6);
+                let k = (t - w[0].0) / span;
+                let (a, b) = (w[0].1, w[1].1);
+                return Color {
+                    r: a.r + (b.r - a.r) * k,
+                    g: a.g + (b.g - a.g) * k,
+                    b: a.b + (b.b - a.b) * k,
+                    a: a.a + (b.a - a.a) * k,
+                };
+            }
+        }
+        stops[stops.len() - 1].1
+    }
 }
 
 impl DrawCommand {

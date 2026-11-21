@@ -527,3 +527,19 @@ Linux x86_64 cloud container, **debug build** of the test suite (a regression gu
 | Shared wgpu texture, llvmpipe | app clears the texture red, then blue; the renderer shows each with the same id and no re-registration |
 
 Not measured: output through a real sound card, video on macOS or Windows (needs `ffmpeg` installed there), the shared texture on a hardware GPU, frame rate of 1080p video (the decode worker is bounded to 960 px wide).
+
+### Data grid and code editor at large sizes (roadmap 21 and 22)
+
+`cargo test --release -p alloy-ui-widgets --test pro_widgets -- --nocapture row_model code_editor_stays`, Linux cloud container (shared CPU), CPU draw lists only, no GPU, one run:
+
+| What | Size | Result |
+|---|---|---|
+| `RowModel::rebuild` (filter + sort) | 1,000,000 rows, text cells | 2.6 s |
+| `RowModel::regroup` (collapse/expand a group) | 1,000,000 rows | 2.4 s |
+| Draw one grid frame from the model | 1,000,000 rows | 27 µs, 24 cells built |
+| Code editor, first draw | 200,000 lines | 85 ms |
+| Code editor, next draw | 200,000 lines | 16 ms |
+| Select every occurrence of a word | 200,000 lines | 0.88 s |
+| Type one character at every caret | many carets, 200,000 lines | 0.60 s |
+
+Honest reading: drawing is cost-of-the-window (27 µs, 16 ms), which is what the virtualised views are for. Rebuilding a million-row view is a two second job, not an interactive one: it pulls every cell through a `String` callback, so it should run on a background task and be applied when it finishes (debounce a filter box). Multi-caret edits on a 200k line file are sub-second, not instant. The grid has no filter row of its own; the model filters and the app supplies the text input.
