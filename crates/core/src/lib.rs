@@ -7,6 +7,7 @@
 pub mod draw;
 pub mod event;
 pub mod geometry;
+pub mod inspector;
 pub mod runtime;
 pub mod style;
 pub mod widget;

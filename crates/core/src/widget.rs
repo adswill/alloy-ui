@@ -52,6 +52,10 @@ pub trait Widget<M> {
     fn animating(&self) -> bool {
         false
     }
+    /// The widget's type name, shown by the inspector. No need to override.
+    fn debug_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
     /// Emit draw commands.
     fn draw(&self, layout: &Layout, out: &mut DrawList);
 }

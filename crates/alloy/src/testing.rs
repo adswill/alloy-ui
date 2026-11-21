@@ -89,6 +89,22 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::MouseReleased(MouseButton::Left));
         self
     }
+    /// Move the cursor over the first widget showing exactly `text`.
+    pub fn hover(&mut self, text: &str) -> &mut Self {
+        let (p, _) = self
+            .texts()
+            .into_iter()
+            .find(|(_, t)| t == text)
+            .unwrap_or_else(|| panic!("no widget with text {text:?}"));
+        self.rt
+            .handle_event(&Event::CursorMoved(Point::new(p.x + 3.0, p.y + 3.0)));
+        self
+    }
+    /// Show or hide the layout inspector overlay (what F12 does in a running app).
+    pub fn inspect(&mut self, on: bool) -> &mut Self {
+        self.rt.set_inspector(on);
+        self
+    }
     /// Wait (up to 5 s) for background [`resource`](crate::resource)s to finish and show their data.
     pub fn settle(&mut self) -> &mut Self {
         for _ in 0..200 {
