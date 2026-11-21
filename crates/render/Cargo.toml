@@ -10,16 +10,35 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+# `gpu` (wgpu) is the default renderer. `soft-window` presents the CPU rasteriser in a window:
+# it is the fallback when no GPU adapter works, and the only renderer in a build with
+# `default-features = false, features = ["soft-window"]`, which has no wgpu or naga at all.
+default = ["gpu", "soft-window"]
+gpu = ["dep:wgpu", "dep:bytemuck", "dep:pollster"]
+soft-window = ["dep:softbuffer"]
+# OpenGL backend for machines with no Vulkan (off by default: ~0.4 MB; the CPU path covers them).
+gles = ["gpu", "wgpu/gles"]
+
 [dependencies]
 alloy-ui-core.workspace = true
-wgpu = { version = "25", default-features = false, features = ["wgsl", "vulkan", "gles", "metal", "dx12"] }
+wgpu = { version = "25", default-features = false, features = ["wgsl"], optional = true }
 raw-window-handle = "0.6"
 cosmic-text = { version = "0.14", default-features = false, features = ["std", "swash", "fontconfig"] }
-bytemuck = { version = "1", features = ["derive"] }
+bytemuck = { version = "1", features = ["derive"], optional = true }
 png = "0.17"
 log = "0.4"
 thiserror = "2"
-pollster = "0.4"
+pollster = { version = "0.4", optional = true }
+softbuffer = { version = "0.4", default-features = false, features = ["x11", "x11-dlopen", "wayland", "wayland-dlopen", "kms"], optional = true }
+
+# Each OS gets only its own wgpu backend.
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "25", default-features = false, features = ["metal"], optional = true }
+[target.'cfg(windows)'.dependencies]
+wgpu = { version = "25", default-features = false, features = ["dx12"], optional = true }
+[target.'cfg(not(any(target_os = "macos", windows)))'.dependencies]
+wgpu = { version = "25", default-features = false, features = ["vulkan"], optional = true }
 
 [dev-dependencies]
 naga = { version = "25", features = ["wgsl-in"] }

@@ -134,7 +134,7 @@ struct Inner {
     order_seen: std::collections::HashSet<u64>,
     cursor: Point,
     pressed: Option<(i32, i32)>,
-    scroll: HashMap<u64, f32>,
+    scroll: HashMap<u64, f64>,
     edits: HashMap<u64, Edit>,
     popup: Option<u64>,
     now: u64,
@@ -572,10 +572,19 @@ impl Ui {
 
     /// Scroll offset of the scrollable `id`.
     pub fn scroll_offset(&self, id: u64) -> f32 {
-        self.0.borrow().scroll.get(&id).copied().unwrap_or(0.0)
+        self.scroll_offset_f64(id) as f32
     }
     /// Set the scroll offset of `id` (clamped when next used).
     pub fn set_scroll_offset(&self, id: u64, offset: f32) {
+        self.set_scroll_offset_f64(id, offset as f64);
+    }
+    /// Full-precision scroll offset. An `f32` stops resolving single pixels past 16.7 million,
+    /// which a list of a million 28-pixel rows passes.
+    pub fn scroll_offset_f64(&self, id: u64) -> f64 {
+        self.0.borrow().scroll.get(&id).copied().unwrap_or(0.0)
+    }
+    /// Set the full-precision scroll offset of `id`.
+    pub fn set_scroll_offset_f64(&self, id: u64, offset: f64) {
         self.0.borrow_mut().scroll.insert(id, offset.max(0.0));
     }
 
@@ -606,7 +615,11 @@ impl Ui {
     /// Move to `offset` immediately, with no glide: for dragging a scrollbar thumb, where the
     /// content must stay under the pointer.
     pub fn scroll_jump(&self, id: u64, offset: f32, max: f32) {
-        self.scroll_to(id, offset, max);
+        self.scroll_jump_f64(id, offset as f64, max as f64);
+    }
+    /// [`Ui::scroll_jump`] at full precision, for lists taller than an `f32` can resolve.
+    pub fn scroll_jump_f64(&self, id: u64, offset: f64, max: f64) {
+        self.set_scroll_offset_f64(id, offset.clamp(0.0, max.max(0.0)));
         self.0.borrow_mut().anims.remove(&Self::scroll_key(id));
     }
 

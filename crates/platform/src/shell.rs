@@ -580,6 +580,10 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
     }
 
     fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        if !self.dropped.is_empty() {
+            let files = std::mem::take(&mut self.dropped);
+            self.dispatch(el, PlatformEvent::FilesDropped(files));
+        }
         // Timers for touch: a held finger becomes a long press, a flick keeps scrolling.
         let now = self.now_ms();
         if self.gestures.next_deadline().is_some_and(|d| now >= d) {
@@ -688,12 +692,6 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         self.dispatch(el, PlatformEvent::Wake);
     }
 
-    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
-        if !self.dropped.is_empty() {
-            let files = std::mem::take(&mut self.dropped);
-            self.dispatch(el, PlatformEvent::FilesDropped(files));
-        }
-    }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
         if let Some(ctx) = &self.ctx {

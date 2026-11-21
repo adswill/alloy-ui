@@ -346,6 +346,49 @@ fn virtual_list_keyboard_and_scrollbar() {
 }
 
 #[test]
+fn virtual_list_ten_million_rows_stay_pixel_exact() {
+    // 10 million 28 px rows is 280 million pixels: far past where an f32 resolves single pixels.
+    const N: usize = 10_000_000;
+    let built = Rc::new(Cell::new(0usize));
+    let b = built.clone();
+    let mut s = Scene::new(Theme::light(), move |ui| {
+        let b = b.clone();
+        VirtualList::new(ui, 3, N, move |i| {
+            b.set(b.get() + 1);
+            Text::new(&Ui::new(Theme::light()), format!("Row {i}")).into_element()
+        })
+        .row_height(28.0)
+        .selected(Some(0))
+        .on_select(Msg::Pick)
+        .into_element()
+    });
+    s.ui.set_focus(Some(3));
+    s.named("End");
+    assert_eq!(s.msgs.pop(), Some(Msg::Pick(N - 1)));
+    let max = N as f64 * 28.0 - H as f64;
+    assert_eq!(
+        s.ui.scroll_offset_f64(3),
+        max,
+        "End reaches the exact last pixel"
+    );
+    built.set(0);
+    s.draw();
+    assert!(
+        built.get() <= (H as f32 / 28.0).ceil() as usize + 2,
+        "built {}",
+        built.get()
+    );
+    // The last row sits flush with the bottom edge, not a few rows off.
+    s.click(100.0, H as f32 - 2.0);
+    assert_eq!(s.msgs.pop(), Some(Msg::Pick(N - 1)));
+    // A one-pixel wheel step moves exactly one pixel, even this deep.
+    let before = s.ui.scroll_offset_f64(3);
+    s.mv(100.0, 100.0);
+    s.send(Event::Scrolled { dx: 0.0, dy: 3.0 });
+    assert_eq!(s.ui.scroll_offset_f64(3), before - 3.0);
+}
+
+#[test]
 fn virtual_list_golden() {
     let mut s = Scene::new(Theme::light(), |ui| {
         VirtualList::new(ui, 3, 100_000, |i| {

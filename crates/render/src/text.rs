@@ -259,7 +259,7 @@ impl TextSystem {
     pub fn new() -> Self {
         let mut fonts = FontSystem::new();
         for data in BUNDLED_FONTS {
-            // Borrow the embedded bytes instead of copying 1.9 MB onto the heap.
+            // Borrow the embedded bytes instead of copying them onto the heap.
             fonts
                 .db_mut()
                 .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(data)));

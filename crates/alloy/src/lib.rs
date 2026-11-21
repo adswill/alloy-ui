@@ -115,6 +115,7 @@ mod mock;
 mod motion;
 mod palette;
 mod persist;
+pub mod plugin;
 mod pro;
 mod records;
 mod resource;
@@ -228,6 +229,7 @@ pub use alloy_ui_platform as platform;
 pub use alloy_ui_render as render;
 pub use alloy_ui_theme as theme;
 pub use alloy_ui_widgets as widgets;
+pub use plugin::ext;
 
 use alloy_ui_ipc::TaskRunner;
 use alloy_ui_platform::{PlatformError, PlatformEvent, ShellContext, ShellHandler, WindowSettings};
@@ -271,6 +273,8 @@ where
     B: FnOnce(&widgets::Ui) -> A + 'static,
 {
     let size = settings.size;
+    // Load the graphics runtime and the fonts while the platform opens the window.
+    alloy_ui_render::prewarm();
     alloy_ui_platform::run(settings, move |proxy| {
         let task_proxy = proxy.clone();
         let (sub_tx, sub_rx) = mpsc::channel();
@@ -567,7 +571,10 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         let size = ctx.logical_size();
         cx::set_safe_area(ctx.safe_area());
         let (w, h) = ctx.physical_size();
-        match WindowRenderer::new(ctx.window().clone(), w, h) {
+        let mut t = Instant::now();
+        let made = WindowRenderer::new(ctx.window().clone(), w, h);
+        alloy_ui_render::perf_mark("renderer-total", &mut t);
+        match made {
             Ok(r) => {
                 self.renderers.insert(WindowId::MAIN, r);
             }
@@ -592,7 +599,9 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         ui.set_clipboard(std::rc::Rc::new(OsClipboard(std::cell::RefCell::new(
             platform::default_clipboard(),
         ))));
+        alloy_ui_render::perf_mark("ui-setup", &mut t);
         let app = build(&ui);
+        alloy_ui_render::perf_mark("app-build", &mut t);
         cx::register_window_ui(WindowId::MAIN, &ui);
         self.ui = Some(ui);
         let mut rt = Runtime::new(app, size, layouter);
@@ -602,6 +611,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         self.runtime = Some(rt);
         self.sync_subscriptions();
         self.apply_config(ctx);
+        alloy_ui_render::perf_mark("runtime", &mut t);
         ctx.request_redraw();
     }
 
@@ -788,7 +798,11 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             }
         }
         if let Some(r) = self.renderers.get_mut(&win) {
-            r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
+            let mut t = Instant::now();
+            let list = rt.draw_window(win);
+            alloy_ui_render::perf_mark("first-draw-list", &mut t);
+            r.render(&list, ctx.scale_factor() as f32);
+            alloy_ui_render::perf_mark("render+present", &mut t);
         }
         if let Some((items, desktop)) = keys::shell_changed() {
             self.apply_desktop(ctx, &items, &desktop);
