@@ -100,6 +100,7 @@ version = "0.0.1"
 dependencies = [
  "alloy-ui",
  "alloy-ui-render",
+ "wgpu",
 ]
 
 [[package]]

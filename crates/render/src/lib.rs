@@ -41,8 +41,6 @@ pub use pixels::{PixelSurface, PIXEL_ID_BASE};
 #[cfg(feature = "gpu")]
 pub use shared::{shared_gpu, ShareError, SharedGpu, SHARED_ID_BASE};
 pub use text::{GlyphBitmap, TextMeasurer, TextSystem};
-#[cfg(feature = "gpu")]
-pub use wgpu;
 pub use window::{Backend, WindowRenderer};
 
 /// Consumes a frame's draw list. Implemented by the wgpu window renderer and

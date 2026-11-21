@@ -10,6 +10,10 @@
 //! window renderer composes in display space with premultiplied alpha. Use
 //! [`SharedGpu::create_target`] to get one with the right usage flags.
 //!
+//! The `wgpu` types here are the renderer's own, so your app must depend on the same major
+//! version (wgpu 25). Alloy does not re-export wgpu: doing so changes how rustc prints paths
+//! in unrelated compiler errors.
+//!
 //! This is a GPU-only feature: the CPU fallback renderer cannot sample a GPU texture,
 //! so [`shared_gpu`] returns `None` there, and a published id draws nothing.
 

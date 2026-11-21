@@ -21,13 +21,15 @@ icons = ["assets/icon-32.png", "assets/icon-256.png", "assets/icon-512.png"]
 
 [features]
 default = ["gpu", "soft-window"]
-gpu = ["alloy-ui/gpu"]
+gpu = ["alloy-ui/gpu", "dep:wgpu"]
 soft-window = ["alloy-ui/soft-window"]
 gles = ["alloy-ui/gles"]
 media = ["alloy-ui/media"]
 
 [dependencies]
 alloy-ui = { path = "../crates/alloy", default-features = false }
+# Only for the gpu_scene example: shared textures need the same wgpu version as the renderer.
+wgpu = { version = "25", default-features = false, features = ["wgsl"], optional = true }
 
 [[bin]]
 name = "counter"

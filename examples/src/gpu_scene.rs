@@ -3,7 +3,7 @@
 //! is copied or read back. Needs the `gpu` feature and a GPU (or software Vulkan) adapter;
 //! on the CPU fallback renderer it shows a note instead.
 use alloy_ui::prelude::*;
-use alloy_ui::render::{shared_gpu, wgpu, SharedGpu};
+use alloy_ui::render::{shared_gpu, SharedGpu};
 use alloy_ui::GpuInput;
 use std::{cell::RefCell, sync::Arc, time::Instant};
 
