@@ -71,6 +71,23 @@ mod guide {
     struct G19;
 }
 
+/// The cookbook in `docs/cookbook` is compiled and run as doc-tests too.
+#[cfg(doctest)]
+mod cookbook {
+    #[doc = include_str!("../../../docs/cookbook/01-state-and-input.md")]
+    struct C0;
+    #[doc = include_str!("../../../docs/cookbook/02-layout.md")]
+    struct C1;
+    #[doc = include_str!("../../../docs/cookbook/03-data.md")]
+    struct C2;
+    #[doc = include_str!("../../../docs/cookbook/04-app-polish.md")]
+    struct C3;
+    #[doc = include_str!("../../../docs/cookbook/05-look-and-language.md")]
+    struct C4;
+    #[doc = include_str!("../../../docs/cookbook/06-shell-and-testing.md")]
+    struct C5;
+}
+
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.
 extern crate self as alloy_ui;
 

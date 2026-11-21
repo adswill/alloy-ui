@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alloy · A native Rust UI framework</title>
+<meta name="description" content="Alloy is a native Rust desktop UI framework. State and a view function, a GPU renderer written from scratch, no webview, and a lot less code than iced.">
+<link rel="icon" href="assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<link rel="preload" href="assets/fonts/IBMPlexSans-Regular.ttf" as="font" type="font/ttf" crossorigin>
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="index.html"><img src="assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="#showcase">Showcase</a>
+<a href="docs/guide/index.html">Guide</a>
+<a href="docs/cookbook/index.html">Cookbook</a>
+<a href="docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+
+<main>
+<section class="hero"><div class="wrap">
+  <div>
+    <p class="eyebrow">native · GPU · Rust · no webview</p>
+    <h1>Desktop apps in Rust, without the ceremony.</h1>
+    <p class="lede">An Alloy app is a state struct and a view function. Every pixel is drawn by Alloy's own renderer, and the app shell is as small and quiet as Tauri's. <b>No HTML, CSS or JavaScript anywhere.</b></p>
+    <div class="cta">
+      <a class="btn primary" href="docs/guide/01-getting-started.html">Get started</a>
+      <a class="btn" href="docs/cookbook/index.html">Browse 30 recipes</a>
+    </div>
+    <div class="install" role="group" aria-label="Install command"><span class="p">$</span><code>cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli</code><button class="copy" type="button" data-copy="cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli">Copy</button></div>
+  </div>
+  <div class="hero-art">
+    <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>src/main.rs</div>
+<pre class="hl"><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">),</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n} so far"</span><span class="p">)).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Subtract"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">primary</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Reset"</span><span class="p">).</span><span class="n">ghost</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">),</span>
+<span class="w">            </span><span class="p">]</span>
+<span class="w">            </span><span class="p">.</span><span class="n">align_center</span><span class="p">(),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">fill</span><span class="p">()</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run_sized</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">,</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">180.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre>
+    </div>
+    <img class="shot" src="assets/shots/counter.webp" width="720" height="360" alt="The counter app that the code produces: a heading, a count and three buttons.">
+  </div>
+</div></section>
+
+<section class="numbers" aria-label="Measured results"><div class="wrap">
+  <div class="num"><b>2.8x</b><span>fewer lines than iced on four everyday apps</span></div>
+  <div class="num"><b>9 to 14x</b><span>when a ready-made block covers the screen</span></div>
+  <div class="num"><b>7.5 MB</b><span>counter binary, release, Linux</span></div>
+  <div class="num"><b>0%</b><span>idle CPU: nothing redraws until something changes</span></div>
+</div></section>
+
+<section class="block" id="showcase"><div class="wrap">
+  <p class="kicker">Showcase</p>
+  <h2>Rendered by Alloy, not by a browser.</h2>
+  <p class="sub">These are screenshots of real Alloy apps drawn by the framework's own renderer: one teal or indigo accent, cool neutrals, 1px borders, small radii, and light and dark that follow the system.</p>
+  <div class="tabs" role="tablist" aria-label="Screenshots">
+    <button role="tab" aria-selected="true" aria-controls="p1" id="t1">Dashboard</button>
+    <button role="tab" aria-selected="false" aria-controls="p2" id="t2">Notes, dark</button>
+    <button role="tab" aria-selected="false" aria-controls="p3" id="t3">Settings</button>
+    <button role="tab" aria-selected="false" aria-controls="p4" id="t4">100,000-row workbench</button>
+    <button role="tab" aria-selected="false" aria-controls="p5" id="t5">Components, dark</button>
+  </div>
+  <figure class="stage panel" id="p1" role="tabpanel" aria-labelledby="t1"><img src="assets/shots/dashboard-light.webp" width="1600" height="1067" alt="Pulse dashboard: four stat cards with sparklines, a revenue bar chart and a sortable orders table."><figcaption><span>Pulse: stat cards, a chart with axes, a filterable table.</span><code>comparison/alloy-rich</code></figcaption></figure>
+  <figure class="stage panel" id="p2" role="tabpanel" aria-labelledby="t2" hidden><img src="assets/shots/notes-dark.webp" width="1600" height="1067" alt="Notes app in dark mode: a searchable list on the left, an editor on the right."  loading="lazy"><figcaption><span>Notes: search, tags, pin, sort, autosave and a command palette.</span><code>crates/alloy/examples/notes.rs, 26 lines</code></figcaption></figure>
+  <figure class="stage panel" id="p3" role="tabpanel" aria-labelledby="t3" hidden><img src="assets/shots/settings.webp" width="1600" height="1067" alt="Preferences window with accent swatches, density and language settings." loading="lazy"><figcaption><span>Preferences: accent, density, language, storage.</span><code>comparison/alloy-rich</code></figcaption></figure>
+  <figure class="stage panel" id="p4" role="tabpanel" aria-labelledby="t4" hidden><img src="assets/shots/workbench.webp" width="1600" height="1045" alt="A builds list of 100,000 rows next to a tabbed rich-text notes pane." loading="lazy"><figcaption><span>A virtualised list of 100,000 builds beside tabs and formatted text.</span><code>crates/alloy/examples/workbench.rs</code></figcaption></figure>
+  <figure class="stage panel" id="p5" role="tabpanel" aria-labelledby="t5" hidden><img src="assets/shots/showcase-dark.webp" width="1280" height="1090" alt="Component showcase in dark mode: accent swatches, badges, sparklines and an area chart." loading="lazy"><figcaption><span>Badges, sparklines, charts with axes, accent presets, density.</span><code>crates/alloy/examples/showcase.rs</code></figcaption></figure>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <p class="kicker">Honest comparison</p>
+  <h2>The same three apps, three ways.</h2>
+  <p class="sub">A notes app, a dashboard and a settings window, built from one written brief in Alloy, iced 0.14 and Tauri 2 (HTML, CSS and plain JavaScript). Lines are counted after formatting, without blanks or comments.</p>
+  <div class="cmp">
+    <figure><img src="assets/shots/cmp-alloy.webp" width="960" height="640" alt="Alloy dashboard" loading="lazy"><figcaption><b>355 lines</b>Alloy, three apps</figcaption></figure>
+    <figure><img src="assets/shots/cmp-iced.webp" width="960" height="640" alt="iced dashboard" loading="lazy"><figcaption><b>1,487 lines</b>iced, three apps and a 464-line style file</figcaption></figure>
+    <figure><img src="assets/shots/cmp-tauri.webp" width="960" height="640" alt="Tauri dashboard" loading="lazy"><figcaption><b>765 lines</b>Tauri: Rust shell plus HTML, CSS, JS</figcaption></figure>
+  </div>
+  <div class="bars" aria-label="Lines of code">
+    <div class="bar-row me"><span>Alloy</span><i style="width:24%"></i><span>355</span></div>
+    <div class="bar-row"><span>Tauri</span><i style="width:51%"></i><span>765</span></div>
+    <div class="bar-row me"><span>Alloy rich</span><i style="width:89%"></i><span>1,330</span></div>
+    <div class="bar-row"><span>iced</span><i style="width:100%"></i><span>1,487</span></div>
+  </div>
+  <p class="note">Read it carefully. Per app, Alloy is 2.2x to 3.8x smaller than iced, not 10x, because what is left is your own logic. The "Alloy rich" bar spends iced's line budget on finish instead (status pills, axes, sparklines, dark mode), and the lean screenshot above is plainer than the other two. Binaries measured on Linux with software rendering: Alloy 7.6 MB, iced 8.1 MB, Tauri 3.2 MB, which is smaller because it borrows the system webview. First paint was about 160 to 180 ms for Alloy and iced and about 700 ms for Tauri. The full method and caveats are in <a href="https://github.com/adswill/alloy-ui/blob/main/comparison/README.md">comparison/README.md</a>.</p>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <p class="kicker">What you write</p>
+  <h2>The boring parts are already built.</h2>
+  <p class="sub">Alloy ships the blocks that most apps are made of, and everything is typed Rust.</p>
+  <div class="rows">
+    <div class="row2">
+      <div>
+        <h3>A whole notes app in 26 lines</h3>
+        <p>Searchable list, editor, pin, delete with confirmation, autosave, a settings page, undo and a command palette. <code>derive(Record)</code> knows its fields, so tables and forms need no wiring.</p>
+        <p><a href="docs/guide/05-records-and-forms.html">Records and forms &rarr;</a></p>
+      </div>
+      <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>notes.rs</div>
+<pre class="hl"><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Record, Clone, Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Note</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="cp">#[form(long)]</span>
+<span class="w">    </span><span class="n">body</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">pinned</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span>
+<span class="w">    </span><span class="cp">#[form(skip)]</span>
+<span class="w">    </span><span class="n">edited</span><span class="p">:</span><span class="w"> </span><span class="nc">Stamp</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">app</span><span class="p">(</span><span class="s">"Notes"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">page</span><span class="p">(</span><span class="s">"Notes"</span><span class="p">,</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="n">notes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">store</span><span class="p">(</span><span class="o">||</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">Note</span><span class="p">::</span><span class="n">rows</span><span class="p">([</span>
+<span class="w">                    </span><span class="n">vals</span><span class="o">!</span><span class="p">[</span><span class="s">"Welcome</span><span class="se">\n</span><span class="s">Everything you type is saved as you go."</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">],</span>
+<span class="w">                    </span><span class="n">vals</span><span class="o">!</span><span class="p">[</span><span class="s">"Shopping</span><span class="se">\n</span><span class="s">Coffee, oat milk, lemons"</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">],</span>
+<span class="w">                    </span><span class="n">vals</span><span class="o">!</span><span class="p">[</span><span class="s">"Ideas</span><span class="se">\n</span><span class="s">A native notes app with no webview"</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">],</span>
+<span class="w">                </span><span class="p">])</span>
+<span class="w">            </span><span class="p">});</span>
+<span class="w">            </span><span class="n">browse_of</span><span class="p">(</span><span class="o">&amp;</span><span class="n">notes</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">foot</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="n">caption</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} words"</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">.</span><span class="n">body</span><span class="p">.</span><span class="n">split_whitespace</span><span class="p">().</span><span class="n">count</span><span class="p">())))</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="n">shortcut_as</span><span class="p">(</span><span class="s">"mod+s"</span><span class="p">,</span><span class="w"> </span><span class="s">"Save"</span><span class="p">,</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">toast</span><span class="p">(</span><span class="s">"Saved"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">command</span><span class="p">(</span><span class="s">"Export as Markdown"</span><span class="p">,</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">toast</span><span class="p">(</span><span class="s">"Exported 3 notes"</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">undoable</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">theme_page</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">persist</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre>
+      </div>
+    </div>
+    <div class="row2 flip">
+      <div>
+        <h3>Async without a runtime to set up</h3>
+        <p>An <code>async fn</code> becomes a screen with Loading, an error card with Retry and a Refresh button. You write only the success view.</p>
+        <p><a href="docs/cookbook/03-data.html">Data recipes &rarr;</a></p>
+      </div>
+      <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>releases.rs</div>
+<pre class="hl"><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">load_releases</span><span class="p">()</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">Result</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="nb">String</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sleep</span><span class="p">(</span><span class="n">secs</span><span class="p">(</span><span class="mf">0.4</span><span class="p">)).</span><span class="k">await</span><span class="p">;</span><span class="w"> </span><span class="c1">// stands in for a network call</span>
+<span class="w">    </span><span class="nb">Ok</span><span class="p">(</span><span class="fm">vec!</span><span class="p">[</span><span class="s">"0.4.0"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="s">"0.3.2"</span><span class="p">.</span><span class="n">into</span><span class="p">()])</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">((),</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">resource</span><span class="p">(</span><span class="n">load_releases</span><span class="p">).</span><span class="n">page</span><span class="p">(</span><span class="s">"Releases"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">v</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">col</span><span class="p">(</span><span class="n">v</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">r</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"alloy {r}"</span><span class="p">)))).</span><span class="n">gap</span><span class="p">(</span><span class="mf">6.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Releases"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre>
+      </div>
+    </div>
+    <div class="row2">
+      <div>
+        <h3>Test the screen, not the internals</h3>
+        <p>The same runtime runs headless with scripted input. Click by visible text, type, press chords, assert on what is drawn, or save a PNG for a golden image. No window and no GPU needed.</p>
+        <p><a href="docs/cookbook/06-shell-and-testing.html">Testing recipes &rarr;</a></p>
+      </div>
+      <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>tests</div>
+<pre class="hl"><code><span class="cp">#[test]</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">adding_counts</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">200.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Add"</span><span class="p">);</span>
+<span class="w">    </span><span class="fm">assert!</span><span class="p">(</span><span class="n">ui</span><span class="p">.</span><span class="n">has_text</span><span class="p">(</span><span class="s">"2 so far"</span><span class="p">));</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">save_png</span><span class="p">(</span><span class="s">"target/counter.png"</span><span class="p">);</span><span class="w"> </span><span class="c1">// CPU-rendered, no GPU</span>
+<span class="p">}</span>
+</code></pre>
+      </div>
+    </div>
+  </div>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <p class="kicker">Tauri's shell, without the web</p>
+  <h2>Ship it like a real app.</h2>
+  <p class="sub">Windows, menus, tray, dialogs, clipboard and shortcuts are in the box. <code>alloy bundle</code> builds a native package, and a capability file denies everything the app does not declare.</p>
+  <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>terminal</div>
+<pre class="hl"><code><span class="gp">$ </span>alloy<span class="w"> </span>new<span class="w"> </span>hello<span class="w"> </span>--identifier<span class="w"> </span>com.example.hello
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>hello<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>alloy<span class="w"> </span>dev<span class="w">                </span><span class="c1"># validates capabilities, runs a debug build</span>
+<span class="gp">$ </span>alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>deb,rpm<span class="w">        </span><span class="c1"># pure-Rust packagers, nothing to install</span>
+<span class="gp">$ </span>alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>app,dmg<span class="w">        </span><span class="c1"># macOS bundles (built on macOS)</span>
+<span class="gp">$ </span>alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>exe,msi<span class="w">        </span><span class="c1"># Windows bundles</span>
+</code></pre>
+  </div>
+</div></section>
+
+<section class="block"><div class="wrap">
+  <p class="kicker">Where it stands</p>
+  <h2>What has actually run.</h2>
+  <p class="sub">Alloy is young. This table only calls something verified when a test or a run has really happened.</p>
+  <table class="plain">
+    <thead><tr><th>Platform</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+      <tr><td>Linux (X11, Wayland)</td><td><span class="tag ok">run locally</span></td><td>Tests, headless rendering, bundling (.deb, .rpm) and AT-SPI accessibility were run on Linux.</td></tr>
+      <tr><td>Windows</td><td><span class="tag mid">CI passed once</span></td><td>fmt, build, clippy and tests passed in CI. The app has not yet been run on a real Windows desktop.</td></tr>
+      <tr><td>macOS</td><td><span class="tag no">compiles</span></td><td>The code builds, but CI has not run it. Treat it as unverified.</td></tr>
+    </tbody>
+  </table>
+  <p class="note" style="margin-top:16px">GitHub Actions is currently held up by an account billing limit, so the full matrix has not completed. Performance numbers are software-rendered Linux numbers, not GPU results. See <a href="https://github.com/adswill/alloy-ui/blob/main/BENCHMARKS.md">BENCHMARKS.md</a>.</p>
+</div></section>
+
+<section class="block" style="border-bottom:0"><div class="wrap">
+  <p class="kicker">Start</p>
+  <h2>Three commands to a window.</h2>
+  <p class="sub">Alloy is not on crates.io yet, so install from the repository.</p>
+  <div class="win"><div class="bar"><span class="dots"><i></i><i></i><i></i></span>terminal</div>
+<pre class="hl"><code><span class="gp">$ </span>cargo<span class="w"> </span>install<span class="w"> </span>--git<span class="w"> </span>https://github.com/adswill/alloy-ui<span class="w"> </span>alloy-ui-cli
+<span class="gp">$ </span>alloy<span class="w"> </span>new<span class="w"> </span>hello<span class="w"> </span>--identifier<span class="w"> </span>com.example.hello
+<span class="gp">$ </span><span class="nb">cd</span><span class="w"> </span>hello<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>alloy<span class="w"> </span>dev
+</code></pre>
+  </div>
+  <div class="cta" style="margin-top:28px">
+    <a class="btn primary" href="docs/guide/01-getting-started.html">Read the guide</a>
+    <a class="btn" href="https://github.com/adswill/alloy-ui">View the source</a>
+  </div>
+</div></section>
+</main>
+
+<footer><div class="wrap"><span>Alloy is licensed MIT or Apache-2.0. Type set in IBM Plex (SIL Open Font License).</span><span><a href="docs/guide/index.html">Guide</a> · <a href="docs/cookbook/index.html">Cookbook</a> · <a href="https://github.com/adswill/alloy-ui">GitHub</a></span></div></footer>
+<script src="site.js" defer></script>
+</body>
+</html>
