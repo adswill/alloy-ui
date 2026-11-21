@@ -382,7 +382,6 @@ fn shortcut(a: &mut App<String, String>, k: Key, shift: bool, alt: bool) {
         logo: cfg!(target_os = "macos"),
         shift,
         alt,
-        ..Default::default()
     };
     a.key_mod(k, m);
 }
@@ -642,4 +641,217 @@ fn rich_backspace_at_image_start_turns_it_into_text() {
     assert_eq!(a.state.blocks[0].kind, BlockKind::Paragraph);
     assert_eq!(a.state.blocks[0].src, None);
     assert_eq!(a.state.blocks[0].text(), "cap");
+}
+
+// ------------------------------------------------------------------ calendar
+
+fn cal_app(
+    view: CalView,
+    anchor: Date,
+    entries: Vec<Entry>,
+) -> App<(CalView, Date, Vec<Entry>), CalAction> {
+    App::new(
+        (view, anchor, entries),
+        |ui, s| {
+            Calendar::new(ui, 5, s.1, s.0, s.2.clone())
+                .hours(8, 16)
+                .on_action(|a| a)
+                .into_element()
+        },
+        |s, a| {
+            a.apply(&mut s.2);
+        },
+    )
+}
+
+fn week_of(d: Date) -> Date {
+    Date::from_days(d.to_days() - d.weekday() as i64)
+}
+
+/// Column `c` of the week view: centre x. Gutter 52, seven columns in a 640 wide window.
+fn col_x(c: f32) -> f32 {
+    52.0 + (c + 0.5) * (640.0 - 52.0) / 7.0
+}
+
+#[test]
+fn calendar_all_day_entries_sit_in_a_band_and_drag_across_days() {
+    let anchor = Date::new(2025, 3, 12);
+    let ws = week_of(anchor);
+    let day = |n: i64| Date::from_days(ws.to_days() + n);
+    let trip = Entry::all_day(1, "Offsite", day(1), 3);
+    let mut a = cal_app(
+        CalView::Week,
+        anchor,
+        vec![trip, Entry::new(2, "Standup", day(2), 9 * 60, 10 * 60)],
+    );
+    let cmds = a.draw().0;
+    let title_y =
+        |a: &mut App<_, _>, t: &str| a.texts().into_iter().find(|x| x.0 == t).map(|x| x.1.y);
+    let band_y = title_y(&mut a, "Offsite").expect("banner title drawn");
+    let timed_y = title_y(&mut a, "Standup").expect("timed title drawn");
+    assert!(band_y < timed_y, "banner above the time grid");
+    assert!(cmds
+        .iter()
+        .any(|c| matches!(c, DrawCommand::Text { content, .. } if content == "all-day")));
+    // Drag from the middle day (column 2) to column 4: the entry moves two days.
+    a.send(Event::CursorMoved(Point::new(col_x(2.0), 118.0)));
+    a.send(Event::MousePressed(MouseButton::Left));
+    a.send(Event::CursorMoved(Point::new(col_x(3.0), 118.0)));
+    a.send(Event::CursorMoved(Point::new(col_x(4.0), 118.0)));
+    a.send(Event::MouseReleased(MouseButton::Left));
+    assert_eq!(
+        a.log.last(),
+        Some(&CalAction::Move {
+            id: 1,
+            date: day(3),
+            start: 0
+        }),
+        "grab point is kept: day 2 -> day 4 moves the start from 1 to 3"
+    );
+    assert_eq!(a.state.2[0].date, day(3));
+    assert_eq!(a.state.2[0].days, 3, "length is kept");
+}
+
+#[test]
+fn calendar_right_edge_changes_the_span_and_empty_band_creates() {
+    let anchor = Date::new(2025, 3, 12);
+    let ws = week_of(anchor);
+    let day = |n: i64| Date::from_days(ws.to_days() + n);
+    let mut a = cal_app(
+        CalView::Week,
+        anchor,
+        vec![Entry::all_day(1, "Offsite", day(1), 3)],
+    );
+    // Right edge of column 3 (the last covered day).
+    let edge = 52.0 + 4.0 * (640.0 - 52.0) / 7.0 - 4.0;
+    a.send(Event::CursorMoved(Point::new(edge, 118.0)));
+    a.send(Event::MousePressed(MouseButton::Left));
+    a.send(Event::CursorMoved(Point::new(col_x(5.0), 118.0)));
+    a.send(Event::MouseReleased(MouseButton::Left));
+    assert_eq!(a.log.last(), Some(&CalAction::Span { id: 1, days: 5 }));
+    assert_eq!(a.state.2[0].days, 5);
+    // Dragging the edge back past the start never goes below one day.
+    let edge = 52.0 + 6.0 * (640.0 - 52.0) / 7.0 - 4.0;
+    a.send(Event::CursorMoved(Point::new(edge, 118.0)));
+    a.send(Event::MousePressed(MouseButton::Left));
+    a.send(Event::CursorMoved(Point::new(col_x(0.0), 118.0)));
+    a.send(Event::MouseReleased(MouseButton::Left));
+    assert_eq!(a.state.2[0].days, 1);
+    // A click on an empty band spot makes an all-day entry there.
+    a.send(Event::CursorMoved(Point::new(col_x(6.0), 118.0)));
+    a.send(Event::MousePressed(MouseButton::Left));
+    a.send(Event::MouseReleased(MouseButton::Left));
+    assert_eq!(
+        a.log.last(),
+        Some(&CalAction::CreateAllDay { date: day(6) })
+    );
+    assert!(a.state.2.iter().any(|e| e.all_day && e.date == day(6)));
+}
+
+#[test]
+fn calendar_month_bars_span_cells_stack_and_drag_by_the_grabbed_day() {
+    // February 2027 starts on a Monday and fits four rows, so each cell has room for chips.
+    let anchor = Date::new(2027, 2, 10);
+    let d = |n: u32| Date::new(2027, 2, n);
+    let mut a = cal_app(
+        CalView::Month,
+        anchor,
+        vec![
+            Entry::all_day(1, "Trip", d(3), 3),
+            Entry::all_day(2, "Hack", d(4), 1),
+        ],
+    );
+    let ty = |a: &mut App<_, _>, t: &str| {
+        a.texts()
+            .into_iter()
+            .find(|x| x.0.ends_with(t))
+            .map(|x| x.1)
+    };
+    let trip = ty(&mut a, "Trip").expect("bar title");
+    let hack = ty(&mut a, "Hack").expect("second bar");
+    assert!(hack.y > trip.y, "overlapping bars take separate lanes");
+    let mut b = cal_app(
+        CalView::Month,
+        anchor,
+        vec![
+            Entry::all_day(1, "Trip", d(3), 3),
+            Entry::new(3, "Lunch", d(3), 12 * 60, 13 * 60),
+        ],
+    );
+    let (trip_b, lunch) = (
+        ty(&mut b, "Trip").unwrap(),
+        ty(&mut b, "Lunch").expect("chip"),
+    );
+    assert!(lunch.y > trip_b.y, "timed chips start below the bars");
+    // The bar spans three cells: its title starts in Wednesday's cell.
+    let cw = 640.0 / 7.0;
+    assert!(trip.x > 2.0 * cw && trip.x < 3.0 * cw);
+    // Grab the bar on Thursday (second day) in row 0 and drop it on Thursday of row 1:
+    // the start moves to Wednesday the 10th.
+    let bar_y = trip.y + 6.0;
+    a.send(Event::CursorMoved(Point::new(3.5 * cw, bar_y)));
+    a.send(Event::MousePressed(MouseButton::Left));
+    a.send(Event::CursorMoved(Point::new(3.5 * cw, bar_y + 40.0)));
+    a.send(Event::CursorMoved(Point::new(3.5 * cw, bar_y + 76.0)));
+    a.send(Event::MouseReleased(MouseButton::Left));
+    assert_eq!(
+        a.log.last(),
+        Some(&CalAction::Move {
+            id: 1,
+            date: d(10),
+            start: 0
+        })
+    );
+}
+
+#[test]
+fn calendar_bars_continue_across_week_rows() {
+    let anchor = Date::new(2027, 2, 10);
+    let mut a = cal_app(
+        CalView::Month,
+        anchor,
+        vec![Entry::all_day(1, "Sprint", Date::new(2027, 2, 5), 5)], // Fri 5th to Tue 9th
+    );
+    let cmds = a.draw().0;
+    let arrows = cmds
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::Text { content, .. } if content == "›"))
+        .count();
+    assert_eq!(
+        arrows, 2,
+        "toolbar next, plus the first week's bar running on"
+    );
+    assert!(
+        cmds.iter()
+            .any(|c| matches!(c, DrawCommand::Text { content, .. } if content == "‹ Sprint")),
+        "the second week's piece is marked as a continuation"
+    );
+}
+
+#[test]
+fn calendar_apply_edits_the_entry_list() {
+    let d = Date::new(2025, 3, 12);
+    let mut es = vec![Entry::new(1, "A", d, 600, 660)];
+    assert!(CalAction::Move {
+        id: 1,
+        date: Date::new(2025, 3, 14),
+        start: 720
+    }
+    .apply(&mut es));
+    assert_eq!((es[0].date.day, es[0].start, es[0].end), (14, 720, 780));
+    assert!(CalAction::Span { id: 1, days: 0 }.apply(&mut es));
+    assert_eq!(es[0].days, 1, "never below one day");
+    assert!(CalAction::CreateAllDay { date: d }.apply(&mut es));
+    assert_eq!(es[1].id, 2);
+    assert!(es[1].all_day);
+    assert!(
+        !CalAction::Open(1).apply(&mut es),
+        "navigation is the app's"
+    );
+    assert!(!CalAction::Move {
+        id: 9,
+        date: d,
+        start: 0
+    }
+    .apply(&mut es));
 }

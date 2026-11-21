@@ -178,6 +178,46 @@ fn calendar_views() {
 }
 
 #[test]
+fn calendar_banners_in_week_and_month() {
+    let mut es = entries();
+    let ws = Date::from_days(DAY.to_days() - DAY.weekday() as i64);
+    let d = |n: i64| Date::from_days(ws.to_days() + n);
+    es.push(Entry::all_day(10, "Offsite", d(1), 3));
+    es.push(Entry::all_day(11, "Release", d(2), 1).tone(Tone::Success));
+    es.push(Entry::all_day(12, "Long", d(5), 5).tone(Tone::Warning));
+    for (name, view) in [
+        ("viz_calendar_banners_week", CalView::Week),
+        ("viz_calendar_banners_month", CalView::Month),
+    ] {
+        let es = es.clone();
+        let img = render(Theme::light(), move |ui| {
+            pad(Calendar::<()>::new(ui, 5, DAY, view, es.clone())
+                .today(DAY)
+                .hours(8, 16)
+                .into_element())
+        });
+        check(name, &img);
+    }
+}
+
+#[test]
+fn rich_editor_code_and_image_blocks() {
+    let doc = RichText::from_markdown(
+        "Some text above.\n\n```\nlet x = run();\nlog(x);\n```\n\n![A diagram](diagram.png)",
+    );
+    for (name, theme) in [
+        ("viz_rich_blocks_light", Theme::light()),
+        ("viz_rich_blocks_dark", Theme::dark()),
+    ] {
+        let doc = doc.clone();
+        let img = render(theme, move |ui| {
+            pad(RichEditor::<()>::new(ui, 3, &doc).into_element())
+        });
+        check(name, &img);
+    }
+}
+
+#[test]
 fn node_graph_default() {
     let nodes = vec![
         GraphNode::new(1, "A", 10.0, 20.0)

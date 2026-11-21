@@ -40,11 +40,13 @@ pub struct RichEditor<M> {
     placeholder: String,
     on_change: Option<Rc<dyn Fn(RichText) -> M>>,
     on_link: Option<Rc<dyn Fn(String) -> M>>,
-    images: Option<Rc<dyn Fn(&str) -> Option<u64>>>,
+    images: Option<ImageLookup>,
     toolbar: bool,
     width: Length,
     height: Length,
 }
+
+type ImageLookup = Rc<dyn Fn(&str) -> Option<u64>>;
 
 impl<M: 'static> RichEditor<M> {
     /// An editor showing `doc`. `id` must be unique per window.
@@ -884,7 +886,16 @@ impl<M: 'static> Widget<M> for RichEditor<M> {
                     match id {
                         Some(id) => out.push(DrawCommand::Image { bounds: card, id }),
                         None => {
-                            out.push(quad(card, panel_color, t.radii.small + 2.0));
+                            out.push(DrawCommand::Quad {
+                                bounds: card,
+                                fill: panel_color,
+                                radius: t.radii.small + 2.0,
+                                border: Some(Border {
+                                    color: p.border,
+                                    width: 1.0,
+                                }),
+                                shadow: None,
+                            });
                             // A small landscape glyph and the source name.
                             let (cx, cy) = (card.origin.x + cw / 2.0, card.origin.y + IMG_H / 2.0);
                             out.push(quad(
@@ -1447,7 +1458,7 @@ const INDENT: f32 = 28.0;
 const QUOTE_INDENT: f32 = 18.0;
 const CODE_PAD: f32 = 12.0;
 /// Height of an image card above its caption.
-const IMG_H: f32 = 150.0;
+const IMG_H: f32 = 120.0;
 
 /// A run of text on a line with one style.
 struct Frag {
@@ -1553,12 +1564,14 @@ impl Laid {
                 (base * scale * lscale).round()
             };
             y += match (prev, b.kind) {
+                (None, BlockKind::Image) => IMG_H + 6.0,
                 (None, _) => 0.0,
+                (Some(BlockKind::Code), BlockKind::Image) => IMG_H + 20.0,
+                (_, BlockKind::Image) => IMG_H + 12.0,
                 (Some(BlockKind::Bullet), BlockKind::Bullet)
                 | (Some(BlockKind::Numbered), BlockKind::Numbered) => 3.0,
                 (Some(BlockKind::Code), BlockKind::Code) => 0.0,
                 (_, BlockKind::Code) | (Some(BlockKind::Code), _) => 14.0,
-                (_, BlockKind::Image) => IMG_H + 12.0,
                 (_, BlockKind::Heading(_)) => 18.0,
                 (Some(BlockKind::Heading(_)), _) => 6.0,
                 _ => 10.0,

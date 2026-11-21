@@ -263,7 +263,9 @@ pub fn pieces(lines: &[(Vec<Point>, bool)], style: &Stroke) -> Vec<Vec<Point>> {
     for (raw, closed) in lines {
         let mut p: Vec<Point> = Vec::with_capacity(raw.len());
         for q in raw {
-            if p.last().is_none_or(|l| (l.x - q.x).hypot(l.y - q.y) > 1e-3) {
+            if p.last()
+                .map_or(true, |l| (l.x - q.x).hypot(l.y - q.y) > 1e-3)
+            {
                 p.push(*q);
             }
         }

@@ -335,14 +335,16 @@ impl<'a> Strips<'a> {
         for (i, e) in edges.iter().enumerate() {
             if (e.0 .1 - e.1 .1).abs() > 1e-12 {
                 let (lo, hi) = (e.0 .1.min(e.1 .1), e.0 .1.max(e.1 .1));
-                for b in bucket(lo, y0, ys)..=bucket(hi, y0, ys) {
-                    by_y[b].push(i as u32);
+                let (a, z) = (bucket(lo, y0, ys), bucket(hi, y0, ys));
+                for cell in &mut by_y[a..=z] {
+                    cell.push(i as u32);
                 }
             }
             if (e.0 .0 - e.1 .0).abs() > 1e-12 {
                 let (lo, hi) = (e.0 .0.min(e.1 .0), e.0 .0.max(e.1 .0));
-                for b in bucket(lo, x0, xs)..=bucket(hi, x0, xs) {
-                    by_x[b].push(i as u32);
+                let (a, z) = (bucket(lo, x0, xs), bucket(hi, x0, xs));
+                for cell in &mut by_x[a..=z] {
+                    cell.push(i as u32);
                 }
             }
         }
@@ -596,7 +598,7 @@ mod tests {
                 [50.0 + 40.0 * a.cos(), 50.0 + 40.0 * a.sin()]
             })
             .collect();
-        let nz = resolve(&[star.clone()], FillRule::NonZero).unwrap();
+        let nz = resolve(std::slice::from_ref(&star), FillRule::NonZero).unwrap();
         let eo = resolve(&[star], FillRule::EvenOdd).unwrap();
         // Non-zero fills the pentagon in the middle too; even-odd leaves it empty.
         assert!(
