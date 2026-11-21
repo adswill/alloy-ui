@@ -425,6 +425,17 @@ fn app_bundle() -> std::path::PathBuf {
         .join("Applications/AlloySystemRuntime.app")
 }
 #[cfg(target_os = "macos")]
+fn bundle_log(line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(std::env::temp_dir().join("alloy-bundle-log.txt"))
+    {
+        let _ = writeln!(f, "{line}");
+    }
+}
+#[cfg(target_os = "macos")]
 fn bundle_result() -> std::path::PathBuf {
     std::env::temp_dir().join("alloy-bundle-result.txt")
 }
@@ -434,6 +445,7 @@ fn macos_bundle() -> Result<String, String> {
     let app = app_bundle();
     let _ = std::fs::remove_dir_all(&app);
     let _ = std::fs::remove_file(bundle_result());
+    let _ = std::fs::remove_file(std::env::temp_dir().join("alloy-bundle-log.txt"));
     let macos = app.join("Contents/MacOS");
     std::fs::create_dir_all(&macos).map_err(|e| e.to_string())?;
     std::fs::copy(
@@ -474,7 +486,7 @@ fn macos_bundle() -> Result<String, String> {
         return Err("`open` could not resolve the scheme to the bundle".into());
     }
     let start = Instant::now();
-    while start.elapsed() < Duration::from_secs(40) {
+    while start.elapsed() < Duration::from_secs(25) {
         if let Ok(got) = std::fs::read_to_string(bundle_result()) {
             let _ = std::fs::remove_dir_all(&app);
             return if got.trim() == URL {
@@ -489,15 +501,36 @@ fn macos_bundle() -> Result<String, String> {
         std::thread::sleep(Duration::from_millis(200));
     }
     let _ = std::fs::remove_dir_all(&app);
-    Err("the bundle never reported the URL".into())
+    let log = std::fs::read_to_string(std::env::temp_dir().join("alloy-bundle-log.txt"))
+        .unwrap_or_else(|_| "(the bundle never started: no log)".into());
+    Err(format!(
+        "the bundle never reported the URL; its log:\n{log}"
+    ))
 }
 
 /// Inside the bundle: wait for the Apple Event, report the URL, exit.
 #[cfg(target_os = "macos")]
 fn bundle_mode() {
+    struct L;
+    impl log::Log for L {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            true
+        }
+        fn log(&self, r: &log::Record) {
+            bundle_log(&format!("log {}: {}", r.target(), r.args()));
+        }
+        fn flush(&self) {}
+    }
+    let _ = log::set_logger(&L);
+    log::set_max_level(log::LevelFilter::Debug);
+    bundle_log(&format!(
+        "bundle started, args {:?}",
+        std::env::args().collect::<Vec<_>>()
+    ));
     struct Wait;
     impl ShellHandler for Wait {
         fn event(&mut self, ctx: &mut ShellContext, e: PlatformEvent) {
+            bundle_log(&format!("event {e:?}"));
             if let PlatformEvent::Open(a) = e {
                 if let Some(u) = a.iter().find(|a| a.starts_with(SCHEME)) {
                     let _ = std::fs::write(bundle_result(), u);
@@ -511,7 +544,8 @@ fn bundle_mode() {
         std::thread::sleep(Duration::from_secs(40));
         std::process::exit(1);
     });
-    let _ = alloy_ui_platform::run(window("bundle"), |_| Wait);
+    let r = alloy_ui_platform::run(window("bundle"), |_| Wait);
+    bundle_log(&format!("run returned {r:?}"));
 }
 
 // ------------------------------------------------------------------ windowed

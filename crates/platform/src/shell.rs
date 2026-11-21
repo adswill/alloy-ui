@@ -924,6 +924,11 @@ pub fn run<H: ShellHandler + 'static>(
     make: impl FnOnce(ShellProxy) -> H + 'static,
 ) -> Result<(), PlatformError> {
     let t0 = Instant::now();
+    // A link that launches the app arrives as an Apple Event while the app starts, so the
+    // handler goes in before the event loop exists; `resumed` installs it again in case AppKit
+    // replaced it while finishing the launch.
+    #[cfg(target_os = "macos")]
+    crate::os::install_open_handler();
     let mut builder = EventLoop::<Wake>::with_user_event();
     #[cfg(windows)]
     {
