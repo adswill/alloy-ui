@@ -89,6 +89,26 @@ impl<A: App> Harness<A> {
             .handle_event(&Event::MouseReleased(MouseButton::Left));
         self
     }
+    /// Right-click the first widget showing exactly `text` (opens context menus). Panics if there is none.
+    pub fn right_click(&mut self, text: &str) -> &mut Self {
+        self.hover(text);
+        self.rt
+            .handle_event(&Event::MousePressed(MouseButton::Right));
+        self.rt
+            .handle_event(&Event::MouseReleased(MouseButton::Right));
+        self
+    }
+    /// Move the pointer onto the first widget showing exactly `text`. Panics if there is none.
+    pub fn hover(&mut self, text: &str) -> &mut Self {
+        let (p, _) = self
+            .texts()
+            .into_iter()
+            .find(|(_, t)| t == text)
+            .unwrap_or_else(|| panic!("no widget with text {text:?}"));
+        self.rt
+            .handle_event(&Event::CursorMoved(Point::new(p.x + 3.0, p.y + 3.0)));
+        self
+    }
     /// Wait (up to 5 s) for background [`resource`](crate::resource)s to finish and show their data.
     pub fn settle(&mut self) -> &mut Self {
         for _ in 0..200 {
@@ -111,6 +131,15 @@ impl<A: App> Harness<A> {
         self.rt
             .handle_event(&Event::KeyPressed(key, Modifiers::default()));
         self
+    }
+    /// Press a named key such as `"ArrowDown"`, `"PageDown"`, `"Enter"` or `"Escape"`.
+    pub fn key(&mut self, name: &str) -> &mut Self {
+        self.press(match name {
+            "Enter" => Key::Enter,
+            "Escape" => Key::Escape,
+            "Tab" => Key::Tab,
+            n => Key::Named(n.into()),
+        })
     }
     /// Press a shortcut such as `"mod+s"` or `"mod+shift+z"`.
     pub fn chord(&mut self, keys: &str) -> &mut Self {

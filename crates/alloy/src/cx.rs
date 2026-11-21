@@ -24,6 +24,21 @@ thread_local! {
 }
 
 /// Run `f` with `ui` as the ambient context and the id counters reset.
+/// Run `f` with `ui` as the ambient context, ids salted by `key`, without touching the durable
+/// counters: for building a piece of the tree later than `view` (a virtualised row, at draw time).
+pub(crate) fn scoped<R>(ui: &Ui, key: u64, f: impl FnOnce() -> R) -> R {
+    let prev = CX.with(|c| {
+        c.borrow_mut().replace(Cx {
+            ui: ui.clone(),
+            seen: HashMap::new(),
+            salt: key.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x7157_0001,
+        })
+    });
+    let r = f();
+    CX.with(|c| *c.borrow_mut() = prev);
+    r
+}
+
 pub(crate) fn enter<R>(ui: &Ui, f: impl FnOnce() -> R) -> R {
     let prev = CX.with(|c| {
         c.borrow_mut().replace(Cx {

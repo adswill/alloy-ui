@@ -68,6 +68,7 @@ mod keys;
 mod mock;
 mod palette;
 mod persist;
+mod pro;
 mod records;
 mod resource;
 mod rich;
@@ -97,6 +98,10 @@ pub use dsl::{
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use mock::{series, Mock};
+pub use pro::{
+    context_menu, markdown, menu_item, menu_rule, popover, split, tab_bar, vlist, Markdown, Menu,
+    MenuEntry, Popover, Split, TabBar, VList,
+};
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
     Stamp, Value,
@@ -113,12 +118,13 @@ pub use {serde, serde_json};
 pub mod prelude {
     pub use crate::{
         app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check, choose,
-        color_picker, crud, crud_app, custom, editor, every, field, field_after, filter_by, gap,
-        heading, input, line_chart, list, local, nav, number, options, palette, pick, progress,
-        radio, radio_list, radio_list_with, radios, records, records_in, resource, rule, scroll,
-        secs, section, series, set_accent, set_dark, set_look, shell, sketch, sleep, slider, space,
-        sparkline, stat, stats, stepper, store, store_as, swatch, table, table_of, tabs, tally,
-        text, theme_switch, toggle, tree, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
+        color_picker, context_menu, crud, crud_app, custom, editor, every, field, field_after,
+        filter_by, gap, heading, input, line_chart, list, local, markdown, menu_item, menu_rule,
+        nav, number, options, palette, pick, popover, progress, radio, radio_list, radio_list_with,
+        radios, records, records_in, resource, rule, scroll, secs, section, series, set_accent,
+        set_dark, set_look, shell, sketch, sleep, slider, space, sparkline, split, stat, stats,
+        stepper, store, store_as, swatch, tab_bar, table, table_of, tabs, tally, text,
+        theme_switch, toggle, tree, vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
         FlagCell, Item, Local, Look, Node, Place, Record, Records, Resource, Stamp, TextCell,
         TreeItem, View, Wizard,
     };

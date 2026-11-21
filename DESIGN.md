@@ -62,3 +62,14 @@ Renders: `gallery/rich/showcase_*.png` (light, dark with an indigo accent, high 
 - **Swatches** carry a hairline so near-white and near-black stay visible; the selected one gets a ring plus a tick, never colour alone.
 - **Accent theming** nudges the brand colour toward black or white until it passes AA on all three surfaces, and re-derives hover, pressed, on-accent, focus ring and selection; tests run six awkward brand colours through both themes.
 - **High contrast** is pure black/white, 7:1 text and borders, and a yellow or blue focus ring. **Density** scales the spacing tokens to 80% or 125%.
+
+## Workbench widgets (2026-11-21)
+Renders: `gallery/pro/workbench*.png` (`cargo run -p alloy-ui --example workbench -- --headless out.png [--rclick Text] [--click Text] [--key Name]`); golden tests `pro_*` in `crates/widgets/tests`.
+
+- **Split pane**: a 9 px gutter with a 1 px hairline and a short grip. At rest it is as quiet as a divider; hover, drag or focus turns the line 2 px accent. The position is a ratio kept in `Ui`, so it survives window resizes; panes keep a minimum size. Arrow keys, Home and End resize when it has focus.
+- **Context menu**: same surface as the pick-list popup (raised, 1 px border, medium elevation), rows on the selection tint, shortcut hints dim and right-aligned, danger in the danger colour, no icons. Opens at the pointer, flips and slides to stay inside the window. Right click, the menu key, or Shift+F10 over the target; Up/Down/Home/End/Enter/Escape inside.
+- **Tabs**: label weight and a 2 px accent underline mark the selected tab; no boxed tab shapes. Tabs that do not fit collapse into a `+N` menu while the selected tab stays visible. Optional close buttons appear on the selected and hovered tab; middle click also closes.
+- **Popover**: any element in a floating panel, below the anchor (above when there is no room). Controlled by `open` and `on_toggle`.
+- **Markdown**: headings carry hierarchy with size and weight (a hairline under the title only), inline code on a surface chip, links in the accent with an underline, quotes as indented secondary text with a neutral hairline (no coloured stripe). Unequal block spacing: tight between list items, generous before headings. No italic face is bundled yet, so emphasis is a medium weight.
+- **Virtual list**: fixed row height, only visible rows are built per frame (tested with 100 000), draggable scrollbar thumb, PageUp/PageDown/Home/End.
+- Known limit: a click outside an open menu or popover that lands on a sibling control still reaches that control, as with the pick list; a modal capture layer in `Root` would fix all three.
