@@ -511,6 +511,18 @@ fn macos_bundle() -> Result<String, String> {
 /// Inside the bundle: wait for the Apple Event, report the URL, exit.
 #[cfg(target_os = "macos")]
 fn bundle_mode() {
+    struct L;
+    impl log::Log for L {
+        fn enabled(&self, _: &log::Metadata) -> bool {
+            true
+        }
+        fn log(&self, r: &log::Record) {
+            bundle_log(&format!("log {}: {}", r.target(), r.args()));
+        }
+        fn flush(&self) {}
+    }
+    let _ = log::set_logger(&L);
+    log::set_max_level(log::LevelFilter::Debug);
     bundle_log(&format!(
         "bundle started, args {:?}",
         std::env::args().collect::<Vec<_>>()
