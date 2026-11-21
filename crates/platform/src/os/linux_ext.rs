@@ -57,3 +57,127 @@ pub fn rich_write(c: &ClipContent) -> bool {
     (wayland() && super::wl_clip::write_formats(formats.clone()))
         || (x11() && super::x11_clip::write_formats(formats))
 }
+
+use crate::EffectOutcome;
+use alloy_ui_core::WindowEffect;
+use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+use x11rb::connection::Connection;
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, PropMode};
+use x11rb::wrapper::ConnectionExt as _;
+
+/// Window effects on Linux. See-through windows need a compositor (any
+/// Wayland session has one; on X11 we check for `_NET_WM_CM_S<n>`). Blur is
+/// asked of KDE's KWin through `_KDE_NET_WM_BLUR_BEHIND_REGION` on X11; other
+/// desktops, and Wayland, get see-through only.
+pub fn set_effect(window: &winit::window::Window, effect: WindowEffect) -> EffectOutcome {
+    let Ok(handle) = window.window_handle() else {
+        return EffectOutcome::Unsupported;
+    };
+    let id = match handle.as_raw() {
+        RawWindowHandle::Xlib(h) => Some(h.window as u32),
+        RawWindowHandle::Xcb(h) => Some(h.window.get()),
+        RawWindowHandle::Wayland(_) => None,
+        _ => return EffectOutcome::Unsupported,
+    };
+    match id {
+        None => match effect {
+            WindowEffect::None | WindowEffect::Transparent => EffectOutcome::Applied,
+            _ => EffectOutcome::SeeThrough,
+        },
+        Some(win) => x11_effect(win, effect, is_kde()).unwrap_or(EffectOutcome::Unsupported),
+    }
+}
+
+fn is_kde() -> bool {
+    std::env::var("XDG_CURRENT_DESKTOP").is_ok_and(|d| d.split(':').any(|p| p == "KDE"))
+}
+
+fn x11_effect(win: u32, effect: WindowEffect, kde: bool) -> Option<EffectOutcome> {
+    let (c, screen) = x11rb::rust_connection::RustConnection::connect(None).ok()?;
+    let atom = |name: &str| Some(c.intern_atom(false, name.as_bytes()).ok()?.reply().ok()?.atom);
+    let blur = atom("_KDE_NET_WM_BLUR_BEHIND_REGION")?;
+    let want_blur = matches!(effect, WindowEffect::Acrylic | WindowEffect::Blur);
+    if want_blur && kde {
+        // An empty region means "the whole window".
+        c.change_property32(PropMode::REPLACE, win, blur, AtomEnum::CARDINAL, &[])
+            .ok()?;
+    } else {
+        c.delete_property(win, blur).ok()?;
+    }
+    c.flush().ok()?;
+    let composited = {
+        let cm = atom(&format!("_NET_WM_CM_S{screen}"))?;
+        c.get_selection_owner(cm).ok()?.reply().ok()?.owner != x11rb::NONE
+    };
+    Some(match effect {
+        WindowEffect::None => EffectOutcome::Applied,
+        _ if !composited => EffectOutcome::Unsupported,
+        WindowEffect::Transparent => EffectOutcome::Applied,
+        _ if want_blur && kde => EffectOutcome::Applied,
+        _ => EffectOutcome::SeeThrough,
+    })
+}
+
+/// The `_KDE_NET_WM_BLUR_BEHIND_REGION` property of `win`, for tests.
+#[cfg(test)]
+pub(crate) fn blur_property(win: u32) -> Option<Vec<u32>> {
+    let (c, _) = x11rb::rust_connection::RustConnection::connect(None).ok()?;
+    let a = c
+        .intern_atom(true, b"_KDE_NET_WM_BLUR_BEHIND_REGION")
+        .ok()?
+        .reply()
+        .ok()?
+        .atom;
+    if a == x11rb::NONE {
+        return None;
+    }
+    let r = c
+        .get_property(false, win, a, AtomEnum::CARDINAL, 0, 16)
+        .ok()?
+        .reply()
+        .ok()?;
+    (r.type_ != x11rb::NONE).then(|| r.value32().map(|v| v.collect()).unwrap_or_default())
+}
+
+/// Install a per-user `.desktop` file that makes this executable the handler
+/// of `scheme`, and tell `xdg-mime` about it.
+pub fn register_scheme(app_id: &str, scheme: &str, exe: &str) -> Result<(), crate::PlatformError> {
+    let err = |e: std::io::Error| crate::PlatformError(format!("register_scheme: {e}"));
+    let home = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".local/share"))
+        })
+        .ok_or_else(|| crate::PlatformError("register_scheme: no home directory".into()))?;
+    let dir = home.join("applications");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let file = format!("{app_id}.desktop");
+    let path = dir.join(&file);
+    // Several schemes for one app: keep the ones already registered.
+    let mut schemes: Vec<String> = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| {
+            s.lines()
+                .find_map(|l| l.strip_prefix("MimeType=").map(str::to_owned))
+        })
+        .map(|m| {
+            m.split(';')
+                .filter_map(|t| t.strip_prefix("x-scheme-handler/"))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !schemes.iter().any(|s| s == scheme) {
+        schemes.push(scheme.to_owned());
+    }
+    let refs: Vec<&str> = schemes.iter().map(String::as_str).collect();
+    std::fs::write(&path, crate::deeplink::desktop_entry(app_id, exe, &refs)).map_err(err)?;
+    // Both tools are optional niceties: without them the desktop file is still picked up
+    // by most launchers, so their failure is not an error.
+    capture(
+        "xdg-mime",
+        &["default", &file, &format!("x-scheme-handler/{scheme}")],
+    );
+    capture("update-desktop-database", &[dir.to_str().unwrap_or("")]);
+    Ok(())
+}

@@ -220,6 +220,12 @@ impl ShellContext {
     pub fn request_redraw(&mut self) {
         self.redraw = true;
     }
+    /// Bring the current window to the front and give it focus (used when a
+    /// second launch hands its arguments to this instance).
+    pub fn focus_window(&self) {
+        self.window.set_minimized(false);
+        self.window.focus_window();
+    }
     /// Exit the event loop after this callback.
     pub fn exit(&mut self) {
         self.exit = true;
@@ -310,6 +316,18 @@ impl ShellContext {
     fn main_window(&self) -> &Window {
         self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)
     }
+    /// Give the current window a see-through look (Mica, acrylic, blur,
+    /// plain transparency) or take it away with [`alloy_ui_core::WindowEffect::None`].
+    /// The answer says what the OS really did; the app then picks a page
+    /// background opacity to match.
+    ///
+    /// On X11 the window must have been created see-through: call
+    /// [`request_window_effect`] before [`run`].
+    pub fn set_effect(&mut self, effect: alloy_ui_core::WindowEffect) -> crate::EffectOutcome {
+        self.window
+            .set_transparent(effect != alloy_ui_core::WindowEffect::None);
+        crate::os::set_effect(&self.window, effect)
+    }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
         self.window.theme().map(|t| t == Theme::Dark)
@@ -335,9 +353,24 @@ struct App<H> {
     settings_seen: Option<crate::settings::SystemSettings>,
 }
 
+static INITIAL_EFFECT: std::sync::Mutex<alloy_ui_core::WindowEffect> =
+    std::sync::Mutex::new(alloy_ui_core::WindowEffect::None);
+
+/// Ask for windows to be created see-through, before [`run`]. X11 needs a
+/// 32-bit visual at creation time, so an app that will ever use a window
+/// effect has to say so up front; [`ShellContext::set_effect`] then switches
+/// effects (or turns them off) at any time.
+pub fn request_window_effect(effect: alloy_ui_core::WindowEffect) {
+    if let Ok(mut e) = INITIAL_EFFECT.lock() {
+        *e = effect;
+    }
+}
+
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
+    let effect = INITIAL_EFFECT.lock().map(|e| *e).unwrap_or_default();
     Window::default_attributes()
         .with_title(s.title.clone())
+        .with_transparent(effect != alloy_ui_core::WindowEffect::None)
         .with_inner_size(LogicalSize::new(s.size.width as f64, s.size.height as f64))
 }
 
@@ -441,6 +474,8 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         if self.ctx.is_some() {
             return;
         }
+        #[cfg(target_os = "macos")]
+        crate::os::install_open_handler();
         match el.create_window(attributes(&self.settings)) {
             Ok(w) => {
                 let w = Arc::new(w);
@@ -686,6 +721,14 @@ pub fn run<H: ShellHandler + 'static>(
         #[cfg(not(target_os = "linux"))]
         settings_seen: None,
     };
+    // What this launch itself was asked to open (a deep link, a file association).
+    let launch: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+    if !crate::deeplink::classify(&launch).is_empty() {
+        crate::os::push_pending(PlatformEvent::Open(launch));
+    }
     // Read the OS settings off the UI thread (it can spawn helper processes);
     // the answer arrives as `SettingsChanged` right after start-up.
     let _ = std::thread::Builder::new()

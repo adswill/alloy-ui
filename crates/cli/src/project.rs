@@ -9,6 +9,7 @@
 //! category     = "Utility"               # freedesktop main category
 //! icons        = ["assets/icon-256.png", "assets/icon-512.png"]
 //! capabilities = "alloy.capabilities.toml"
+//! url-schemes  = ["myapp"]               # deep links: myapp://...
 //! ```
 
 use crate::error::{io, Error, Result};
@@ -46,6 +47,9 @@ struct RawMeta {
     #[serde(default)]
     icons: Vec<String>,
     capabilities: Option<String>,
+    /// URL schemes the app handles (`myapp` for `myapp://...`).
+    #[serde(default)]
+    url_schemes: Vec<String>,
     min_macos: Option<String>,
     #[serde(default)]
     deb_depends: Option<Vec<String>>,
@@ -88,6 +92,8 @@ pub struct Project {
     pub icons: Vec<PathBuf>,
     /// Absolute path of the capability config, if configured.
     pub capabilities_path: Option<PathBuf>,
+    /// URL schemes the app opens (deep links), without `://`.
+    pub url_schemes: Vec<String>,
     /// Minimum macOS version.
     pub min_macos: String,
     /// Debian `Depends` entries.
@@ -279,6 +285,7 @@ impl Project {
             copyright: raw.copyright,
             icons: raw.icons.iter().map(|i| base.join(i)).collect(),
             capabilities_path: raw.capabilities.map(|c| base.join(c)),
+            url_schemes: raw.url_schemes,
             min_macos: raw.min_macos.unwrap_or_else(|| "11.0".into()),
             deb_depends: raw.deb_depends.unwrap_or_else(|| {
                 ["libc6", "libxkbcommon0", "libvulkan1 | libgl1"]

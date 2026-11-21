@@ -11,9 +11,11 @@
 
 pub mod access;
 pub mod clipboard;
+pub mod deeplink;
 pub mod convert;
 pub mod dialog;
 pub mod fonts;
+pub mod instance;
 pub mod menu;
 mod os;
 pub mod settings;
@@ -27,7 +29,7 @@ use std::path::PathBuf;
 
 pub use clipboard::{ClipContent, ClipImage};
 pub use os::{default_clipboard, default_dialogs, default_system_theme};
-pub use shell::{run, PlatformEvent, ShellContext, ShellHandler};
+pub use shell::{request_window_effect, run, PlatformEvent, ShellContext, ShellHandler};
 
 /// Error type for platform operations.
 #[derive(Debug)]
@@ -39,6 +41,18 @@ impl std::fmt::Display for PlatformError {
     }
 }
 impl std::error::Error for PlatformError {}
+
+/// What [`shell::ShellContext::set_effect`] managed to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EffectOutcome {
+    /// The OS applies the material asked for (blur, Mica...).
+    Applied,
+    /// The window can be see-through, but the OS adds no material behind it:
+    /// keep the page background mostly opaque so text stays readable.
+    SeeThrough,
+    /// Nothing happened; the window stays opaque.
+    Unsupported,
+}
 
 /// Window creation options.
 #[derive(Debug, Clone)]

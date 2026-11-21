@@ -102,6 +102,27 @@ pub(crate) fn read_settings() -> crate::settings::SystemSettings {
     ext::read_settings()
 }
 
+/// Register a URL scheme for the current user (see [`crate::deeplink::register_scheme`]).
+pub(crate) fn register_scheme(
+    app_id: &str,
+    scheme: &str,
+    exe: &str,
+) -> Result<(), PlatformError> {
+    ext::register_scheme(app_id, scheme, exe)
+}
+
+/// macOS only: start receiving "open URL / open files" Apple Events.
+#[cfg(target_os = "macos")]
+pub(crate) use ext::install_open_handler;
+
+/// Apply a window effect to `window` (see [`crate::shell::ShellContext::set_effect`]).
+pub(crate) fn set_effect(
+    window: &winit::window::Window,
+    effect: alloy_ui_core::WindowEffect,
+) -> crate::EffectOutcome {
+    ext::set_effect(window, effect)
+}
+
 /// Dark/light query for the current OS.
 pub fn default_system_theme() -> Box<dyn SystemTheme> {
     Box::new(SystemThemeImpl)
