@@ -78,23 +78,28 @@ impl<M: 'static> VirtualList<M> {
         Element::new(self)
     }
 
-    fn content_h(&self) -> f32 {
-        self.count as f32 * self.row_h
+    // Offsets and content height are f64: past 16.7 million pixels (a million 28 px rows) an f32
+    // cannot tell one pixel from the next, so rows would jitter and the end would be unreachable.
+    fn content_h(&self) -> f64 {
+        self.count as f64 * self.row_h as f64
     }
-    fn max_off(&self, b: &Rectangle) -> f32 {
-        (self.content_h() - b.size.height).max(0.0)
+    fn max_off(&self, b: &Rectangle) -> f64 {
+        (self.content_h() - b.size.height as f64).max(0.0)
     }
-    fn offset(&self, b: &Rectangle) -> f32 {
-        self.ui.scroll_offset(self.id).clamp(0.0, self.max_off(b))
-    }
-    fn set_offset(&self, b: &Rectangle, off: f32) {
+    fn offset(&self, b: &Rectangle) -> f64 {
         self.ui
-            .set_scroll_offset(self.id, off.clamp(0.0, self.max_off(b)));
+            .scroll_offset_f64(self.id)
+            .clamp(0.0, self.max_off(b))
+    }
+    fn set_offset(&self, b: &Rectangle, off: f64) {
+        self.ui
+            .set_scroll_offset_f64(self.id, off.clamp(0.0, self.max_off(b)));
     }
     fn range(&self, b: &Rectangle) -> std::ops::Range<usize> {
         let off = self.offset(b);
-        let first = (off / self.row_h).floor() as usize;
-        let last = (((off + b.size.height) / self.row_h).ceil() as usize).min(self.count);
+        let rh = self.row_h as f64;
+        let first = (off / rh).floor() as usize;
+        let last = (((off + b.size.height as f64) / rh).ceil() as usize).min(self.count);
         first.min(self.count)..last
     }
     fn row_rect(&self, b: &Rectangle, i: usize) -> Rectangle {
@@ -106,7 +111,7 @@ impl<M: 'static> VirtualList<M> {
         Rectangle::new(
             Point::new(
                 b.origin.x,
-                b.origin.y + i as f32 * self.row_h - self.offset(b),
+                b.origin.y + (i as f64 * self.row_h as f64 - self.offset(b)) as f32,
             ),
             Size::new((b.size.width - bar).max(0.0), self.row_h),
         )
@@ -129,10 +134,10 @@ impl<M: 'static> VirtualList<M> {
         if max <= 0.0 || b.size.height <= 0.0 {
             return None;
         }
-        let h = (b.size.height * b.size.height / self.content_h())
+        let h = (b.size.height as f64 * b.size.height as f64 / self.content_h())
             .max(28.0)
-            .min(b.size.height);
-        let y = b.origin.y + (b.size.height - h) * self.offset(b) / max;
+            .min(b.size.height as f64) as f32;
+        let y = b.origin.y + ((b.size.height - h) as f64 * self.offset(b) / max) as f32;
         Some(Rectangle::new(
             Point::new(b.origin.x + b.size.width - BAR - 2.0, y),
             Size::new(BAR, h),
@@ -142,16 +147,17 @@ impl<M: 'static> VirtualList<M> {
         if let Some(th) = self.thumb(b) {
             let travel = (b.size.height - th.size.height).max(1.0);
             let top = (y - grab - b.origin.y).clamp(0.0, travel);
-            self.set_offset(b, top / travel * self.max_off(b));
+            self.set_offset(b, top as f64 / travel as f64 * self.max_off(b));
         }
     }
     fn reveal(&self, b: &Rectangle, i: usize) {
-        let top = i as f32 * self.row_h;
+        let top = i as f64 * self.row_h as f64;
         let off = self.offset(b);
+        let (rh, vh) = (self.row_h as f64, b.size.height as f64);
         if top < off {
             self.set_offset(b, top);
-        } else if top + self.row_h > off + b.size.height {
-            self.set_offset(b, top + self.row_h - b.size.height);
+        } else if top + rh > off + vh {
+            self.set_offset(b, top + rh - vh);
         }
     }
 }
@@ -180,7 +186,7 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
         match event {
             Event::Scrolled { dy, .. } if inside => {
                 let before = self.offset(&b);
-                self.set_offset(&b, before - dy);
+                self.set_offset(&b, before - *dy as f64);
                 return self.offset(&b) != before;
             }
             Event::MousePressed(MouseButton::Left) if inside => {
@@ -198,7 +204,8 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
                     self.drag_to(&b, cursor.y, grab);
                     return true;
                 }
-                let i = ((cursor.y - b.origin.y + self.offset(&b)) / self.row_h).floor();
+                let i = ((cursor.y - b.origin.y) as f64 + self.offset(&b)) / self.row_h as f64;
+                let i = i.floor();
                 if i >= 0.0 && (i as usize) < self.count {
                     let i = i as usize;
                     let (mut row, l) = self.laid(&b, i);

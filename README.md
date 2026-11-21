@@ -60,7 +60,7 @@ Read this as: **about 2.9x fewer lines on everyday apps, 9 to 14x when the app i
 * **Async without ceremony.** `resource(fetch)` gives loading, error with Retry, refresh and auto-refresh.
 * **Finished-app details.** Shortcuts, a `mod+k` command palette, toasts with Undo, undo and redo, persisted state, multi-window.
 * **Looks designed.** One teal-green accent, cool neutrals, small radii, WCAG AA contrast, light and dark following the system. See [DESIGN.md](DESIGN.md).
-* **Small and quiet.** Counter binary 7.5 MB (`.deb` and `.rpm` 3.2 MB), 0% CPU when idle, first paint 87 to 106 ms under Xvfb (Linux, measured; see BENCHMARKS.md).
+* **Small and quiet.** Counter binary 6.4 MB (4.4 MB with the CPU-only `soft-window` build; the `.deb` and `.rpm` were 3.2 MB at the old size and have not been re-measured), 0% CPU when idle, first paint about 70 ms with the GPU path and about 26 ms with the CPU path under Xvfb (Linux, software GL, measured; see BENCHMARKS.md).
 * **Speaks your users' language.** `t!("items", n = 3)` with plain-text catalogs, CLDR plurals, live language switching and right-to-left layouts that mirror on their own. See the [localization guide](docs/guide/13-localization.md).
 * **Errors that explain themselves.** `state!`, `at!` and `derive(Record)` mistakes are reported on the exact token, with a suggestion.
 * **Accessible.** An accessibility tree with AT-SPI on Linux.

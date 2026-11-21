@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::image::Image;
-use crate::{CpuRenderer, GpuHeadlessRenderer, HeadlessRenderer};
+#[cfg(feature = "gpu")]
+use crate::GpuHeadlessRenderer;
+use crate::{CpuRenderer, HeadlessRenderer};
 
 /// Comparison tolerance.
 #[derive(Debug, Clone, Copy)]
@@ -120,6 +122,7 @@ pub fn assert_golden(dir: &Path, name: &str, actual: &Image, tol: Tolerance) {
 
 /// A headless renderer for tests: GPU when an adapter exists, else `None`.
 /// Logs a skip message on stderr when no adapter is found.
+#[cfg(feature = "gpu")]
 pub fn gpu_or_skip(width: u32, height: u32) -> Option<GpuHeadlessRenderer> {
     match GpuHeadlessRenderer::try_new(width, height) {
         Ok(r) => {

@@ -1,0 +1,5 @@
+# With panic = "abort" (the release profile) nothing unwinds, so our own code does not need
+# unwind tables: they were 0.37 MB of the counter binary. Applies to every profile, and rustc
+# keeps them wherever panic = "unwind" still needs them (tests).
+[build]
+rustflags = ["-C", "force-unwind-tables=no"]
