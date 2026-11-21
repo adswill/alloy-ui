@@ -99,6 +99,8 @@ pub(crate) struct ToastItem {
     pub text: String,
     pub undo: bool,
     pub error: bool,
+    /// 0 plain, 1 success, 2 warning, 3 info: a coloured dot before the text.
+    pub tone: u8,
     pub secs: f32,
     /// Tick time when it first showed; `None` until the next tick.
     pub born: Option<u64>,
@@ -242,6 +244,7 @@ pub fn toast(text: impl Into<String>) -> Toast {
             text,
             undo: false,
             error: false,
+            tone: 0,
             secs: 3.0,
             born: None,
         });
@@ -276,6 +279,18 @@ impl Toast {
     /// Show for this long.
     pub fn secs(self, secs: f32) -> Self {
         self.edit(|t| t.secs = secs)
+    }
+    /// A green dot before the text: something worked.
+    pub fn success(self) -> Self {
+        self.edit(|t| t.tone = 1)
+    }
+    /// An amber dot: it worked, but look at this.
+    pub fn warning(self) -> Self {
+        self.edit(|t| t.tone = 2)
+    }
+    /// An accent dot: neutral news.
+    pub fn info(self) -> Self {
+        self.edit(|t| t.tone = 3)
     }
     /// Style as a failure.
     pub fn error(self) -> Self {

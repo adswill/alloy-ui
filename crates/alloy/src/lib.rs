@@ -110,6 +110,7 @@ mod inputs;
 mod keys;
 mod live;
 mod mock;
+mod modules;
 mod motion;
 mod palette;
 mod persist;
@@ -153,6 +154,7 @@ pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use live::{live_file, Live};
 pub use mock::{series, Mock};
+pub use modules::*;
 pub use motion::{animated, fade, reveal, spring};
 pub use pro::{
     context_menu, markdown, menu_item, menu_rule, popover, split, tab_bar, vlist, Markdown, Menu,
@@ -181,6 +183,13 @@ pub use {serde, serde_json};
 pub mod prelude {
     pub use crate::i18n::language_picker;
     pub use crate::live;
+    pub use crate::{
+        activity, activity_feed, avatar, avatar_group, breadcrumb, changelog, chat, command_bar,
+        composer, empty_state, file, file_browser, folder, gallery_grid, gauge, hit, kpi, kpi_row,
+        login, message, moment, notice, notification_center, page_header, plan, plan_picker,
+        radial, release, reply, setting, settings_page, tile, timeline, tour, tracker, Art,
+        Presence,
+    };
     pub use crate::{
         animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
         choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
