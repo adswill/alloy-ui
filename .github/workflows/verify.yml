@@ -161,7 +161,7 @@ jobs:
           for i in $(seq 40); do
             kill -0 $pid 2>/dev/null || { echo "counter exited early"; cat wl/counter.log; exit 1; }
             swaymsg -t get_tree > wl/tree.json
-            python3 -c "import json,sys; t=json.load(open('wl/tree.json')); s=json.dumps(t); sys.exit(0 if '\"shell\": \"xdg_shell\"' in s else 1)" && break
+            grep -qE '"shell": ?"xdg_shell"' wl/tree.json && break
             sleep 1
           done
           sleep 2
@@ -170,7 +170,7 @@ jobs:
           echo "--- sway.log"; tail -20 wl/sway.log
           python3 -c "import json; print(json.dumps(json.load(open('wl/tree.json')), indent=1))" | grep -E '"(shell|app_id|name|type|pid)"' | head -40
           # The window must be a native Wayland surface (xdg_shell), not XWayland.
-          grep -q '"shell": "xdg_shell"' wl/tree.json || { echo "no native Wayland window"; exit 1; }
+          grep -qE '"shell": ?"xdg_shell"' wl/tree.json || { echo "no native Wayland window"; exit 1; }
           kill $pid || true
       - uses: actions/upload-artifact@v4
         if: always()
