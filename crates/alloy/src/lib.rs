@@ -55,6 +55,12 @@ mod guide {
     struct G11;
     #[doc = include_str!("../../../docs/guide/13-localization.md")]
     struct G12;
+    #[doc = include_str!("../../../docs/guide/14-navigation.md")]
+    struct G13;
+    #[doc = include_str!("../../../docs/guide/15-testing.md")]
+    struct G14;
+    #[doc = include_str!("../../../docs/guide/16-coming-from-iced-and-egui.md")]
+    struct G15;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.
@@ -73,6 +79,7 @@ pub mod fs;
 pub mod i18n;
 mod inputs;
 mod keys;
+mod live;
 mod mock;
 mod motion;
 mod palette;
@@ -81,6 +88,7 @@ mod pro;
 mod records;
 mod resource;
 mod rich;
+mod router;
 pub mod testing;
 mod tone;
 pub mod valid;
@@ -107,6 +115,7 @@ pub use dsl::{
 };
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
+pub use live::{live_file, Live};
 pub use mock::{series, Mock};
 pub use motion::{animated, fade, reveal, spring};
 pub use pro::{
@@ -117,28 +126,30 @@ pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
     Stamp, Value,
 };
-pub use resource::{block_on, resource, sleep, Resource};
+pub use resource::{block_on, resource, resource_for, sleep, Resource};
 pub use rich::{
     badge, bar_chart, color_picker, line_chart, sparkline, swatch, tree, Badge, Chart, Picker,
     Series, Spark, Swatch, Tone, Tree, TreeItem,
 };
+pub use router::{router, Router};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::i18n::language_picker;
+    pub use crate::live;
     pub use crate::{
         animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
         choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
         field_after, filter_by, gap, heading, input, line_chart, list, local, markdown, menu_item,
         menu_rule, nav, number, options, palette, pick, popover, progress, radio, radio_list,
-        radio_list_with, radios, records, records_in, resource, reveal, rule, scroll, secs,
-        section, series, set_accent, set_dark, set_look, shell, sketch, sleep, slider, space,
-        sparkline, split, spring, stat, stats, stepper, store, store_as, swatch, tab_bar, table,
-        table_of, tabs, tally, text, theme_switch, toggle, tree, vlist, vspace, wizard, Act, App,
-        Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Local, Look, Node, Place, Record, Records,
-        Resource, Stamp, TextCell, TreeItem, View, Wizard,
+        radio_list_with, radios, records, records_in, resource, resource_for, reveal, router, rule,
+        scroll, secs, section, series, set_accent, set_dark, set_look, shell, sketch, sleep,
+        slider, space, sparkline, split, spring, stat, stats, stepper, store, store_as, swatch,
+        tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree, vlist, vspace,
+        wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Item, Live, Local, Look, Node,
+        Place, Record, Records, Resource, Router, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
         at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,

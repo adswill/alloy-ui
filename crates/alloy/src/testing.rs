@@ -4,8 +4,13 @@
 //! let mut ui = Harness::new(Counter::default(), 360.0, 180.0);
 //! ui.click("Add").click("Add");
 //! assert!(ui.has_text("2"));
-//! ui.save_png("counter.png");
+//! ui.expect("2").expect_no("3");
+//! ui.snapshot("counter_two"); // compares with tests/snapshots/counter_two.png
 //! ```
+//!
+//! Everything is found by the text on screen, the way a person finds it, so tests survive
+//! layout changes. Assertion failures list what *is* on screen. `UPDATE_GOLDEN=1 cargo test`
+//! (re)writes snapshots.
 
 use crate::app::{App, Shell};
 use alloy_ui_core::{
@@ -50,7 +55,7 @@ impl<A: App> Harness<A> {
             now: 1000,
         }
     }
-    fn texts(&self) -> Vec<(Point, String)> {
+    fn placed(&self) -> Vec<(Point, String)> {
         self.rt
             .draw()
             .0
@@ -63,13 +68,102 @@ impl<A: App> Harness<A> {
             })
             .collect()
     }
+    /// Every piece of text on screen, in draw order.
+    pub fn texts(&self) -> Vec<String> {
+        self.placed().into_iter().map(|(_, t)| t).collect()
+    }
+    /// How many pieces of text on screen equal `text`.
+    pub fn count(&self, text: &str) -> usize {
+        self.placed().iter().filter(|(_, t)| t == text).count()
+    }
+    /// Panic, listing what is on screen, unless some text equals `text`.
+    #[track_caller]
+    pub fn expect(&mut self, text: &str) -> &mut Self {
+        assert!(
+            self.has_text(text),
+            "expected {text:?} on screen, found {:?}",
+            self.texts()
+        );
+        self
+    }
+    /// Panic unless some text contains `part`.
+    #[track_caller]
+    pub fn expect_containing(&mut self, part: &str) -> &mut Self {
+        assert!(
+            self.texts().iter().any(|t| t.contains(part)),
+            "expected text containing {part:?} on screen, found {:?}",
+            self.texts()
+        );
+        self
+    }
+    /// Panic if some text equals `text`.
+    #[track_caller]
+    pub fn expect_no(&mut self, text: &str) -> &mut Self {
+        assert!(
+            !self.has_text(text),
+            "did not expect {text:?} on screen, found {:?}",
+            self.texts()
+        );
+        self
+    }
+    /// [`settle`](Self::settle), then panic unless `text` is on screen: for data that arrives
+    /// from a [`resource`](crate::resource).
+    #[track_caller]
+    pub fn wait_for(&mut self, text: &str) -> &mut Self {
+        for _ in 0..200 {
+            if self.has_text(text) {
+                return self;
+            }
+            self.settle();
+            self.advance(25);
+        }
+        self.expect(text)
+    }
+    /// Focus the field showing `target` (its label or placeholder), replace its contents with
+    /// `value` and leave the focus there.
+    pub fn fill(&mut self, target: &str, value: &str) -> &mut Self {
+        self.click(target).chord("mod+a");
+        self.type_text(value)
+    }
+    /// Scroll the wheel by `dy` pixels (positive moves content up) over the text `over`.
+    pub fn scroll(&mut self, over: &str, dy: f32) -> &mut Self {
+        self.hover(over);
+        self.rt.handle_event(&Event::Scrolled { dx: 0.0, dy });
+        self
+    }
+    /// Resize the window to `width` x `height` logical pixels.
+    pub fn resize(&mut self, width: f32, height: f32) -> &mut Self {
+        self.size = (width, height);
+        self.rt
+            .handle_event(&Event::Resized(Size::new(width, height)));
+        self
+    }
+    /// Compare the current frame with `tests/snapshots/<name>.png` (relative to the crate being
+    /// tested). Small anti-aliasing differences are tolerated, but fonts differ between systems,
+    /// so keep snapshots for the platform CI runs on. Writes the file when `UPDATE_GOLDEN=1`.
+    #[track_caller]
+    pub fn snapshot(&mut self, name: &str) -> &mut Self {
+        let (w, h) = (self.size.0 as u32 * 2, self.size.1 as u32 * 2);
+        let img = CpuRenderer::new(w, h).render_to_image(&self.rt.draw(), w, h, 2.0);
+        let tol = alloy_ui_render::testing::Tolerance {
+            channel: 6,
+            bad_fraction: 0.002,
+        };
+        alloy_ui_render::testing::assert_golden(
+            std::path::Path::new("tests/snapshots"),
+            name,
+            &img,
+            tol,
+        );
+        self
+    }
     /// True if some text on screen equals `text`.
     pub fn has_text(&self, text: &str) -> bool {
-        self.texts().iter().any(|(_, t)| t == text)
+        self.placed().iter().any(|(_, t)| t == text)
     }
     /// Where the first text equal to `text` is drawn.
     pub fn position(&self, text: &str) -> Option<Point> {
-        self.texts()
+        self.placed()
             .into_iter()
             .find(|(_, t)| t == text)
             .map(|(p, _)| p)
@@ -77,7 +171,7 @@ impl<A: App> Harness<A> {
     /// Click the first widget showing exactly `text`. Panics if there is none.
     pub fn click(&mut self, text: &str) -> &mut Self {
         let (p, _) = self
-            .texts()
+            .placed()
             .into_iter()
             .find(|(_, t)| t == text)
             .unwrap_or_else(|| panic!("no widget with text {text:?}"));
@@ -101,7 +195,7 @@ impl<A: App> Harness<A> {
     /// Move the pointer onto the first widget showing exactly `text`. Panics if there is none.
     pub fn hover(&mut self, text: &str) -> &mut Self {
         let (p, _) = self
-            .texts()
+            .placed()
             .into_iter()
             .find(|(_, t)| t == text)
             .unwrap_or_else(|| panic!("no widget with text {text:?}"));
@@ -151,7 +245,11 @@ impl<A: App> Harness<A> {
         let sc = alloy_ui_platform::shortcut::Shortcut::parse(keys)
             .unwrap_or_else(|| panic!("bad shortcut {keys:?}"));
         let key = match sc.key.as_str() {
-            "enter" | "Enter" => Key::Enter,
+            k if k.eq_ignore_ascii_case("enter") => Key::Enter,
+            k if k.eq_ignore_ascii_case("escape") || k.eq_ignore_ascii_case("esc") => Key::Escape,
+            k if k.eq_ignore_ascii_case("tab") => Key::Tab,
+            k if k.eq_ignore_ascii_case("backspace") => Key::Backspace,
+            k if k.chars().count() > 1 => Key::Named(k.into()),
             k => Key::Character(k.into()),
         };
         self.rt.handle_event(&Event::KeyPressed(key, sc.mods));

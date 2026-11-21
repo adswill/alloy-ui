@@ -128,7 +128,10 @@ impl App for Pages {
     }
 
     fn subscriptions(&self) -> Vec<crate::Sub<Act<()>>> {
-        crate::resource::pump_sub().into_iter().collect()
+        crate::resource::pump_sub()
+            .into_iter()
+            .chain(crate::live::poll_sub())
+            .collect()
     }
 
     fn shortcuts(&self) -> Vec<crate::keys::Hotkey<Act<()>>> {
