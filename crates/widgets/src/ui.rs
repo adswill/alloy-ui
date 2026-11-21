@@ -137,6 +137,7 @@ struct Inner {
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
     a11y: Vec<A11yNode>,
+    viewport: Rectangle,
 }
 
 /// One value moving toward a target over time (hover fades, toggle knobs,
@@ -197,6 +198,10 @@ impl Ui {
             histories: HashMap::new(),
             slots: HashMap::new(),
             a11y: Vec::new(),
+            viewport: Rectangle::new(
+                Point::new(0.0, 0.0),
+                Size::new(f32::INFINITY, f32::INFINITY),
+            ),
         })))
     }
 
@@ -415,6 +420,15 @@ impl Ui {
         }
     }
 
+    /// The window area of the last drawn frame, so popups can stay on screen.
+    /// Unbounded until the first frame.
+    pub fn viewport(&self) -> Rectangle {
+        self.0.borrow().viewport
+    }
+    pub(crate) fn set_viewport(&self, r: Rectangle) {
+        self.0.borrow_mut().viewport = r;
+    }
+
     /// Last known cursor position (used for hover styling).
     pub fn cursor(&self) -> Point {
         self.0.borrow().cursor
@@ -565,6 +579,7 @@ impl<M: 'static> Widget<M> for Root<M> {
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         self.ui.begin_frame();
+        self.ui.set_viewport(layout.bounds);
         util::draw_children(&self.child, layout, out);
         for c in self.ui.take_overlay() {
             out.push(c);
