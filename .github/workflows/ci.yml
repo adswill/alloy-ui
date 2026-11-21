@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, claude/project-thread-6n01vk]
   pull_request:
+  # Manual run of the full three-OS matrix on any branch (Actions tab, or `gh workflow run CI --ref <branch>`).
+  workflow_dispatch:
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   # Runner start-up can lag by many minutes; never cancel runs of the integration branch.
@@ -30,7 +32,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
   mobile:
     # Cross-compile checks only: nothing runs on a device. Catches breakage of the
     # Android and iOS code paths on every PR (Ubuntu is enough for both targets).

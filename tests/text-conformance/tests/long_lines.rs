@@ -1,10 +1,18 @@
 //! Very long lines and big documents: no panics, no quadratic blow-ups.
-//! Time limits are generous (CI runners are slow) and measured around one
-//! interaction, so only complexity bugs trip them.
+//! Time limits are generous and measured around one interaction, so only
+//! complexity bugs trip them. On CI (shared, debug-build runners, up to 4x slower
+//! than a dev machine) every limit is multiplied by `CI_HEADROOM`.
 use alloy_ui_text_conformance::*;
 use std::time::{Duration, Instant};
 
+const CI_HEADROOM: u32 = 4;
+
 fn time(what: &str, limit: Duration, f: impl FnOnce()) {
+    let limit = if std::env::var_os("CI").is_some() {
+        limit * CI_HEADROOM
+    } else {
+        limit
+    };
     let t = Instant::now();
     f();
     let d = t.elapsed();

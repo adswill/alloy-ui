@@ -236,6 +236,17 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
                         true
                     }
                     Key::Named(n) => match n.as_str() {
+                        // macOS: Cmd+Up / Cmd+Down jump to the document start / end.
+                        "ArrowUp" | "ArrowDown" if m.logo => {
+                            let to = if n == "ArrowUp" {
+                                0
+                            } else {
+                                self.value.chars().count()
+                            };
+                            e.move_to(to, m.shift);
+                            e.goal_col = None;
+                            true
+                        }
                         "ArrowUp" => {
                             vertical(&mut e, line.saturating_sub(1));
                             true
