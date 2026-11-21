@@ -54,6 +54,7 @@ jobs:
         run: xvfb-run -a dbus-run-session -- cargo test -p alloy-ui-platform
       - name: Runtime checks (real OS services)
         if: runner.os != 'Linux'
+        shell: bash
         run: cargo test -p alloy-ui-platform --test system_runtime -- --nocapture
   mobile:
     # Cross-compile checks only: nothing runs on a device. Catches breakage of the
