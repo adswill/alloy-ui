@@ -6,7 +6,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use alloy_ui_core::{FontFamily, Size};
 use cosmic_text::{
-    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, SwashCache, SwashContent, Weight,
+    Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, SwashCache, SwashContent,
+    Weight,
 };
 
 /// Line height as a multiple of font size.
@@ -45,7 +46,7 @@ pub struct PlacedGlyph {
 struct Params {
     size: u32,
     weight: u16,
-    mono: bool,
+    family: u8,
     line_height: u32,
     max_width: u32,
 }
@@ -61,7 +62,7 @@ impl Params {
         Self {
             size: size.to_bits(),
             weight,
-            mono: matches!(family, FontFamily::Mono),
+            family: family as u8,
             // NaN bit patterns never occur for real inputs; `None` maps to one.
             line_height: line_height.map_or(u32::MAX, f32::to_bits),
             max_width: max_width.map_or(u32::MAX, f32::to_bits),
@@ -147,7 +148,7 @@ fn shape_key(content: &str, p: &Params) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     content.hash(&mut h);
-    (p.size, p.weight, p.mono, p.line_height, p.max_width).hash(&mut h);
+    (p.size, p.weight, p.family, p.line_height, p.max_width).hash(&mut h);
     h.finish()
 }
 
@@ -233,13 +234,18 @@ impl Default for TextMeasurer {
 }
 
 /// IBM Plex Sans and Mono (SIL OFL 1.1), bundled for identical text on every OS.
-const BUNDLED_FONTS: [&[u8]; 6] = [
+const BUNDLED_FONTS: [&[u8]; 11] = [
     include_bytes!("../fonts/IBMPlexSans-Regular.ttf"),
     include_bytes!("../fonts/IBMPlexSans-Medium.ttf"),
     include_bytes!("../fonts/IBMPlexSans-SemiBold.ttf"),
     include_bytes!("../fonts/IBMPlexSans-Bold.ttf"),
     include_bytes!("../fonts/IBMPlexMono-Regular.ttf"),
     include_bytes!("../fonts/IBMPlexMono-Medium.ttf"),
+    include_bytes!("../fonts/IBMPlexSans-Italic.ttf"),
+    include_bytes!("../fonts/IBMPlexSans-SemiBoldItalic.ttf"),
+    include_bytes!("../fonts/IBMPlexMono-Italic.ttf"),
+    include_bytes!("../fonts/Lucide-subset.ttf"),
+    include_bytes!("../fonts/Phosphor-subset.ttf"),
 ];
 
 impl Default for TextSystem {
@@ -253,7 +259,7 @@ impl TextSystem {
     pub fn new() -> Self {
         let mut fonts = FontSystem::new();
         for data in BUNDLED_FONTS {
-            // Borrow the embedded bytes instead of copying 1.15 MB onto the heap.
+            // Borrow the embedded bytes instead of copying 1.9 MB onto the heap.
             fonts
                 .db_mut()
                 .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(data)));
@@ -493,9 +499,15 @@ fn shaped(
     buffer.set_size(&mut inner.fonts, max_width, None);
     let attrs = Attrs::new()
         .weight(Weight(fallback_weight(content, weight).clamp(1, 1000)))
+        .style(match family {
+            FontFamily::SansItalic | FontFamily::MonoItalic => Style::Italic,
+            _ => Style::Normal,
+        })
         .family(match family {
-            FontFamily::Sans => Family::SansSerif,
-            FontFamily::Mono => Family::Monospace,
+            FontFamily::Sans | FontFamily::SansItalic => Family::SansSerif,
+            FontFamily::Mono | FontFamily::MonoItalic => Family::Monospace,
+            FontFamily::Lucide => Family::Name("lucide"),
+            FontFamily::Phosphor => Family::Name("Phosphor"),
         });
     buffer.set_text(&mut inner.fonts, content, &attrs, Shaping::Advanced);
     buffer.shape_until_scroll(&mut inner.fonts, false);

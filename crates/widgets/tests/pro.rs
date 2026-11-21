@@ -297,6 +297,10 @@ fn virtual_list_builds_only_visible_rows() {
         dy: -28.0 * 50_000.0,
     });
     built.set(0);
+    // No `Root` in this scene to tick the scroll spring, so land the view on its target.
+    let target = s.ui.scroll_offset(3);
+    s.ui.scroll_jump(3, target, f32::MAX);
+    built.set(0);
     s.draw();
     assert!(
         built.get() <= 16,
@@ -357,7 +361,7 @@ fn virtual_list_golden() {
         .selected(Some(4))
         .into_element()
     });
-    s.ui.set_scroll_offset(3, 32.0 * 41_990.0);
+    s.ui.scroll_jump(3, 32.0 * 41_990.0, f32::MAX);
     s.mv(200.0, 90.0);
     check(
         "pro_virtual_list_100k",
