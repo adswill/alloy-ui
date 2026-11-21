@@ -3,9 +3,13 @@
 //! carrying the string it was registered with.
 //!
 //! Support: Windows (`RegisterHotKey`), macOS (Carbon `RegisterEventHotKey`, no
-//! permission prompt) and X11 (`XGrabKey`). Wayland has no compositor-neutral way
-//! to grab keys, so registering fails there and the app can fall back to its
-//! in-window shortcuts.
+//! permission prompt), X11 (`XGrabKey`) and Wayland through the XDG
+//! `org.freedesktop.portal.GlobalShortcuts` portal (GNOME 48+, KDE Plasma 5.27+).
+//! On Wayland the portal may ask the user to approve or rebind the shortcut, so
+//! the key that fires can differ from the one requested, and `register` returns
+//! once the request is sent, not once the user has agreed. Compositors without the
+//! portal (Sway, most wlroots desktops) make `register` fail; keep in-window
+//! shortcuts as the fallback.
 
 use crate::{shortcut::Shortcut, PlatformError};
 

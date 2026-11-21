@@ -47,6 +47,8 @@ mod windows_ext;
 #[cfg(target_os = "linux")]
 mod wl_clip;
 #[cfg(target_os = "linux")]
+mod wl_hotkey;
+#[cfg(target_os = "linux")]
 mod x11_clip;
 #[cfg(target_os = "linux")]
 mod x11_hotkey;

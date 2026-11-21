@@ -58,3 +58,10 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06", "and
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSObject", "NSGeometry"] }
 objc2-ui-kit = { version = "0.3", features = ["UIView", "UIResponder", "UIPasteboard", "UIGeometry"] }
+
+# Runs real OS services (clipboard, registry, login-session settings, windows, global
+# hotkeys, deep links) rather than test doubles, so it needs its own `main`: windows
+# must be created on the main thread, and CI runs it on macOS and Windows runners.
+[[test]]
+name = "system_runtime"
+harness = false

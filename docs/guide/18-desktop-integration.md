@@ -47,7 +47,7 @@ On macOS it is a status item in the menu bar, on Windows a notification-area ico
 | Windows | `RegisterHotKey` |
 | macOS | Carbon `RegisterEventHotKey` (no permission prompt) |
 | X11 | `XGrabKey`, ignoring Caps Lock and Num Lock |
-| Wayland | Not possible: no compositor lets a plain client grab keys. The failure is logged and the in-window shortcut still works. |
+| Wayland | The `org.freedesktop.portal.GlobalShortcuts` portal (GNOME 48+, KDE Plasma 5.27+). The desktop may ask the user to approve or rebind the shortcut, and their choice wins. Sway and other wlroots desktops have no such portal: the failure is logged and the in-window shortcut still works. |
 
 A combination another program already owns is refused and logged; pick another.
 
