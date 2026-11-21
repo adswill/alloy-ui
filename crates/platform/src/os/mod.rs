@@ -35,6 +35,8 @@ mod macos_access;
 mod macos_ext;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 mod mobile;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+mod mobile_ext;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
@@ -61,6 +63,8 @@ use macos as backend;
 use macos_ext as ext;
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use mobile as backend;
+#[cfg(any(target_os = "android", target_os = "ios"))]
+use mobile_ext as ext;
 #[cfg(target_os = "windows")]
 use windows as backend;
 #[cfg(target_os = "windows")]

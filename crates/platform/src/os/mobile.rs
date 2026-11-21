@@ -47,3 +47,13 @@ pub fn set_tray(_w: &winit::window::Window, _t: &TraySettings) -> Result<(), Pla
     Err(unsupported("a tray icon"))
 }
 pub fn clear_tray() {}
+pub fn file_dialog(_o: &crate::dialog::FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError> {
+    Err(unsupported("file dialogs"))
+}
+pub fn notify(_n: &crate::notify::Notification) -> Result<(), PlatformError> {
+    Err(unsupported("desktop notifications"))
+}
+pub fn register_hotkey(_keys: &str, _sc: &crate::shortcut::Shortcut) -> Result<(), PlatformError> {
+    Err(unsupported("global hotkeys"))
+}
+pub fn unregister_hotkeys() {}
