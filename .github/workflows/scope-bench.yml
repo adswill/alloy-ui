@@ -1,0 +1,45 @@
+name: Scope bench
+# Frame-rate measurement of the spectrum and waterfall example on each OS (OnAir UI spike).
+on:
+  push:
+    branches: [claude/project-thread-qv3p4d]
+  workflow_dispatch:
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  scope:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux system deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev mesa-vulkan-drivers libvulkan1 xvfb
+      - run: cargo build --release -p alloy-ui --example scope
+      - name: Waterfall render test
+        run: cargo test -p alloy-ui --test scope
+      - name: Measure (GPU, default renderer)
+        shell: bash
+        env:
+          ALLOY_SCOPE_SECS: "12"
+          ALLOY_PERF: "1"
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          $RUN target/release/examples/scope 2>&1 | tee scope-gpu.txt
+      - name: Measure (CPU renderer)
+        shell: bash
+        env:
+          ALLOY_SCOPE_SECS: "12"
+          ALLOY_RENDERER: cpu
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          $RUN target/release/examples/scope 2>&1 | tee scope-cpu.txt
+      - name: Summary
+        shell: bash
+        run: |
+          { echo "### ${{ matrix.os }}"; echo '```'; grep -h "SCOPE\|adapter\|renderer" scope-gpu.txt scope-cpu.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

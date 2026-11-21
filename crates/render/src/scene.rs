@@ -47,6 +47,8 @@ pub(crate) enum Source {
     None,
     Glyph(CacheKey),
     Image(u64),
+    /// A streaming texture; the prim's `color2` holds the source rectangle `[u0, v0, u1, v1]`.
+    Stream(u64),
 }
 
 /// One resolved primitive in physical pixels.
@@ -426,6 +428,83 @@ pub(crate) fn flatten(
                 aux: 0.0,
                 clip,
             }),
+            DrawCommand::StreamImage { bounds, id, uv } => out.push(Prim {
+                kind: Kind::Texture,
+                rect: [
+                    bounds.origin.x * scale,
+                    bounds.origin.y * scale,
+                    bounds.size.width * scale,
+                    bounds.size.height * scale,
+                ],
+                pad: 0.0,
+                radius: 0.0,
+                border_w: 0.0,
+                color: [1.0; 4],
+                border_color: [0.0; 4],
+                blur: 0.0,
+                color2: *uv,
+                dir: [0.0; 2],
+                source: Source::Stream(*id),
+                aux: 0.0,
+                clip,
+            }),
+            DrawCommand::Polyline {
+                points,
+                width: stroke,
+                color,
+            } => {
+                // Two triangles per segment, each a `Kind::Tri` prim (edges anti-aliased).
+                let hw = (stroke * scale).max(1.0) / 2.0;
+                let c = rgba(*color);
+                for pair in points.windows(2) {
+                    let (a, b) = (
+                        [pair[0].x * scale, pair[0].y * scale],
+                        [pair[1].x * scale, pair[1].y * scale],
+                    );
+                    let (dx, dy) = (b[0] - a[0], b[1] - a[1]);
+                    let len = (dx * dx + dy * dy).sqrt();
+                    if len < 1e-4 {
+                        continue;
+                    }
+                    let (nx, ny) = (-dy / len * hw, dx / len * hw);
+                    let q = [
+                        [a[0] + nx, a[1] + ny],
+                        [b[0] + nx, b[1] + ny],
+                        [b[0] - nx, b[1] - ny],
+                        [a[0] - nx, a[1] - ny],
+                    ];
+                    // (vertices, outline flags): the long edges 0-1 and 2-3 are anti-aliased.
+                    for (t, flags) in [([0usize, 1, 2], 0b001u8), ([0, 2, 3], 0b010u8)] {
+                        let (p0, mut p1, mut p2) = (q[t[0]], q[t[1]], q[t[2]]);
+                        let mut flags = flags;
+                        let cross =
+                            (p1[0] - p0[0]) * (p2[1] - p0[1]) - (p1[1] - p0[1]) * (p2[0] - p0[0]);
+                        if cross < 0.0 {
+                            // Wrong winding: swap j and k; edge ij becomes ik, jk stays, ki becomes ij.
+                            std::mem::swap(&mut p1, &mut p2);
+                            let (ij, jk, ki) = (flags & 1, (flags >> 1) & 1, (flags >> 2) & 1);
+                            flags = ki | jk << 1 | ij << 2;
+                        }
+                        let (x0, x1) = (p0[0].min(p1[0]).min(p2[0]), p0[0].max(p1[0]).max(p2[0]));
+                        let (y0, y1) = (p0[1].min(p1[1]).min(p2[1]), p0[1].max(p1[1]).max(p2[1]));
+                        out.push(Prim {
+                            kind: Kind::Tri,
+                            rect: [x0, y0, x1 - x0, y1 - y0],
+                            pad: 2.0,
+                            radius: f32::from(flags),
+                            border_w: 0.0,
+                            color: c,
+                            border_color: [p0[0], p0[1], p1[0], p1[1]],
+                            color2: [p2[0], p2[1], 0.0, 0.0],
+                            blur: 0.0,
+                            dir: [0.0; 2],
+                            source: Source::None,
+                            aux: 0.0,
+                            clip,
+                        });
+                    }
+                }
+            }
             DrawCommand::Line {
                 from,
                 to,

@@ -318,6 +318,22 @@ impl Frame {
             color,
         });
     }
+    /// A stroked chain of segments as one draw command: the fast path for long traces such as a
+    /// spectrum with thousands of points. Joins overlap, so use an opaque colour.
+    pub fn polyline(&mut self, points: &[Point], width: f32, color: Color) {
+        let points = points.iter().map(|p| self.at(*p)).collect();
+        self.cmds.push(DrawCommand::Polyline {
+            points,
+            width,
+            color,
+        });
+    }
+    /// Part of a streaming texture (`alloy_ui_render::StreamTexture`) stretched over `r`; `uv`
+    /// is `[u0, v0, u1, v1]` in 0..=1.
+    pub fn stream_image(&mut self, r: Rectangle, id: u64, uv: [f32; 4]) {
+        let bounds = self.rect_at(r);
+        self.cmds.push(DrawCommand::StreamImage { bounds, id, uv });
+    }
     /// A filled polygon (simple outline, convex or concave).
     pub fn polygon(&mut self, points: &[Point], color: Color) {
         let points = points.iter().map(|p| self.at(*p)).collect();
@@ -407,6 +423,7 @@ pub struct Canvas<M> {
     height: Length,
     paint: Painter,
     on_pointer: Option<Handler<M>>,
+    live: bool,
 }
 
 impl<M: 'static> Canvas<M> {
@@ -425,11 +442,18 @@ impl<M: 'static> Canvas<M> {
             height,
             paint: Rc::new(paint),
             on_pointer: None,
+            live: false,
         }
     }
     /// Turn pointer input into messages. Return `None` to ignore an event.
     pub fn on_pointer(mut self, f: impl Fn(Pointer) -> Option<M> + 'static) -> Self {
         self.on_pointer = Some(Rc::new(f));
+        self
+    }
+    /// Repaint every frame, for live content such as a waterfall. Without it the canvas
+    /// repaints only when something else asks for a frame (idle stays at 0% CPU).
+    pub fn live(mut self) -> Self {
+        self.live = true;
         self
     }
     /// Box as an element.
@@ -444,6 +468,9 @@ impl<M: 'static> Canvas<M> {
 impl<M: 'static> Widget<M> for Canvas<M> {
     fn style(&self) -> Style {
         util::sized(self.width, self.height)
+    }
+    fn animating(&self) -> bool {
+        self.live
     }
     fn measure(&self, _available: Size) -> Size {
         Size::new(

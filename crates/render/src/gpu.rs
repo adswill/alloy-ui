@@ -109,6 +109,13 @@ struct Atlas {
     row_h: u32,
 }
 
+struct GpuStream {
+    texture: wgpu::Texture,
+    bind_group: wgpu::BindGroup,
+    version: u64,
+    size: (u32, u32),
+}
+
 struct GpuImage {
     texture: wgpu::Texture,
     bind_group: wgpu::BindGroup,
@@ -118,6 +125,7 @@ struct GpuImage {
 enum Binding {
     Atlas,
     Image(u64),
+    Stream(u64),
     /// Copy of the target taken for a backdrop blur.
     Snap,
     /// Horizontally blurred scratch of a backdrop blur.
@@ -165,6 +173,7 @@ pub(crate) struct Painter {
     scratch: Option<Scratch>,
     atlas: Atlas,
     images: HashMap<u64, GpuImage>,
+    streams: HashMap<u64, GpuStream>,
     next_id: u64,
     pub(crate) text: TextSystem,
 }
@@ -314,6 +323,7 @@ impl Painter {
             scratch: None,
             atlas,
             images: HashMap::new(),
+            streams: HashMap::new(),
             next_id: 1,
             text,
         }
@@ -351,6 +361,44 @@ impl Painter {
         if let Some(img) = self.images.remove(&id) {
             img.texture.destroy();
         }
+    }
+
+    /// Bring the GPU copy of streaming texture `id` up to date; false when it does not exist.
+    fn sync_stream(&mut self, id: u64) -> bool {
+        let Some(shared) = crate::stream::lookup(id) else {
+            self.streams.remove(&id);
+            return false;
+        };
+        let seen = self.streams.get(&id).map_or(0, |g| g.version);
+        let Some(snap) = shared.snapshot(seen) else {
+            return true;
+        };
+        if !self.streams.contains_key(&id) {
+            let tex = make_texture(&self.device, snap.width, snap.height, "stream");
+            let bind_group = make_bind_group(&self.device, &self.tex_layout, &tex, &self.sampler);
+            self.streams.insert(
+                id,
+                GpuStream {
+                    texture: tex,
+                    bind_group,
+                    version: 0,
+                    size: (snap.width, snap.height),
+                },
+            );
+        }
+        let g = self.streams.get_mut(&id).expect("just inserted");
+        let [x0, y0, x1, y1] = snap.rect;
+        upload(
+            &self.queue,
+            &g.texture,
+            [x0, y0],
+            x1 - x0,
+            y1 - y0,
+            &snap.rgba,
+        );
+        g.version = snap.version;
+        let _ = g.size;
+        true
     }
 
     fn atlas_slot(&mut self, key: CacheKey) -> Option<[f32; 4]> {
@@ -443,6 +491,12 @@ impl Painter {
                         continue;
                     }
                     (Some(Binding::Image(id)), [0.0, 0.0, 1.0, 1.0])
+                }
+                Source::Stream(id) => {
+                    if !self.sync_stream(id) {
+                        continue;
+                    }
+                    (Some(Binding::Stream(id)), p.color2)
                 }
                 Source::Glyph(k) => match self.atlas_slot(k) {
                     Some(uv) => (Some(Binding::Atlas), uv),
@@ -683,6 +737,10 @@ impl Painter {
             Binding::Atlas => &self.atlas.bind_group,
             Binding::Image(id) => match self.images.get(&id) {
                 Some(i) => &i.bind_group,
+                None => return,
+            },
+            Binding::Stream(id) => match self.streams.get(&id) {
+                Some(g) => &g.bind_group,
                 None => return,
             },
             Binding::Snap => match &self.scratch {

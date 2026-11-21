@@ -24,6 +24,7 @@ pub struct CpuRenderer {
     height: u32,
     background: Color,
     images: HashMap<u64, Stored>,
+    streams: HashMap<u64, Stored>,
     next_id: u64,
     text: TextSystem,
     last: Option<Image>,
@@ -44,6 +45,7 @@ impl CpuRenderer {
             height,
             background: Color::hex(0xFFFFFF),
             images: HashMap::new(),
+            streams: HashMap::new(),
             next_id: 1,
             text,
             last: None,
@@ -108,6 +110,20 @@ impl HeadlessRenderer for CpuRenderer {
         let bg = self.background;
         let clear = [bg.r * bg.a, bg.g * bg.a, bg.b * bg.a, bg.a];
         let mut buf = vec![clear; width as usize * height as usize];
+        for p in &prims {
+            if let Source::Stream(id) = p.source {
+                if let Some(sh) = crate::stream::lookup(id) {
+                    self.streams.insert(
+                        id,
+                        Stored {
+                            width: sh.width,
+                            height: sh.height,
+                            rgba: sh.pixels(),
+                        },
+                    );
+                }
+            }
+        }
         for p in &prims {
             if p.kind == Kind::Backdrop {
                 backdrop(p, &mut buf, width, height);
@@ -337,6 +353,10 @@ impl CpuRenderer {
                 .images
                 .get(&id)
                 .map(|s| (&s.rgba[..], s.width, s.height)),
+            Source::Stream(id) => self
+                .streams
+                .get(&id)
+                .map(|s| (&s.rgba[..], s.width, s.height)),
         };
         if p.source != Source::None && tex.is_none() {
             return;
@@ -491,8 +511,12 @@ impl CpuRenderer {
                     Kind::Texture => {
                         let Some((d, w, h)) = tex else { continue };
                         let cov = cover(sd_rrect(pt, p.rect, 0.0));
-                        let u = (pt.0 - rx) / rw;
-                        let v = (pt.1 - ry) / rh;
+                        let mut u = (pt.0 - rx) / rw;
+                        let mut v = (pt.1 - ry) / rh;
+                        if matches!(p.source, Source::Stream(_)) {
+                            u = p.color2[0] + u * (p.color2[2] - p.color2[0]);
+                            v = p.color2[1] + v * (p.color2[3] - p.color2[1]);
+                        }
                         sample(d, w, h, u, v).map(|c| c * p.color[3] * cov)
                     }
                 };

@@ -220,6 +220,27 @@ pub enum DrawCommand {
         /// Renderer-assigned image id.
         id: u64,
     },
+    /// A part of a streaming texture (`alloy_ui_render::StreamTexture`) stretched over `bounds`.
+    /// `uv` is `[u0, v0, u1, v1]` in 0..=1 of the texture; a ring buffer such as a waterfall is
+    /// drawn as two of these. Opaque or premultiplied pixels.
+    StreamImage {
+        /// Destination bounds.
+        bounds: Rectangle,
+        /// Stream id (`StreamTexture::id`).
+        id: u64,
+        /// Source rectangle in texture coordinates.
+        uv: [f32; 4],
+    },
+    /// A stroked chain of line segments, drawn as one batch (spectrum traces, plots). Joins are
+    /// plain overlaps, so use opaque colours for long lines.
+    Polyline {
+        /// Vertices in order; fewer than two draws nothing.
+        points: Vec<Point>,
+        /// Stroke width in logical pixels.
+        width: f32,
+        /// Colour.
+        color: Color,
+    },
     /// Begin clipping to `bounds`; must be matched by [`DrawCommand::PopClip`].
     PushClip(Rectangle),
     /// End the innermost clip.

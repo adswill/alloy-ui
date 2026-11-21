@@ -123,6 +123,7 @@ mod records;
 mod resource;
 mod rich;
 mod router;
+mod scope;
 pub mod testing;
 mod tone;
 pub mod valid;
@@ -191,6 +192,7 @@ pub use rich::{
     Series, Spark, Swatch, Tone, Tree, TreeItem,
 };
 pub use router::{router, Router};
+pub use scope::{spectrum, Waterfall};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use viz::{
     calendar, candle, candles, canvas, card, entry, kanban, lane, media, node, node_graph, object,

@@ -214,6 +214,20 @@ pub fn transform(cmd: DrawCommand, xf: &Xf) -> DrawCommand {
             bounds: xf.r(bounds),
             id,
         },
+        DrawCommand::StreamImage { bounds, id, uv } => DrawCommand::StreamImage {
+            bounds: xf.r(bounds),
+            id,
+            uv,
+        },
+        DrawCommand::Polyline {
+            points,
+            width,
+            color,
+        } => DrawCommand::Polyline {
+            points: points.into_iter().map(|p| xf.p(p)).collect(),
+            width: width * k,
+            color: xf.c(color),
+        },
         DrawCommand::PushClip(b) => DrawCommand::PushClip(xf.r(b)),
         DrawCommand::PopClip => DrawCommand::PopClip,
     }

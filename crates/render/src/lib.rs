@@ -21,6 +21,7 @@ mod offscreen;
 mod scene;
 #[cfg(feature = "soft-window")]
 mod soft;
+mod stream;
 pub mod testing;
 mod text;
 mod window;
@@ -34,6 +35,7 @@ pub use gpu::GpuContext;
 pub use image::Image;
 #[cfg(feature = "gpu")]
 pub use offscreen::GpuHeadlessRenderer;
+pub use stream::StreamTexture;
 pub use text::{GlyphBitmap, TextMeasurer, TextSystem};
 pub use window::{Backend, WindowRenderer};
 

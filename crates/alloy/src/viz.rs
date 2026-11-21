@@ -503,6 +503,7 @@ pub struct Canvas<S> {
     id: u64,
     paint: Rc<dyn Fn(&mut Frame)>,
     on: Option<Cb<S, Pointer>>,
+    live: bool,
 }
 
 /// A `width` by `height` pixel drawing surface painted by `paint` every frame. Draw with
@@ -515,6 +516,7 @@ pub fn canvas<S>(width: f32, height: f32, paint: impl Fn(&mut Frame) + 'static) 
         id: auto_id(65),
         paint: Rc::new(paint),
         on: None,
+        live: false,
     }
 }
 
@@ -522,6 +524,12 @@ impl<S: 'static> Canvas<S> {
     /// Fill the available width instead of a fixed one.
     pub fn fill_width(mut self) -> Self {
         self.w = Length::Fill(1);
+        self
+    }
+    /// Repaint every frame (live content). Without it the canvas repaints only when something
+    /// else asks for a frame.
+    pub fn live(mut self) -> Self {
+        self.live = true;
         self
     }
     /// Called for pointer down, move (while over or dragging) and up, in canvas coordinates.
@@ -535,6 +543,9 @@ impl<S: 'static> From<Canvas<S>> for Node<Act<S>> {
     fn from(c: Canvas<S>) -> Self {
         let paint = c.paint;
         let mut e = w::Canvas::<Act<S>>::new(&cx::ui(), c.id, c.w, c.h, move |f| paint(f));
+        if c.live {
+            e = e.live();
+        }
         if let Some(f) = c.on {
             e = e.on_pointer(move |p| {
                 let f = f.clone();
