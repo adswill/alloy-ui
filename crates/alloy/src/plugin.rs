@@ -31,7 +31,7 @@
 //! ```
 
 /// Helpers for writing widgets outside the framework: the [`alloy_ui_widgets::ext`] functions
-/// plus the app's [`ui`] handle, [`theme`] and [`auto_id`].
+/// plus the app's `ui` handle, `theme` and `auto_id`.
 pub mod ext {
     pub use crate::cx::{theme, ui};
     pub use alloy_ui_widgets::ext::*;
