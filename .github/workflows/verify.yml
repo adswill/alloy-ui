@@ -79,7 +79,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p gpu
-          cargo test --release -p alloy-ui-render --test render -- gpu --nocapture 2>&1 | tee gpu/gpu.log
+          cargo test --release -p alloy-ui-render --test render -- gpu --nocapture --test-threads=1 2>&1 | tee gpu/gpu.log
           grep -E "GPU adapter|SKIP" gpu/gpu.log | sort -u | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Fail if the GPU tests were skipped
         shell: bash
