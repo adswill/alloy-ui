@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shipping · Alloy</title>
+<meta name="description" content="Shipping in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html" aria-current="page">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Shipping</h1>
+<p>Everything here goes through <code>alloy bundle</code> and environment variables. Nothing secret lives in <code>Cargo.toml</code>.</p>
+<p>What has really been run, and where, is in the table at the end. Read it before you rely on a platform.</p>
+<h2>Metadata</h2>
+<div class="hl"><pre><span></span><code><span class="k">[package.metadata.alloy]</span>
+<span class="n">identifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"com.example.hello"</span>
+<span class="n">publisher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"Example Inc."</span>
+<span class="n">update-url</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"https://downloads.example.com/hello"</span><span class="w">           </span><span class="c1"># where you host releases</span>
+<span class="n">msix-publisher</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"CN=Example Inc., O=Example Inc., C=US"</span><span class="w">     </span><span class="c1"># must equal your certificate subject</span>
+<span class="n">mac-entitlements</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"mac.entitlements"</span><span class="w">                        </span><span class="c1"># optional</span>
+<span class="n">flatpak-runtime-version</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"24.08"</span><span class="w">                            </span><span class="c1"># optional</span>
+<span class="n">flatpak-finish-args</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"--share=network"</span><span class="p">]</span><span class="w">                    </span><span class="c1"># optional, replaces the derived list</span>
+</code></pre></div>
+
+<h2>macOS: sign and notarise</h2>
+<div class="hl"><pre><span></span><code><span class="nb">export</span><span class="w"> </span><span class="nv">ALLOY_SIGN_IDENTITY</span><span class="o">=</span><span class="s2">"Developer ID Application: Example Inc. (ABCDE12345)"</span>
+<span class="nb">export</span><span class="w"> </span><span class="nv">ALLOY_NOTARY_PROFILE</span><span class="o">=</span>alloy<span class="w">        </span><span class="c1"># made once with: xcrun notarytool store-credentials alloy</span>
+alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>app,dmg
+</code></pre></div>
+
+<p>Without <code>ALLOY_SIGN_IDENTITY</code> the <code>.app</code> gets an ad hoc signature, enough to run on your own machine. With it, <code>alloy</code> signs with the hardened runtime and a secure timestamp (and your entitlements file if set), zips the app with <code>ditto</code>, submits it with <code>notarytool --wait</code>, and staples the ticket. The <code>.dmg</code> is signed too.</p>
+<p>Other ways to log in to the notary service: <code>ALLOY_NOTARY_APPLE_ID</code> + <code>ALLOY_NOTARY_TEAM_ID</code> + <code>ALLOY_NOTARY_PASSWORD</code> (an app-specific password), or an App Store Connect API key with <code>ALLOY_NOTARY_KEY</code> (the <code>.p8</code> path) + <code>ALLOY_NOTARY_KEY_ID</code> + <code>ALLOY_NOTARY_ISSUER</code>. Notarising with an ad hoc identity is refused with an error that says so.</p>
+<h2>Windows: MSI, MSIX and signing</h2>
+<p><code>msi</code> needs WiX 4+. <code>msix</code> needs nothing: the package is written in Rust, so it builds on any host. An unsigned MSIX will not install, so sign it:</p>
+<div class="hl"><pre><span></span><code><span class="nb">set</span><span class="w"> </span><span class="nv">ALLOY_WIN_CERT</span><span class="o">=</span>C:<span class="se">\k</span>eys<span class="se">\e</span>xample.pfx
+<span class="nb">set</span><span class="w"> </span><span class="nv">ALLOY_WIN_CERT_PASSWORD</span><span class="o">=</span>...
+alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>exe,msi,msix
+</code></pre></div>
+
+<p>Every <code>.exe</code>, <code>.msi</code>, <code>-setup.exe</code> and <code>.msix</code> is signed with <code>signtool</code> (or <code>osslsigncode</code>), timestamped from <code>ALLOY_WIN_TIMESTAMP_URL</code> (default DigiCert). A certificate in the Windows store works with <code>ALLOY_WIN_CERT_SHA1=&lt;thumbprint&gt;</code>. For Azure Trusted Signing, an HSM or any other service, set <code>ALLOY_WIN_SIGN_COMMAND</code> to a command containing <code>{file}</code>, for example <code>ALLOY_WIN_SIGN_COMMAND="azuresigntool sign ... {file}"</code>.</p>
+<p><code>msix-publisher</code> must match the certificate's subject exactly or Windows rejects the signature. The three tile logos are all your largest PNG icon; add your own sizes when you publish to the Store.</p>
+<h2>Linux: AppImage and Flatpak</h2>
+<p><code>appimage</code> calls <code>appimagetool</code>. <code>flatpak</code> always writes <code>&lt;name&gt;-flatpak/</code> (JSON manifest, <code>.desktop</code>, AppStream metainfo, icons, your binary) and, if <code>flatpak-builder</code> is installed, builds <code>&lt;name&gt;.flatpak</code>:</p>
+<div class="hl"><pre><span></span><code>flatpak<span class="w"> </span>install<span class="w"> </span>flathub<span class="w"> </span>org.freedesktop.Platform//24.08<span class="w"> </span>org.freedesktop.Sdk//24.08
+alloy<span class="w"> </span>bundle<span class="w"> </span>--format<span class="w"> </span>flatpak
+flatpak<span class="w"> </span>install<span class="w"> </span>--user<span class="w"> </span>target/alloy-bundle/*/hello-*.flatpak
+</code></pre></div>
+
+<p>The sandbox permissions come from your capability file: <code>network</code> adds <code>--share=network</code>, <code>fs_write</code> adds <code>--filesystem=home</code>, <code>fs_read</code> adds <code>--filesystem=home:ro</code>, <code>notifications</code> adds the notification service. File dialogs go through the desktop portal and need no static access. The binary is built outside the sandbox and must run on the Flatpak runtime's glibc, so build it on an older distribution such as Ubuntu 22.04.</p>
+<h2>Auto-update</h2>
+<p>An update is a signed <code>latest.json</code> next to your installers. The client downloads it, checks the Ed25519 signature before parsing anything, checks the manifest is for your app and newer than the running version (no downgrades), and checks the downloaded file against the size and SHA-256 inside the signed manifest. A stolen download host can serve the files but cannot make a client accept a changed one.</p>
+<div class="hl"><pre><span></span><code>alloy<span class="w"> </span>keygen<span class="w"> </span>--out<span class="w"> </span>alloy-update.key<span class="w">     </span><span class="c1"># once; prints the public key, never commit the key file</span>
+<span class="nv">ALLOY_UPDATE_KEY</span><span class="o">=</span>@alloy-update.key<span class="w"> </span>alloy<span class="w"> </span>bundle
+</code></pre></div>
+
+<p>With <code>update-url</code> set, each bundle run writes <code>&lt;name&gt;-&lt;os&gt;-&lt;arch&gt;.update.json</code> next to the installers. When a release is built on several machines, collect those files in one folder and run <code>ALLOY_UPDATE_KEY=@alloy-update.key alloy release --dir dist --notes-file CHANGES.txt</code>. That writes <code>dist/latest.json</code> and <code>dist/latest.json.sig</code>. Upload both with the installers to <code>update-url</code>.</p>
+<p>Add <code>alloy-ui-ship</code> to your app and check on start or from a menu item:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui_ship</span><span class="p">::</span><span class="n">update</span><span class="p">::{</span><span class="n">apply</span><span class="p">,</span><span class="w"> </span><span class="n">cleanup_old</span><span class="p">,</span><span class="w"> </span><span class="n">Config</span><span class="p">,</span><span class="w"> </span><span class="n">Updater</span><span class="p">};</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui_ship</span><span class="p">::</span><span class="n">UreqFetch</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">check_for_updates</span><span class="p">()</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">alloy_ui_ship</span><span class="p">::</span><span class="nb">Result</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">cleanup_old</span><span class="p">();</span><span class="w"> </span><span class="c1">// removes the .old file a Windows update leaves behind</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">cfg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Config</span><span class="p">::</span><span class="n">new</span><span class="p">(</span>
+<span class="w">        </span><span class="s">"com.example.hello"</span><span class="p">,</span>
+<span class="w">        </span><span class="fm">env!</span><span class="p">(</span><span class="s">"CARGO_PKG_VERSION"</span><span class="p">),</span>
+<span class="w">        </span><span class="s">"https://downloads.example.com/hello/latest.json"</span><span class="p">,</span>
+<span class="w">        </span><span class="s">"7780b22eb7666158ddf7d424642842040a3bf3308c3b1cbe5dfd4e2f68c8045a"</span><span class="p">,</span><span class="w"> </span><span class="c1">// from `alloy keygen`</span>
+<span class="w">    </span><span class="p">);</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">updater</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Updater</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">cfg</span><span class="p">,</span><span class="w"> </span><span class="n">UreqFetch</span><span class="p">::</span><span class="n">default</span><span class="p">());</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">update</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">updater</span><span class="p">.</span><span class="n">check</span><span class="p">()</span><span class="o">?</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// Ask the user first; show update.version and update.notes.</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">file</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">updater</span><span class="p">.</span><span class="n">download</span><span class="p">(</span><span class="o">&amp;</span><span class="n">update</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">std</span><span class="p">::</span><span class="n">env</span><span class="p">::</span><span class="n">temp_dir</span><span class="p">())</span><span class="o">?</span><span class="p">;</span>
+<span class="w">        </span><span class="n">apply</span><span class="p">(</span><span class="o">&amp;</span><span class="n">file</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">update</span><span class="p">.</span><span class="n">artifact</span><span class="p">)</span><span class="o">?</span><span class="p">;</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nb">Ok</span><span class="p">(())</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>What <code>apply</code> does depends on how the app was installed:</p>
+<table>
+<thead>
+<tr>
+<th>install</th>
+<th>update</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AppImage</td>
+<td>the file named by <code>$APPIMAGE</code> is replaced in place; restart to use it</td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>the <code>.dmg</code> is opened in Finder</td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>the <code>.msi</code> is run with <code>msiexec</code> (its upgrade code replaces the old version)</td>
+</tr>
+<tr>
+<td><code>.deb</code>, <code>.rpm</code>, Flatpak</td>
+<td>not offered: <code>check</code> returns <code>None</code>, the package manager updates these</td>
+</tr>
+</tbody>
+</table>
+<p>Run <code>check</code> on a background thread (<code>alloy_ui::resource</code> fits) and never block the UI on it. The default HTTP client is <code>UreqFetch</code> (rustls); to use your own, implement the two-method <code>Fetch</code> trait, or build with <code>default-features = false</code>.</p>
+<h2>Crash reports</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui_ship</span><span class="p">::</span><span class="n">crash</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">_crashes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">crash</span><span class="p">::</span><span class="n">install</span><span class="p">(</span>
+<span class="w">        </span><span class="n">crash</span><span class="p">::</span><span class="n">Config</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="s">"com.example.hello"</span><span class="p">,</span><span class="w"> </span><span class="fm">env!</span><span class="p">(</span><span class="s">"CARGO_PKG_VERSION"</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">scrub</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">replace</span><span class="p">(</span><span class="s">"/home/"</span><span class="p">,</span><span class="w"> </span><span class="s">"/home/&lt;user&gt;/"</span><span class="p">)),</span>
+<span class="w">    </span><span class="p">);</span>
+<span class="w">    </span><span class="c1">// On the next start, after the user agrees:</span>
+<span class="w">    </span><span class="c1">// crash::upload_pending(&amp;crash::default_dir("com.example.hello"),</span>
+<span class="w">    </span><span class="c1">//     "https://crash.example.com/report", &amp;alloy_ui_ship::UreqFetch::default());</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>A panic on any thread writes a JSON report (message, location, backtrace, version, OS, CPU, time) to <code>&lt;state dir&gt;/&lt;app id&gt;/crashes</code>, keeps the newest ten, and then runs the previous panic hook, so the normal message still reaches stderr. It works with <code>panic = "abort"</code> too, because the hook runs before the abort. Nothing is ever sent unless your code calls <code>upload_pending</code>; ask the user first, and use <code>scrub</code> because panic messages can contain their data. Native faults such as a driver segfault are not caught. For readable backtraces use <code>debug = "line-tables-only"</code> and <code>strip = "debuginfo"</code> in the release profile instead of <code>strip = true</code>.</p>
+<h2>What has been run</h2>
+<table>
+<thead>
+<tr>
+<th>thing</th>
+<th>status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>signed manifest: sign, verify, tamper, wrong key, wrong app, downgrade, replay of a changed file</td>
+<td>unit-tested; the Ed25519 implementation matches RFC 8032 test vector 1, and <code>openssl</code> verified a manifest signed by <code>alloy</code></td>
+</tr>
+<tr>
+<td>update check, download, hash check and file replacement</td>
+<td>tested over a real local HTTP server on Linux</td>
+</tr>
+<tr>
+<td>crash hook and upload</td>
+<td>tested (panic on a named thread, scrub, retention, upload over HTTP) on Linux</td>
+</tr>
+<tr>
+<td>MSIX</td>
+<td>built on Linux; zip CRCs, block-map hashes and header sizes checked by an independent script; <strong>never installed on Windows</strong></td>
+</tr>
+<tr>
+<td>Flatpak</td>
+<td>manifest, metainfo and layout generated and tested; <strong><code>flatpak-builder</code> was not run</strong></td>
+</tr>
+<tr>
+<td>AppImage</td>
+<td>AppDir layout tested; <strong><code>appimagetool</code> was not run</strong></td>
+</tr>
+<tr>
+<td>macOS signing and notarisation</td>
+<td>command lines unit-tested; <strong>never run against Apple's tools or service</strong></td>
+</tr>
+<tr>
+<td>Windows signing</td>
+<td>command lines for <code>signtool</code>, <code>osslsigncode</code> and custom commands unit-tested; <strong>never run</strong></td>
+</tr>
+<tr>
+<td>MSI</td>
+<td><code>.wxs</code> generation tested; WiX not run here</td>
+</tr>
+</tbody>
+</table>
+<nav class="pager"><a href="16-coming-from-iced-and-egui.html">&larr; Coming from iced or egui</a><a href="18-desktop-integration.html">Desktop integration &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

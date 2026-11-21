@@ -2,7 +2,15 @@
 //! `WAYLAND_DISPLAY` is set.
 
 use super::{capture, feed, unavailable};
-use crate::{dialog, menu::Menu, theme, tray::TraySettings, PlatformError, PlatformEvent};
+use crate::{
+    dialog::{self, FileDialogOptions},
+    menu::Menu,
+    notify::Notification,
+    shortcut::Shortcut,
+    theme,
+    tray::TraySettings,
+    PlatformError, PlatformEvent,
+};
 use std::path::PathBuf;
 
 fn wayland() -> bool {
@@ -79,6 +87,29 @@ pub fn save_file(name: &str) -> Result<Option<PathBuf>, PlatformError> {
     Ok(out.and_then(|o| dialog::parse_lines(&o).into_iter().next()))
 }
 
+/// Show a file dialog with `zenity`, or `kdialog` when that is missing.
+pub fn file_dialog(o: &FileDialogOptions) -> Result<Vec<PathBuf>, PlatformError> {
+    let (z, k) = (dialog::zenity_args(o), dialog::kdialog_args(o));
+    let (z, k): (Vec<&str>, Vec<&str>) = (
+        z.iter().map(String::as_str).collect(),
+        k.iter().map(String::as_str).collect(),
+    );
+    let out = run_dialog("file dialog", &z, &k)?;
+    Ok(out.map(|s| dialog::parse_lines(&s)).unwrap_or_default())
+}
+
+pub fn notify(n: &Notification) -> Result<(), PlatformError> {
+    super::linux_notify::send(n)
+}
+
+pub fn register_hotkey(keys: &str, sc: &Shortcut) -> Result<(), PlatformError> {
+    super::x11_hotkey::register(keys, sc)
+}
+
+pub fn unregister_hotkeys() {
+    super::x11_hotkey::release_all();
+}
+
 pub fn message(title: &str, body: &str) -> Result<(), PlatformError> {
     if which("zenity") {
         capture("zenity", &["--info", "--title", title, "--text", body]);
@@ -106,11 +137,16 @@ fn which(prog: &str) -> bool {
         .unwrap_or(false)
 }
 
-// winit has no menu bar on Linux. The tray is a StatusNotifierItem (see linux_tray.rs).
-pub fn set_menu(_: &winit::window::Window, _: &[Menu]) -> Result<(), PlatformError> {
-    Err(PlatformError(
-        "native menu bar is not available on Linux".into(),
-    ))
+// winit has no menu bar on Linux. The menu bar is exported to the desktop's global menu
+// (see linux_appmenu.rs); the tray is a StatusNotifierItem (see linux_tray.rs).
+pub fn set_menu(w: &winit::window::Window, menus: &[Menu]) -> Result<(), PlatformError> {
+    let Some(id) = super::linux_appmenu::x11_window_id(w) else {
+        return Err(PlatformError(
+            "menu bar: Wayland windows cannot join a global menu (shortcuts and the command palette still work)"
+                .into(),
+        ));
+    };
+    super::linux_appmenu::start(id, menus, true)
 }
 pub fn set_tray(_: &winit::window::Window, t: &TraySettings) -> Result<(), PlatformError> {
     super::linux_tray::start(t, true)
@@ -133,7 +169,7 @@ pub fn watch_theme() {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     let Ok(mut child) = Command::new("gsettings")
-        .args(["monitor", "org.gnome.desktop.interface", "color-scheme"])
+        .args(["monitor", "org.gnome.desktop.interface"])
         .stdin(Stdio::null())
         .stderr(Stdio::null())
         .stdout(Stdio::piped())
@@ -148,9 +184,13 @@ pub fn watch_theme() {
         .name("alloy-theme".into())
         .spawn(move || {
             for line in BufReader::new(out).lines().map_while(Result::ok) {
+                if !crate::settings::is_relevant_monitor_line(&line) {
+                    continue;
+                }
                 if let Some(dark) = parse_monitor_line(&line) {
                     super::push_pending(PlatformEvent::ThemeChanged { dark });
                 }
+                super::push_pending(PlatformEvent::SettingsChanged(super::read_settings()));
             }
             let _ = child.wait();
         });

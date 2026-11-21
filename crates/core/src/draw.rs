@@ -31,6 +31,29 @@ pub enum FontFamily {
     Sans,
     /// The monospace font, for code and editors.
     Mono,
+    /// The proportional UI font in its true italic face.
+    SansItalic,
+    /// The monospace font in its true italic face.
+    MonoItalic,
+    /// The bundled Lucide icon font; text is icon codepoints (see `alloy_ui_widgets::Icon`).
+    Lucide,
+    /// The bundled Phosphor Regular icon font.
+    Phosphor,
+}
+
+impl FontFamily {
+    /// The italic counterpart (icon fonts have none and return themselves).
+    pub const fn italic(self) -> Self {
+        match self {
+            Self::Sans | Self::SansItalic => Self::SansItalic,
+            Self::Mono | Self::MonoItalic => Self::MonoItalic,
+            other => other,
+        }
+    }
+    /// True for the monospace faces.
+    pub const fn is_mono(self) -> bool {
+        matches!(self, Self::Mono | Self::MonoItalic)
+    }
 }
 
 /// One primitive drawing operation, in logical pixels, painter's order.
@@ -101,6 +124,15 @@ pub enum DrawCommand {
         width: f32,
         /// Colour.
         color: Color,
+    },
+    /// A filled simple polygon (convex or concave, either winding), edges
+    /// anti-aliased. This is the primitive under pies, areas, canvas paths and
+    /// 3D meshes. Self-intersecting outlines are not supported.
+    Polygon {
+        /// Outline vertices in order; fewer than three draws nothing.
+        points: Vec<Point>,
+        /// Fill colour (include alpha).
+        fill: Color,
     },
     /// An image by handle id registered with the renderer.
     Image {

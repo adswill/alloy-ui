@@ -1,0 +1,297 @@
+{
+  "Alloy sketch app": {
+    "prefix": "alloy-sketch",
+    "description": "A complete app: state plus a view function",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "fn main() {",
+      "    sketch(${1:0i64}, |${2:n}| {",
+      "        col![",
+      "            heading(\"${3:Title}\"),",
+      "            text(format!(\"{${2:n}}\")).dim(),",
+      "            button(\"${4:Add}\").primary().act(|${2:n}| *${2:n} += 1),",
+      "        ]",
+      "        .gap(14.0)",
+      "        .pad(24.0)",
+      "    })",
+      "    .run(\"${3:Title}\")",
+      "}"
+    ]
+  },
+  "Alloy state and view": {
+    "prefix": "alloy-state",
+    "description": "A state struct with a view function",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "#[derive(Default)]",
+      "struct ${1:State} {",
+      "    ${2:name}: String,",
+      "}",
+      "",
+      "fn view(s: &${1:State}) -> impl View<Act<${1:State}>> {",
+      "    col![",
+      "        input(at!(s.${2:name})).hint(\"${3:Name}\"),",
+      "        text(format!(\"Hello, {}\", s.${2:name})),",
+      "    ]",
+      "    .gap(12.0)",
+      "    .pad(24.0)",
+      "}",
+      "",
+      "fn main() {",
+      "    sketch(${1:State}::default(), view).run(\"${4:App}\")",
+      "}"
+    ]
+  },
+  "Alloy app with pages": {
+    "prefix": "alloy-app",
+    "description": "A sidebar app with pages, theme switch and saved state",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "fn main() {",
+      "    app(\"${1:App}\")",
+      "        .page(\"${2:Home}\", || heading(\"${2:Home}\"))",
+      "        .page(\"Settings\", || section(\"Theme\", theme_switch()))",
+      "        .persist()",
+      "        .run()",
+      "}"
+    ]
+  },
+  "Alloy Elm app": {
+    "prefix": "alloy-elm",
+    "description": "The App trait: Msg enum, update and view",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "#[derive(Clone)]",
+      "enum Msg {",
+      "    ${1:Add},",
+      "}",
+      "",
+      "#[derive(Default)]",
+      "struct ${2:Model} {",
+      "    n: i64,",
+      "}",
+      "",
+      "impl App for ${2:Model} {",
+      "    type Msg = Msg;",
+      "    fn update_cmd(&mut self, msg: Msg) -> Cmd<Msg> {",
+      "        match msg {",
+      "            Msg::${1:Add} => self.n += 1,",
+      "        }",
+      "        Cmd::none()",
+      "    }",
+      "    fn view(&self) -> impl View<Msg> {",
+      "        col![text(self.n.to_string()), button(\"${3:Add}\").on(Msg::${1:Add})].gap(12.0).pad(24.0)",
+      "    }",
+      "}",
+      "",
+      "fn main() {",
+      "    ${2:Model}::default().run(\"${4:App}\")",
+      "}"
+    ]
+  },
+  "Alloy choices enum": {
+    "prefix": "alloy-choices",
+    "description": "An enum that radios, segmented controls and sidebars understand",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "choices! { enum ${1:Filter} { ${2:All}, ${3:Open}, ${4:Done} } }",
+      "",
+      "#[derive(Default)]",
+      "struct S {",
+      "    filter: ${1:Filter},",
+      "}",
+      "",
+      "fn view(s: &S) -> impl View<Act<S>> {",
+      "    options(s.filter).bind(|s: &mut S| &mut s.filter)",
+      "}",
+      "fn main() { let _ = sketch(S::default(), view); }"
+    ]
+  },
+  "Alloy record (CRUD)": {
+    "prefix": "alloy-record",
+    "description": "A struct that derives Record, shown as a CRUD screen",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "#[derive(Record, Clone, Default)]",
+      "struct ${1:Person} {",
+      "    name: String,",
+      "    email: String,",
+      "    active: bool,",
+      "}",
+      "",
+      "fn main() {",
+      "    app(\"${2:People}\")",
+      "        .page(\"${2:People}\", || {",
+      "            crud(|| Records::<${1:Person}>::of([vals![\"${3:Ada Lovelace}\", \"ada@example.dev\", true]]))",
+      "        })",
+      "        .run()",
+      "}"
+    ]
+  },
+  "Alloy resource": {
+    "prefix": "alloy-resource",
+    "description": "Load data in the background with loading, error and retry",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "async fn ${1:load}() -> Result<Vec<String>, String> {",
+      "    Ok(vec![\"${2:one}\".into()])",
+      "}",
+      "",
+      "fn view(_: &()) -> impl View<Act<()>> {",
+      "    resource(${1:load}).page(\"${3:Items}\", |items| col(items.iter().map(|i| text(i.clone()))))",
+      "}",
+      "fn main() { let _ = sketch((), view); }"
+    ]
+  },
+  "Alloy shortcut": {
+    "prefix": "alloy-shortcut",
+    "description": "Add a shortcut that also appears in the palette",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "fn main() {",
+      "    sketch(0i64, |n| text(n.to_string()))",
+      "        .shortcut_as(\"${1:mod+r}\", \"${2:Reset}\", |n| *n = 0)",
+      "        .command(\"${3:Do something}\", |n| *n += 1)",
+      "        .run(\"App\")",
+      "}"
+    ]
+  },
+  "Alloy test (Harness)": {
+    "prefix": "alloy-test",
+    "description": "A headless test that clicks and asserts",
+    "body": [
+      "use alloy_ui::{prelude::*, testing::Harness};",
+      "",
+      "#[test]",
+      "fn ${1:adds_one}() {",
+      "    let mut ui = Harness::new(",
+      "        sketch(0i64, |n| col![text(format!(\"{n} so far\")), button(\"Add\").act(|n| *n += 1)]),",
+      "        320.0,",
+      "        200.0,",
+      "    );",
+      "    ui.click(\"${2:Add}\");",
+      "    assert!(ui.has_text(\"${3:1 so far}\"));",
+      "}"
+    ]
+  },
+  "Alloy translation": {
+    "prefix": "alloy-i18n",
+    "description": "Register catalogs and ask for translated text",
+    "body": [
+      "use alloy_ui::{i18n, t};",
+      "",
+      "fn main() {",
+      "    i18n::add(\"en\", \"${1:greeting} = Hello, {name}!\");",
+      "    i18n::add(\"fr\", \"${1:greeting} = Bonjour, {name} !\");",
+      "    i18n::set_locale(&i18n::detect());",
+      "    println!(\"{}\", t!(\"${1:greeting}\", name = \"${2:Ada}\"));",
+      "}"
+    ]
+  },
+  "Alloy live view": {
+    "prefix": "alloy-live",
+    "description": "Wire a hot-reloading .alloy file to state and handlers",
+    "body": [
+      "use alloy_ui::prelude::*;",
+      "",
+      "fn main() {",
+      "    sketch(0i64, |n| {",
+      "        live!(\"ui/${1:home}.alloy\")",
+      "            .var(\"n\", n)",
+      "            .on(\"${2:add}\", |n: &mut i64| *n += 1)",
+      "    })",
+      "    .run(\"${3:Live}\")",
+      "}"
+    ]
+  },
+  "Alloy column": {
+    "prefix": "alloy-col",
+    "description": "A vertical stack",
+    "body": [
+      "col![",
+      "\t$0",
+      "]",
+      ".gap(${1:12.0})",
+      ".pad(${2:24.0})"
+    ]
+  },
+  "Alloy row": {
+    "prefix": "alloy-row",
+    "description": "A horizontal stack",
+    "body": [
+      "row![",
+      "\t$0",
+      "]",
+      ".gap(${1:8.0})",
+      ".align_center()"
+    ]
+  },
+  "Alloy input": {
+    "prefix": "alloy-input",
+    "description": "A bound one-line input",
+    "body": [
+      "input(at!(s.${1:name})).hint(\"${2:Name}\")"
+    ]
+  },
+  "Alloy checkbox": {
+    "prefix": "alloy-check",
+    "description": "A bound checkbox",
+    "body": [
+      "check(\"${2:Done}\", at!(s.${1:done}))"
+    ]
+  },
+  "Alloy slider": {
+    "prefix": "alloy-slider",
+    "description": "A bound slider",
+    "body": [
+      "slider(${2:0.0..=1.0}, at!(s.${1:volume}))"
+    ]
+  },
+  "Alloy button": {
+    "prefix": "alloy-button",
+    "description": "A button with a handler",
+    "body": [
+      "button(\"${1:Save}\").primary().act(|s: &mut ${2:S}| {",
+      "\t$0",
+      "})"
+    ]
+  },
+  "Alloy field": {
+    "prefix": "alloy-field",
+    "description": "A labelled control with a validation message",
+    "body": [
+      "field(\"${1:Email}\", input(at!(s.${2:name})), valid::required(&s.${2:name}))"
+    ]
+  },
+  "Alloy table": {
+    "prefix": "alloy-table",
+    "description": "A sortable table",
+    "body": [
+      "table(&s.${1:rows})",
+      "\t.col(\"${2:Name}\", |r: &${3:Row}| r.name.clone())",
+      "\t.num(\"${4:Count}\", |r: &${3:Row}| r.count.to_string())"
+    ]
+  },
+  "Alloy toast": {
+    "prefix": "alloy-toast",
+    "description": "Show a toast with Undo",
+    "body": [
+      "toast(\"${1:Saved}\")${2:.undo()};"
+    ]
+  },
+  "Alloy local": {
+    "prefix": "alloy-local",
+    "description": "State kept with the widget tree",
+    "body": [
+      "let ${1:query} = local(${2:String::new()});"
+    ]
+  }
+}

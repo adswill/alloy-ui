@@ -250,6 +250,37 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
         let label: Node<M> = crate::text(label).w(110.0).into();
         crate::row([label, self.into()]).align_center().into()
     }
+    /// Let the user pick this up with the pointer and drop it on a [`drop_on`](Self::drop_on)
+    /// target that takes the same type: `card(c).drag(c.id)`. A translucent copy follows the
+    /// pointer; Escape cancels. Presses on buttons inside still click.
+    #[track_caller]
+    fn drag<T: 'static>(self, payload: T) -> Node<M> {
+        let id = cx::auto_id(70);
+        Node(w::Draggable::new(&cx::ui(), id, payload, self.into().0).into_element())
+    }
+    /// Take a value dropped here: `column.drop_on(|id: u64| Msg::MoveTo(Col::Done, id))`. Lights
+    /// up while a matching [`drag`](Self::drag) is in flight; other types are ignored.
+    fn drop_on<T: Clone + 'static>(self, f: impl Fn(T) -> M + 'static) -> Node<M> {
+        Node(w::DropZone::new(&cx::ui(), self.into().0, f).into_element())
+    }
+    /// Like [`drop_on`](Self::drop_on) for apps with closure messages: `.drop_act(|s, id: u64| s.move_to(id))`.
+    fn drop_act<T: Clone + Send + Sync + 'static, S: 'static>(
+        self,
+        f: impl Fn(&mut S, T) + Send + Sync + 'static,
+    ) -> Node<crate::dsl::Act<S>>
+    where
+        Self: Into<Node<crate::dsl::Act<S>>>,
+    {
+        let f = std::sync::Arc::new(f);
+        let node: Node<crate::dsl::Act<S>> = self.into();
+        Node(
+            w::DropZone::new(&cx::ui(), node.0, move |t: T| {
+                let f = f.clone();
+                crate::dsl::Act::new(move |s: &mut S| f(s, t.clone()))
+            })
+            .into_element(),
+        )
+    }
     /// Show `text` in a tooltip on hover.
     fn tip(self, text: impl Into<String>) -> Node<M> {
         Node(w::Tooltip::new(&cx::ui(), self.into().0, text).into_element())

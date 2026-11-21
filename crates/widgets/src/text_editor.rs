@@ -98,9 +98,13 @@ impl<M: 'static> TextEditor<M> {
     fn max_scroll(&self, b: &Rectangle, lines: usize) -> f32 {
         (lines as f32 * self.line_h() - (b.size.height - 2.0 * self.pad())).max(0.0)
     }
+    fn shown_offset(&self, b: &Rectangle, lines: &Vis) -> f32 {
+        self.ui
+            .scroll_shown(self.id, self.max_scroll(b, lines.len()))
+    }
     /// Character index under `p`.
     fn index_at(&self, b: &Rectangle, lines: &Vis, e_scroll_x: f32, p: Point) -> usize {
-        let y = p.y - b.origin.y - self.pad() + self.ui.scroll_offset(self.id);
+        let y = p.y - b.origin.y - self.pad() + self.shown_offset(b, lines);
         let line = (y / self.line_h()).floor().max(0.0) as usize;
         let line = line.min(lines.len() - 1);
         let rel = p.x - b.origin.x - self.pad() + e_scroll_x;
@@ -194,10 +198,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             Event::MouseReleased(MouseButton::Left) => self.ui.pressed() == Some(key),
             Event::Scrolled { dy, .. } if b.contains(cursor) => {
                 let max = self.max_scroll(&b, lines.len());
-                let off = self.ui.scroll_offset(self.id);
-                self.ui
-                    .set_scroll_offset(self.id, (off - dy).clamp(0.0, max));
-                (off - dy).clamp(0.0, max) != off
+                self.ui.scroll_wheel(self.id, *dy, max)
             }
             Event::ImePreedit(s) if focused => {
                 e.preedit = s.clone();
@@ -350,6 +351,10 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             }
         }
         self.ui.set_scroll_offset(self.id, off);
+        // Draw at the spring-followed offset so wheel, paging and caret-follow all glide.
+        let off = self
+            .ui
+            .scroll_shown(self.id, self.max_scroll(&b, lines.len()));
         let caret_x = col_x(cl, cc) + self.width_of(&e.preedit);
         if caret_x - e.scroll_x > inner_w {
             e.scroll_x = caret_x - inner_w;

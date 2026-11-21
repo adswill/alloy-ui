@@ -6,7 +6,7 @@
 //! asks for one. Background tasks wake the loop through a [`ShellProxy`].
 
 use crate::{convert, PlatformError, WindowSettings};
-use alloy_ui_core::{Event, Point, Size};
+use alloy_ui_core::{Event, Key, Point, Size};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -31,8 +31,17 @@ pub enum PlatformEvent {
     FileHovered(PathBuf),
     /// The drag left the window without dropping.
     FileHoverCancelled,
-    /// A file was dropped on the window.
-    FileDropped(PathBuf),
+    /// Files were dropped on the window. One event per drop, however many
+    /// files it carried. (winit reports them one by one; the shell batches
+    /// them at the end of the loop turn.)
+    FilesDropped(Vec<PathBuf>),
+    /// The OS appearance or accessibility settings changed, or were read for
+    /// the first time (shortly after start-up). See [`crate::settings`].
+    SettingsChanged(crate::settings::SystemSettings),
+    /// The app was asked to open something: a URL for a registered scheme
+    /// (`myapp://...`), or files (macOS "Open With", a second launch that was
+    /// forwarded to this single instance). Carries the raw argument strings.
+    Open(Vec<String>),
     /// The OS switched between light and dark.
     ThemeChanged {
         /// True when the new theme is dark.
@@ -52,6 +61,10 @@ pub enum PlatformEvent {
     MenuAction(String),
     /// The tray icon was clicked (left button).
     TrayClicked,
+    /// A hotkey registered with [`ShellContext::register_global_hotkey`] was
+    /// pressed, possibly while another application had the focus. Carries the
+    /// string it was registered with.
+    GlobalHotkey(String),
     /// A [`ShellProxy::wake`] arrived from another thread.
     Wake,
     /// Assistive technology (a screen reader) asked a control to do something.
@@ -211,6 +224,12 @@ impl ShellContext {
     pub fn request_redraw(&mut self) {
         self.redraw = true;
     }
+    /// Bring the current window to the front and give it focus (used when a
+    /// second launch hands its arguments to this instance).
+    pub fn focus_window(&self) {
+        self.window.set_minimized(false);
+        self.window.focus_window();
+    }
     /// Exit the event loop after this callback.
     pub fn exit(&mut self) {
         self.exit = true;
@@ -298,8 +317,29 @@ impl ShellContext {
     pub fn clear_tray(&self) {
         crate::os::clear_tray();
     }
+    /// Grab `keys` (`"ctrl+alt+space"`) for the whole desktop. Presses arrive as
+    /// [`PlatformEvent::GlobalHotkey`]. See [`crate::hotkey`] for what each OS supports.
+    pub fn register_global_hotkey(&self, keys: &str) -> Result<(), PlatformError> {
+        crate::hotkey::register(keys)
+    }
+    /// Release every global hotkey.
+    pub fn unregister_global_hotkeys(&self) {
+        crate::hotkey::unregister_all();
+    }
     fn main_window(&self) -> &Window {
         self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)
+    }
+    /// Give the main window a see-through look (Mica, acrylic, blur,
+    /// plain transparency) or take it away with [`alloy_ui_core::WindowEffect::None`].
+    /// The answer says what the OS really did; the app then picks a page
+    /// background opacity to match.
+    ///
+    /// On X11 the window must have been created see-through: call
+    /// [`request_window_effect`] before [`run`].
+    pub fn set_effect(&mut self, effect: alloy_ui_core::WindowEffect) -> crate::EffectOutcome {
+        let w = self.main_window();
+        w.set_transparent(effect != alloy_ui_core::WindowEffect::None);
+        crate::os::set_effect(w, effect)
     }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
@@ -320,11 +360,30 @@ struct App<H> {
     t0: Instant,
     /// True while an IME preedit string is showing; key events are dropped.
     composing: bool,
+    /// Files of the drop being delivered; flushed in `about_to_wait`.
+    dropped: Vec<PathBuf>,
+    #[cfg(not(target_os = "linux"))]
+    settings_seen: Option<crate::settings::SystemSettings>,
+}
+
+static INITIAL_EFFECT: std::sync::Mutex<alloy_ui_core::WindowEffect> =
+    std::sync::Mutex::new(alloy_ui_core::WindowEffect::None);
+
+/// Ask for windows to be created see-through, before [`run`]. X11 needs a
+/// 32-bit visual at creation time, so an app that will ever use a window
+/// effect has to say so up front; [`ShellContext::set_effect`] then switches
+/// effects (or turns them off) at any time.
+pub fn request_window_effect(effect: alloy_ui_core::WindowEffect) {
+    if let Ok(mut e) = INITIAL_EFFECT.lock() {
+        *e = effect;
+    }
 }
 
 fn attributes(s: &WindowSettings) -> winit::window::WindowAttributes {
+    let effect = INITIAL_EFFECT.lock().map(|e| *e).unwrap_or_default();
     Window::default_attributes()
         .with_title(s.title.clone())
+        .with_transparent(effect != alloy_ui_core::WindowEffect::None)
         .with_inner_size(LogicalSize::new(s.size.width as f64, s.size.height as f64))
 }
 
@@ -428,6 +487,8 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         if self.ctx.is_some() {
             return;
         }
+        #[cfg(target_os = "macos")]
+        crate::os::install_open_handler();
         match el.create_window(attributes(&self.settings)) {
             Ok(w) => {
                 let w = Arc::new(w);
@@ -470,6 +531,13 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             self.dispatch(el, e);
         }
         self.dispatch(el, PlatformEvent::Wake);
+    }
+
+    fn about_to_wait(&mut self, el: &ActiveEventLoop) {
+        if !self.dropped.is_empty() {
+            let files = std::mem::take(&mut self.dropped);
+            self.dispatch(el, PlatformEvent::FilesDropped(files));
+        }
     }
 
     fn exiting(&mut self, _: &ActiveEventLoop) {
@@ -522,7 +590,12 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }),
             WindowEvent::ModifiersChanged(m) => {
                 self.mods = m.state();
-                None
+                // Mouse events carry no modifiers; tell widgets (Shift/Ctrl-click) through
+                // a pseudo key release that only `Root` looks at.
+                Some(I(Event::KeyReleased(
+                    Key::Named("Modifiers".into()),
+                    convert::modifiers(self.mods),
+                )))
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let l = position.to_logical::<f32>(scale);
@@ -596,7 +669,22 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             }
             WindowEvent::HoveredFile(p) => Some(PlatformEvent::FileHovered(p)),
             WindowEvent::HoveredFileCancelled => Some(PlatformEvent::FileHoverCancelled),
-            WindowEvent::DroppedFile(p) => Some(PlatformEvent::FileDropped(p)),
+            WindowEvent::DroppedFile(p) => {
+                self.dropped.push(p);
+                None
+            }
+            // Settings can only change while another app is in front, so on
+            // OSes without a change notification we re-read on focus.
+            #[cfg(not(target_os = "linux"))]
+            WindowEvent::Focused(true) => {
+                let now = crate::settings::system_settings();
+                if self.settings_seen != Some(now) {
+                    self.settings_seen = Some(now);
+                    Some(PlatformEvent::SettingsChanged(now))
+                } else {
+                    None
+                }
+            }
             _ => None,
         };
         if let Some(e) = out {
@@ -647,7 +735,27 @@ pub fn run<H: ShellHandler + 'static>(
         error: None,
         proxy,
         composing: false,
+        dropped: Vec::new(),
+        #[cfg(not(target_os = "linux"))]
+        settings_seen: None,
     };
+    // What this launch itself was asked to open (a deep link, a file association).
+    let launch: Vec<String> = std::env::args()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .collect();
+    if !crate::deeplink::classify(&launch).is_empty() {
+        crate::os::push_pending(PlatformEvent::Open(launch));
+    }
+    // Read the OS settings off the UI thread (it can spawn helper processes);
+    // the answer arrives as `SettingsChanged` right after start-up.
+    let _ = std::thread::Builder::new()
+        .name("alloy-settings".into())
+        .spawn(|| {
+            crate::os::push_pending(PlatformEvent::SettingsChanged(
+                crate::settings::system_settings(),
+            ))
+        });
     el.run_app(&mut app)
         .map_err(|e| PlatformError(format!("run: {e}")))?;
     app.error.map_or(Ok(()), Err)

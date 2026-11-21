@@ -9,7 +9,12 @@
 use alloy_ui_core::Color;
 use alloy_ui_theme::{Palette, Theme};
 use alloy_ui_widgets::Ui;
-use std::{cell::RefCell, collections::HashMap, hash::Hasher, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+    hash::Hasher,
+    rc::Rc,
+};
 
 struct Cx {
     ui: Ui,
@@ -113,6 +118,7 @@ pub struct Look {
     accent: Option<alloy_ui_core::Color>,
     high_contrast: bool,
     density: alloy_ui_theme::Density,
+    preset: alloy_ui_theme::Preset,
 }
 
 impl Look {
@@ -138,6 +144,10 @@ impl Look {
             ..self
         }
     }
+    /// A named preset from the theme gallery (`Preset::Graphite`, `Preset::Ember`, ...).
+    pub fn preset(self, preset: alloy_ui_theme::Preset) -> Self {
+        Self { preset, ..self }
+    }
     /// 7:1 text, solid borders.
     pub fn high_contrast(self, on: bool) -> Self {
         Self {
@@ -151,10 +161,15 @@ impl Look {
     }
     /// The theme this look describes.
     pub fn theme(self) -> Theme {
-        let mut t = if self.dark {
-            Theme::dark()
+        let appearance = if self.dark {
+            alloy_ui_theme::Appearance::Dark
         } else {
-            Theme::light()
+            alloy_ui_theme::Appearance::Light
+        };
+        let mut t = if self.preset == alloy_ui_theme::Preset::Alloy {
+            Theme::for_appearance(appearance)
+        } else {
+            Theme::preset(self.preset, appearance)
         };
         if let Some(c) = self.accent {
             t = t.with_accent(c);
@@ -385,8 +400,70 @@ pub(crate) fn window_ui_or_fork(id: alloy_ui_core::WindowId, template: &Ui) -> U
     let ui = Ui::new((*template.theme()).clone());
     ui.set_metrics(template.metrics());
     ui.set_clipboard(template.clipboard());
+    ui.set_reduced_motion(template.reduced_motion());
     register_window_ui(id, &ui);
     ui
+}
+
+thread_local! {
+    static PAGE_ALPHA: Cell<f32> = const { Cell::new(1.0) };
+    static SYSTEM: Cell<alloy_ui_platform::settings::SystemSettings> =
+        const { Cell::new(alloy_ui_platform::settings::SystemSettings {
+            dark: false,
+            reduced_motion: false,
+            high_contrast: false,
+            accent: None,
+        }) };
+    static HOVERING_FILES: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Opacity of the page background: below 1 while a window effect shows through.
+pub(crate) fn page_alpha() -> f32 {
+    PAGE_ALPHA.with(Cell::get)
+}
+
+pub(crate) fn set_page_alpha(a: f32) {
+    PAGE_ALPHA.with(|c| c.set(a));
+}
+
+/// What the OS reported about dark mode, reduced motion, contrast and accent colour.
+/// Until the OS has answered (a few milliseconds after start-up) every flag is off.
+pub fn system() -> alloy_ui_platform::settings::SystemSettings {
+    SYSTEM.with(Cell::get)
+}
+
+pub(crate) fn set_system(s: alloy_ui_platform::settings::SystemSettings) {
+    SYSTEM.with(|c| c.set(s));
+}
+
+/// True while files from another app are being dragged over the window: show a "drop here" hint.
+/// The view is rebuilt when it changes.
+pub fn files_hovering() -> bool {
+    HOVERING_FILES.with(Cell::get)
+}
+
+pub(crate) fn set_files_hovering(on: bool) -> bool {
+    HOVERING_FILES.with(|c| c.replace(on)) != on
+}
+
+/// Recolour every window with the accent `c`, keeping light or dark.
+pub(crate) fn apply_accent_everywhere(c: Color) {
+    ACCENT.with(|a| a.set(Some(c)));
+    let all: Vec<Ui> = WINDOW_UIS.with(|m| m.borrow().values().cloned().collect());
+    for ui in all {
+        let t = ui.theme().as_ref().clone().with_accent(c);
+        if t.palette.accent != ui.theme().palette.accent {
+            ui.set_theme(t);
+        }
+    }
+}
+
+/// Set reduced motion on every window.
+pub(crate) fn set_reduced_motion_everywhere(on: bool) {
+    let all: Vec<Ui> = WINDOW_UIS.with(|m| m.borrow().values().cloned().collect());
+    for ui in all {
+        ui.set_reduced_motion(on);
+    }
 }
 
 /// `Mutex::lock` that survives poisoning: a panicking worker must not take the UI thread

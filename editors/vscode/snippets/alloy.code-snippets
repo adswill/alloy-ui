@@ -1,0 +1,68 @@
+{
+  "Alloy page": {
+    "prefix": "page",
+    "description": "A page-level column with spacing",
+    "body": [
+      "col page gap=${1:14}",
+      "\t$0"
+    ]
+  },
+  "Alloy column": {
+    "prefix": "col",
+    "description": "A vertical stack",
+    "body": [
+      "col gap=${1:12}",
+      "\t$0"
+    ]
+  },
+  "Alloy row": {
+    "prefix": "row",
+    "description": "A horizontal stack",
+    "body": [
+      "row gap=${1:8} center",
+      "\t$0"
+    ]
+  },
+  "Alloy heading": {
+    "prefix": "heading",
+    "description": "A heading",
+    "body": [
+      "heading \"${1:Title}\""
+    ]
+  },
+  "Alloy text": {
+    "prefix": "text",
+    "description": "Body text with a variable",
+    "body": [
+      "text \"${1:{value\\}}\" ${2:dim}"
+    ]
+  },
+  "Alloy button": {
+    "prefix": "button",
+    "description": "A button wired to a handler",
+    "body": [
+      "button \"${1:Add}\" ${2:primary} @${3:add}"
+    ]
+  },
+  "Alloy theme": {
+    "prefix": "theme",
+    "description": "The theme line",
+    "body": [
+      "theme ${1:dark} accent=#${2:6D4AFF}"
+    ]
+  },
+  "Alloy counter view": {
+    "prefix": "alloy-counter",
+    "description": "The counter live view",
+    "body": [
+      "theme accent=#6D4AFF",
+      "col page gap=14",
+      "\theading \"Hello, {name}\"",
+      "\ttext \"{n} so far\" dim",
+      "\trow gap=8 center",
+      "\t\tbutton \"Subtract\" @sub",
+      "\t\tbutton \"Add\" primary @add",
+      "\t\tbutton \"Reset\" ghost @reset"
+    ]
+  }
+}

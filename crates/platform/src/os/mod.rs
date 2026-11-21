@@ -10,7 +10,13 @@ mod dbus;
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
+mod linux_appmenu;
+#[cfg(target_os = "linux")]
 pub(crate) mod linux_atspi;
+#[cfg(target_os = "linux")]
+mod linux_ext;
+#[cfg(target_os = "linux")]
+mod linux_notify;
 #[cfg(target_os = "linux")]
 mod linux_tray;
 #[cfg(target_os = "macos")]
@@ -19,23 +25,37 @@ mod macos;
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
 mod macos_access;
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod macos_ext;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows;
 #[cfg(target_os = "windows")]
 #[allow(unsafe_code)]
 mod windows_access;
+#[cfg(target_os = "windows")]
+#[allow(unsafe_code)]
+mod windows_ext;
 #[cfg(target_os = "linux")]
 mod wl_clip;
 #[cfg(target_os = "linux")]
 mod x11_clip;
+#[cfg(target_os = "linux")]
+mod x11_hotkey;
 
 #[cfg(target_os = "linux")]
 use linux as backend;
+#[cfg(target_os = "linux")]
+use linux_ext as ext;
 #[cfg(target_os = "macos")]
 use macos as backend;
+#[cfg(target_os = "macos")]
+use macos_ext as ext;
 #[cfg(target_os = "windows")]
 use windows as backend;
+#[cfg(target_os = "windows")]
+use windows_ext as ext;
 
 #[cfg(unix)]
 /// Run a program and capture stdout when it succeeds. `None` if it is missing or fails.
@@ -83,6 +103,28 @@ pub fn default_dialogs() -> Box<dyn Dialogs> {
     Box::new(SystemDialogs)
 }
 
+/// Current appearance and accessibility settings (see [`crate::settings`]).
+pub(crate) fn read_settings() -> crate::settings::SystemSettings {
+    ext::read_settings()
+}
+
+/// Register a URL scheme for the current user (see [`crate::deeplink::register_scheme`]).
+pub(crate) fn register_scheme(app_id: &str, scheme: &str, exe: &str) -> Result<(), PlatformError> {
+    ext::register_scheme(app_id, scheme, exe)
+}
+
+/// macOS only: start receiving "open URL / open files" Apple Events.
+#[cfg(target_os = "macos")]
+pub(crate) use ext::install_open_handler;
+
+/// Apply a window effect to `window` (see [`crate::shell::ShellContext::set_effect`]).
+pub(crate) fn set_effect(
+    window: &winit::window::Window,
+    effect: alloy_ui_core::WindowEffect,
+) -> crate::EffectOutcome {
+    ext::set_effect(window, effect)
+}
+
 /// Dark/light query for the current OS.
 pub fn default_system_theme() -> Box<dyn SystemTheme> {
     Box::new(SystemThemeImpl)
@@ -91,11 +133,44 @@ pub fn default_system_theme() -> Box<dyn SystemTheme> {
 #[derive(Default)]
 struct SystemClipboard {
     fallback: Option<String>,
+    fallback_rich: Option<crate::ClipContent>,
 }
 
 impl Clipboard for SystemClipboard {
     fn read_text(&self) -> Result<Option<String>, PlatformError> {
         Ok(backend::clipboard_read().or_else(|| self.fallback.clone()))
+    }
+    fn read_rich(&self) -> Result<crate::ClipContent, PlatformError> {
+        if let Some(c) = ext::rich_read().filter(|c| !c.is_empty()) {
+            return Ok(c);
+        }
+        let text = self.read_text()?;
+        // Nothing richer on the system clipboard: hand back what this process
+        // copied last, if it still matches the text that is there.
+        Ok(match &self.fallback_rich {
+            Some(r) if r.text == text || text.is_none() => r.clone(),
+            _ => crate::ClipContent {
+                text,
+                ..crate::ClipContent::default()
+            },
+        })
+    }
+    fn write_rich(&mut self, c: &crate::ClipContent) -> Result<(), PlatformError> {
+        let text_only = c.html.is_none() && c.image.is_none() && c.files.is_empty();
+        self.fallback_rich = Some(c.clone());
+        if text_only {
+            return match &c.text {
+                Some(t) => self.write_text(t),
+                None => Ok(()),
+            };
+        }
+        if let Some(t) = &c.text {
+            self.fallback = Some(t.clone());
+        }
+        if !ext::rich_write(c) {
+            log::debug!("no rich system clipboard; using in-process clipboard");
+        }
+        Ok(())
     }
     fn write_text(&mut self, text: &str) -> Result<(), PlatformError> {
         self.fallback = Some(text.to_owned());
@@ -138,7 +213,9 @@ pub(crate) fn unavailable(what: &str) -> PlatformError {
 }
 
 /// Native menu bar / tray entry points; each backend implements these.
-pub(crate) use backend::{clear_tray, set_menu, set_tray};
+pub(crate) use backend::{
+    clear_tray, file_dialog, notify, register_hotkey, set_menu, set_tray, unregister_hotkeys,
+};
 #[cfg(target_os = "linux")]
 pub(crate) use linux::watch_theme;
 #[cfg(windows)]
@@ -198,3 +275,7 @@ pub(crate) fn new_access_adapter(
         backend::new_access_adapter(window, key, sink)
     }
 }
+
+/// Serialises the tests that talk to a D-Bus session and read the shared pending-event queue.
+#[cfg(all(test, target_os = "linux"))]
+pub(crate) static BUS_TEST: std::sync::Mutex<()> = std::sync::Mutex::new(());

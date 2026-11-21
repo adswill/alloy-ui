@@ -146,6 +146,37 @@ impl WindowRenderer {
         self.surface.configure(&self.ctx.device, &self.config);
     }
 
+    /// Let the window show what is behind it where the frame is transparent
+    /// (`true`), or make it opaque again (`false`). Returns whether the
+    /// surface can do it: with `true` and `false` returned the window stays
+    /// opaque, so the caller should not rely on see-through colours.
+    pub fn set_transparent(&mut self, on: bool) -> bool {
+        use wgpu::CompositeAlphaMode as M;
+        let caps = self.surface.get_capabilities(&self.ctx.adapter);
+        let want = if on {
+            // Premultiplied is what the painter produces; post-multiplied and
+            // inherit (the OS decides) are the next best.
+            [M::PreMultiplied, M::PostMultiplied, M::Inherit]
+                .into_iter()
+                .find(|m| caps.alpha_modes.contains(m))
+        } else {
+            Some(M::Opaque).filter(|m| caps.alpha_modes.contains(m))
+        };
+        match want {
+            Some(m) => {
+                self.config.alpha_mode = m;
+                self.surface.configure(&self.ctx.device, &self.config);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// True when the surface is currently composited with the desktop.
+    pub fn is_transparent(&self) -> bool {
+        self.config.alpha_mode != wgpu::CompositeAlphaMode::Opaque
+    }
+
     /// Set the clear colour.
     pub fn set_background(&mut self, color: Color) {
         self.background = color;

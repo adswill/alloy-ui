@@ -30,6 +30,8 @@ pub(crate) struct Chrome<M> {
     /// Everything the command palette lists: title, the keys that trigger it, what it sends.
     entries: Vec<(String, Option<String>, M)>,
     undo: Option<M>,
+    /// Every command the desktop can call by name: menu items, tray items, global hotkeys.
+    named: Vec<(String, M)>,
 }
 
 impl<M: Clone + 'static> Chrome<M> {
@@ -42,8 +44,18 @@ impl<M: Clone + 'static> Chrome<M> {
     }
 
     pub(crate) fn new(ui: &Ui, page: Element<M>, keys: Vec<Hotkey<M>>, undo: Option<M>) -> Self {
+        let named = keys
+            .iter()
+            .filter_map(|h| {
+                let id =
+                    h.id.clone()
+                        .or_else(|| h.label.as_ref().map(|l| format!("cmd:{l}")))?;
+                Some((id, h.msg.clone()))
+            })
+            .collect();
         Self {
             ui: ui.clone(),
+            named,
             child: vec![page],
             entries: keys
                 .iter()
@@ -250,6 +262,11 @@ impl<M: Clone + 'static> Widget<M> for Chrome<M> {
 impl<M: Clone + 'static> Chrome<M> {
     /// Everything that is not palette input: toast ticks and clicks, the page, then shortcuts.
     fn on_idle(&mut self, event: &Event, layout: &Layout, cursor: Point, out: &mut Vec<M>) -> bool {
+        for id in keys::take_invoked() {
+            if let Some((_, msg)) = self.named.iter().find(|(n, _)| *n == id) {
+                out.push(msg.clone());
+            }
+        }
         match event {
             Event::Tick(ms) => {
                 keys::set_now(*ms);

@@ -513,10 +513,12 @@ fn scrollable_offsets_child_content() {
     assert_eq!(ui.scroll_offset(9), 30.0);
     assert_eq!(first_y(&h), Some(0.0));
     assert!(h.animating());
-    h.tick(1000);
+    h.tick(1016);
     let mid = first_y(&h).unwrap();
-    assert!((-30.0..=0.0).contains(&mid));
-    h.tick(1000 + 1000);
+    assert!((-30.0..0.0).contains(&mid), "mid-glide at {mid}");
+    for i in 2..120 {
+        h.tick(1000 + i * 16); // about 2 s of frames
+    }
     assert_eq!(first_y(&h), Some(-30.0));
     assert!(!h.animating(), "idle once settled");
 }
@@ -1357,4 +1359,63 @@ fn empty_row_and_column_lay_out() {
     .into_element();
     let l = layout(&root, Size::new(200.0, 100.0));
     assert!(l.bounds.size.width <= 200.0);
+}
+
+#[test]
+fn scrollbar_thumb_drags_without_lag_and_track_click_pages() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    let max = 50.0 * ui.theme().typography.body.line_height - 100.0;
+    // Grab the thumb (top right) and drag it to the bottom: the content jumps with it.
+    h.mv(196.0, 5.0);
+    h.send(Event::MousePressed(MouseButton::Left));
+    h.mv(196.0, 500.0);
+    assert!(
+        (ui.scroll_offset(9) - max).abs() < 0.5,
+        "dragged to the end"
+    );
+    assert!(!h.animating(), "thumb dragging does not glide");
+    h.send(Event::MouseReleased(MouseButton::Left));
+    // A click on the track below the thumb pages down, and glides there.
+    ui.set_scroll_offset(9, 0.0);
+    h.tick(5000);
+    h.mv(196.0, 95.0);
+    h.send(Event::MousePressed(MouseButton::Left));
+    h.send(Event::MouseReleased(MouseButton::Left));
+    assert!(
+        (ui.scroll_offset(9) - 90.0).abs() < 0.5,
+        "one page is 90% of the view"
+    );
+}
+
+#[test]
+fn paging_keys_scroll_the_area_under_the_pointer() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    h.mv(10.0, 10.0);
+    h.key(Key::Named("PageDown".into()));
+    assert!((ui.scroll_offset(9) - 90.0).abs() < 0.5);
+    h.key(Key::Named("End".into()));
+    assert!(ui.scroll_offset(9) > 90.0);
+    h.key(Key::Named("Home".into()));
+    assert_eq!(ui.scroll_offset(9), 0.0);
+}
+
+#[test]
+fn scroll_glide_never_overshoots_and_reduced_motion_jumps() {
+    let ui = ui();
+    let mut h = Harness::new(&ui, tall_list(&ui), 200.0, 100.0);
+    h.mv(10.0, 10.0);
+    h.send(Event::Scrolled { dx: 0.0, dy: -40.0 });
+    let mut last = 0.0f32;
+    for i in 1..100 {
+        h.tick(i * 16);
+        let y = -ui.scroll_shown(9, 1.0e6);
+        assert!((-40.0 - 1e-3..=0.0).contains(&y), "overshot to {y}");
+        assert!(y <= last + 1e-3, "monotonic");
+        last = y;
+    }
+    ui.set_reduced_motion(true);
+    h.send(Event::Scrolled { dx: 0.0, dy: -20.0 });
+    assert_eq!(ui.scroll_shown(9, 1.0e6), 60.0, "reduced motion jumps");
 }

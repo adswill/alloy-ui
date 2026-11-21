@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>System integration · Alloy</title>
+<meta name="description" content="System integration in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html" aria-current="page">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>System integration</h1>
+<p>Five things a native app is expected to do, each one line in app code: drag and drop, deep links with a single running copy, a see-through window, rich clipboard, and following the OS accessibility and accent settings.</p>
+<h2>Drag and drop inside the app</h2>
+<p><code>.drag(payload)</code> makes any view a drag source and <code>.drop_act(handler)</code> makes a view a target. The payload is any <code>Clone + Send + Sync</code> value, and a target only receives payloads of its own type, so a list of <code>String</code> cards ignores a dragged <code>u32</code>.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone, Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Board</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">todo</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="w">    </span><span class="n">done</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="nb">String</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="n">Board</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Board</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">card</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">|</span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="n">c</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">6.0</span><span class="p">).</span><span class="n">card</span><span class="p">().</span><span class="n">drag</span><span class="p">(</span><span class="n">c</span><span class="p">.</span><span class="n">clone</span><span class="p">());</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">col</span><span class="p">(</span><span class="n">b</span><span class="p">.</span><span class="n">todo</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="n">card</span><span class="p">).</span><span class="n">collect</span><span class="p">::</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">_</span><span class="o">&gt;&gt;</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">w</span><span class="p">(</span><span class="mf">220.0</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">drop_act</span><span class="p">(</span><span class="o">|</span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Board</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">b</span><span class="p">.</span><span class="n">done</span><span class="p">.</span><span class="n">retain</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">x</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">c</span><span class="p">);</span>
+<span class="w">                    </span><span class="n">b</span><span class="p">.</span><span class="n">todo</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
+<span class="w">                </span><span class="p">}),</span>
+<span class="w">            </span><span class="n">col</span><span class="p">(</span><span class="n">b</span><span class="p">.</span><span class="n">done</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="n">card</span><span class="p">).</span><span class="n">collect</span><span class="p">::</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">_</span><span class="o">&gt;&gt;</span><span class="p">())</span>
+<span class="w">                </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">w</span><span class="p">(</span><span class="mf">220.0</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">drop_act</span><span class="p">(</span><span class="o">|</span><span class="n">b</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Board</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">b</span><span class="p">.</span><span class="n">todo</span><span class="p">.</span><span class="n">retain</span><span class="p">(</span><span class="o">|</span><span class="n">x</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">x</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">c</span><span class="p">);</span>
+<span class="w">                    </span><span class="n">b</span><span class="p">.</span><span class="n">done</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">c</span><span class="p">);</span>
+<span class="w">                </span><span class="p">}),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Board"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>A drag starts after the pointer moves 4 px. The original dims, a translucent copy follows the pointer on the overlay, and a target that accepts the payload highlights. Releasing outside any target drops nothing. <code>View::drop_on(|payload| Msg)</code> is the Elm-style twin for <code>App</code> implementations. Tests drive it with <code>Harness::drag(from, to)</code>.</p>
+<h3>Files dropped on the window</h3>
+<p>Dropped files arrive as paths. While files hover, <code>files_hovering()</code> is true, so a view can show a hint.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+<span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">path</span><span class="p">::</span><span class="n">PathBuf</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="nb">Vec</span><span class="p">::</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;</span><span class="p">::</span><span class="n">new</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">files</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">PathBuf</span><span class="o">&gt;|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="k">if</span><span class="w"> </span><span class="n">files_hovering</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="s">"Drop to add"</span><span class="p">.</span><span class="n">to_string</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} files"</span><span class="p">,</span><span class="w"> </span><span class="n">files</span><span class="p">.</span><span class="n">len</span><span class="p">())</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">on_drop</span><span class="p">(</span><span class="o">|</span><span class="n">files</span><span class="p">,</span><span class="w"> </span><span class="n">dropped</span><span class="o">|</span><span class="w"> </span><span class="n">files</span><span class="p">.</span><span class="n">extend</span><span class="p">(</span><span class="n">dropped</span><span class="p">))</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Drop files"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>Deep links and one running copy</h2>
+<p><code>.url_scheme("myapp")</code> registers the scheme and <code>.on_open_url</code> receives every <code>myapp://...</code> link. <code>.on_open_files</code> receives documents opened through the OS. <code>.single_instance(id)</code> makes a second launch hand its arguments to the first and exit, so the link arrives in the window you already have.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="nb">String</span><span class="p">::</span><span class="n">new</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">last</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Opened: {last}"</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">single_instance</span><span class="p">(</span><span class="s">"dev.example.links"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">url_scheme</span><span class="p">(</span><span class="s">"myapp"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">on_open_url</span><span class="p">(</span><span class="o">|</span><span class="n">last</span><span class="p">,</span><span class="w"> </span><span class="n">url</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">last</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">url</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Links"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>How each system delivers the link:</p>
+<ul>
+<li><strong>Linux and Windows</strong> pass the URL as an argument. On first run the app writes a <code>.desktop</code> file plus <code>xdg-mime</code> (Linux) or a per-user registry key (Windows), so no installer is needed to try it.</li>
+<li><strong>macOS</strong> routes links through Apple Events, and the scheme must be in <code>Info.plist</code>. <code>alloy bundle</code> writes it for you from <code>url-schemes = ["myapp"]</code> in <code>[package.metadata.alloy]</code>; <code>.desktop</code> bundles gain <code>x-scheme-handler</code> the same way.</li>
+</ul>
+<p>Single instance uses a loopback TCP port and a random token stored in a 0600 lock file in the runtime directory. A lock left by a crash is detected and replaced.</p>
+<h2>Window effects</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">((),</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Hello"</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">window_effect</span><span class="p">(</span><span class="n">WindowEffect</span><span class="p">::</span><span class="n">Mica</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Glass"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>WindowEffect</code> is <code>None</code>, <code>Mica</code>, <code>Acrylic</code>, <code>Blur</code> or <code>Transparent</code>. The page background gets the alpha that suits the effect, and the effect is requested before the window exists because X11 needs a 32 bit visual at creation time.</p>
+<p>If the system cannot do an effect, Alloy falls back instead of drawing a broken window: where the compositor shows through but cannot blur, the page is slightly translucent; where nothing shows through, the page stays opaque. Windows 11 uses DWM backdrops, macOS an <code>NSVisualEffectView</code>, KDE on X11 asks the compositor to blur, and other compositors get plain transparency.</p>
+<h2>Rich clipboard</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">clipboard</span><span class="p">,</span><span class="w"> </span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">((),</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Copy table"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="p">()</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">clipboard</span><span class="p">::</span><span class="n">copy_html</span><span class="p">(</span><span class="s">"&lt;table&gt;&lt;tr&gt;&lt;td&gt;1&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;"</span><span class="p">,</span><span class="w"> </span><span class="s">"1"</span><span class="p">);</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Copy image"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="p">()</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">clipboard</span><span class="p">::</span><span class="n">copy_image</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="p">[</span><span class="mi">255</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">255</span><span class="p">]);</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Paste"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="p">()</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">let</span><span class="w"> </span><span class="n">c</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">clipboard</span><span class="p">::</span><span class="n">paste</span><span class="p">();</span>
+<span class="w">                </span><span class="fm">println!</span><span class="p">(</span><span class="s">"{:?} {} files"</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">text</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">files</span><span class="p">.</span><span class="n">len</span><span class="p">());</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Clipboard"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>copy_html(html, plain)</code> puts both flavours on the clipboard so rich editors get markup and terminals get text. <code>copy_image(w, h, rgba)</code> and <code>copy_image_file(path)</code> copy pictures as PNG. <code>copy_files(paths)</code> copies file references for the file manager to paste. <code>paste()</code> returns whatever is there as a <code>ClipContent</code> with <code>text</code>, <code>html</code>, <code>image</code> and <code>files</code>; <code>paste_text()</code> is the plain version. Large values transfer in chunks (X11 INCR), so images of several megabytes work.</p>
+<h2>OS accessibility and accent</h2>
+<p>Reduced motion, dark mode, high contrast and the accent colour are read at start-up and again when they change. Reduced motion is always followed: every animation jumps to its end state. The accent is opt in, because brand colour is usually a deliberate choice: add <code>.system_accent()</code> to use the OS colour for primary buttons, focus rings and selections. Read the current values with <code>system()</code>.</p>
+<h2>Status</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Linux</th>
+<th>macOS</th>
+<th>Windows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>In-app drag and drop</td>
+<td>run</td>
+<td>same code</td>
+<td>same code</td>
+</tr>
+<tr>
+<td>Files dropped on window</td>
+<td>run (X11)</td>
+<td>compiled</td>
+<td>compiled</td>
+</tr>
+<tr>
+<td>Deep links, single instance</td>
+<td>run</td>
+<td>compiled</td>
+<td>compiled</td>
+</tr>
+<tr>
+<td>Window effects</td>
+<td>run (X11 with a compositor)</td>
+<td>compiled</td>
+<td>compiled</td>
+</tr>
+<tr>
+<td>Rich clipboard (HTML, image, files)</td>
+<td>run (X11 and Wayland)</td>
+<td>compiled</td>
+<td>compiled</td>
+</tr>
+<tr>
+<td>Reduced motion and accent</td>
+<td>run (gsettings)</td>
+<td>compiled</td>
+<td>compiled</td>
+</tr>
+</tbody>
+</table>
+<p>"Run" means exercised here with a real window or protocol; "compiled" means it type-checks and passes clippy for that target but has not run on that system. Known gaps: dragging files out of the window, files dropped on Wayland (winit 0.30 has no event for it), blur on KDE Wayland, and the pointer position during an X11 file drag.</p>
+<nav class="pager"><a href="18-desktop-integration.html">&larr; Desktop integration</a><a href="20-visual-widgets.html">Visual widgets &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

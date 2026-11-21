@@ -84,12 +84,16 @@ impl<M: 'static> VirtualList<M> {
     fn max_off(&self, b: &Rectangle) -> f32 {
         (self.content_h() - b.size.height).max(0.0)
     }
+    /// Where the list is drawn: the target followed by the scroll spring.
     fn offset(&self, b: &Rectangle) -> f32 {
+        self.ui.scroll_shown(self.id, self.max_off(b))
+    }
+    /// Where scrolling is heading.
+    fn target(&self, b: &Rectangle) -> f32 {
         self.ui.scroll_offset(self.id).clamp(0.0, self.max_off(b))
     }
     fn set_offset(&self, b: &Rectangle, off: f32) {
-        self.ui
-            .set_scroll_offset(self.id, off.clamp(0.0, self.max_off(b)));
+        self.ui.scroll_to(self.id, off, self.max_off(b));
     }
     fn range(&self, b: &Rectangle) -> std::ops::Range<usize> {
         let off = self.offset(b);
@@ -142,12 +146,14 @@ impl<M: 'static> VirtualList<M> {
         if let Some(th) = self.thumb(b) {
             let travel = (b.size.height - th.size.height).max(1.0);
             let top = (y - grab - b.origin.y).clamp(0.0, travel);
-            self.set_offset(b, top / travel * self.max_off(b));
+            // The thumb is under the pointer, so the content follows it without lag.
+            self.ui
+                .scroll_jump(self.id, top / travel * self.max_off(b), self.max_off(b));
         }
     }
     fn reveal(&self, b: &Rectangle, i: usize) {
         let top = i as f32 * self.row_h;
-        let off = self.offset(b);
+        let off = self.target(b);
         if top < off {
             self.set_offset(b, top);
         } else if top + self.row_h > off + b.size.height {
@@ -179,9 +185,7 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
         let inside = b.contains(cursor);
         match event {
             Event::Scrolled { dy, .. } if inside => {
-                let before = self.offset(&b);
-                self.set_offset(&b, before - dy);
-                return self.offset(&b) != before;
+                return self.ui.scroll_wheel(self.id, *dy, self.max_off(&b));
             }
             Event::MousePressed(MouseButton::Left) if inside => {
                 self.ui.set_focus(Some(self.id));

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Desktop integration · Alloy</title>
+<meta name="description" content="Desktop integration in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html" aria-current="page">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Desktop integration</h1>
+<p>A menu bar, a tray icon, notifications, file dialogs and a hotkey that works while another app is in front: each is one call, and each uses the operating system's own machinery (no web view, no helper app).</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">text</span><span class="p">(</span><span class="n">n</span><span class="p">.</span><span class="n">to_string</span><span class="p">()),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)])</span>
+<span class="w">        </span><span class="p">.</span><span class="n">menu</span><span class="p">(</span><span class="s">"File"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">m</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">m</span><span class="p">.</span><span class="n">item</span><span class="p">(</span><span class="s">"Reset"</span><span class="p">,</span><span class="w"> </span><span class="s">"mod+r"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">                </span><span class="p">.</span><span class="n">separator</span><span class="p">()</span>
+<span class="w">                </span><span class="p">.</span><span class="n">item</span><span class="p">(</span><span class="s">"Quit"</span><span class="p">,</span><span class="w"> </span><span class="s">"mod+q"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">quit</span><span class="p">())</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="n">tray</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">t</span><span class="o">|</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">).</span><span class="n">item</span><span class="p">(</span><span class="s">"Quit"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">quit</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">global_hotkey</span><span class="p">(</span><span class="s">"ctrl+alt+c"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>mod</code> is Cmd on macOS and Ctrl elsewhere. <code>app(..)</code> apps have the same <code>.menu</code>, <code>.tray</code> and <code>.global_hotkey</code>, with plain <code>|| ..</code> closures. Every menu item is also a command in the palette (<code>mod+k</code>) and its shortcut works inside the window on every OS, so an app is fully usable on a desktop that has no menu bar to show.</p>
+<h2>Menus</h2>
+<p><code>.menu(title, |m| ..)</code> adds a top-level menu. Items are <code>item(label, shortcut, action)</code>, with <code>""</code> for no shortcut, plus <code>separator()</code> and nested <code>sub(title, |m| ..)</code>. Shortcuts of <code>shortcut_as</code> that no menu lists still go into an automatic Actions menu (and Undo and Redo into Edit), so nothing is hidden.</p>
+<table>
+<thead>
+<tr>
+<th>OS</th>
+<th>What you get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>macOS</td>
+<td>The real menu bar. Alloy adds the application menu (named after the window title, with Quit) in front of yours.</td>
+</tr>
+<tr>
+<td>Windows</td>
+<td>A native menu bar on the window.</td>
+</tr>
+<tr>
+<td>Linux</td>
+<td>Exported over D-Bus to the desktop's global menu (KDE Plasma's Global Menu widget, Unity, MATE). GNOME and bare window managers have no menu bar to put it in; the app logs that at debug level and the shortcuts and palette still work. Wayland windows cannot join a global menu yet.</td>
+</tr>
+</tbody>
+</table>
+<p><code>quit()</code> (from the prelude) closes every window and exits. Call it from any handler.</p>
+<h2>Tray icon</h2>
+<p><code>.tray(tooltip, |t| ..)</code> shows an icon with a context menu: <code>t.item(label, action)</code>, <code>t.separator()</code>, <code>t.click(action)</code> for a click on the icon itself, and <code>t.icon(rgba, width, height)</code> for your own 32x32 icon. The default is a rounded square with an A.</p>
+<p>On macOS it is a status item in the menu bar, on Windows a notification-area icon, on Linux a StatusNotifierItem (KDE, and GNOME with the AppIndicator extension).</p>
+<h2>Global hotkeys</h2>
+<p><code>.global_hotkey("ctrl+alt+space", |s| ..)</code> fires wherever the focus is.</p>
+<table>
+<thead>
+<tr>
+<th>OS</th>
+<th>How</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Windows</td>
+<td><code>RegisterHotKey</code></td>
+</tr>
+<tr>
+<td>macOS</td>
+<td>Carbon <code>RegisterEventHotKey</code> (no permission prompt)</td>
+</tr>
+<tr>
+<td>X11</td>
+<td><code>XGrabKey</code>, ignoring Caps Lock and Num Lock</td>
+</tr>
+<tr>
+<td>Wayland</td>
+<td>Not possible: no compositor lets a plain client grab keys. The failure is logged and the in-window shortcut still works.</td>
+</tr>
+</tbody>
+</table>
+<p>A combination another program already owns is refused and logged; pick another.</p>
+<h2>Notifications</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">((),</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Done"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">notify</span><span class="p">(</span><span class="s">"Export finished"</span><span class="p">,</span><span class="w"> </span><span class="s">"report.csv is ready"</span><span class="p">)))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Notify"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>notify(title, body)</code> never blocks and never fails loudly. It uses <code>org.freedesktop.Notifications</code> on Linux (with <code>notify-send</code> as a fallback), Notification Center on macOS and a toast on Windows. On macOS the banner is attributed to Script Editor, and on Windows to PowerShell, until the app is bundled with its own identity.</p>
+<h2>File dialogs</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="nb">String</span><span class="p">::</span><span class="n">new</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">path</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="n">path</span><span class="p">.</span><span class="n">clone</span><span class="p">()),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Open"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">path</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">files</span><span class="p">::</span><span class="n">open</span><span class="p">().</span><span class="n">title</span><span class="p">(</span><span class="s">"Pick a picture"</span><span class="p">).</span><span class="n">filter</span><span class="p">(</span><span class="s">"Images"</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="p">[</span><span class="s">"png"</span><span class="p">,</span><span class="w"> </span><span class="s">"jpg"</span><span class="p">]).</span><span class="n">pick</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="o">*</span><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">display</span><span class="p">().</span><span class="n">to_string</span><span class="p">();</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Save as"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">path</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="kd">let</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">p</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">files</span><span class="p">::</span><span class="n">save</span><span class="p">(</span><span class="s">"notes.txt"</span><span class="p">).</span><span class="n">pick</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="o">*</span><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">display</span><span class="p">().</span><span class="n">to_string</span><span class="p">();</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Dialogs"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>files::open()</code>, <code>files::open_many()</code> (read with <code>.pick_all()</code>), <code>files::save(name)</code> and <code>files::folder()</code> start a dialog; <code>.title</code>, <code>.dir</code> and <code>.filter(name, &amp;[extensions])</code> refine it; <code>.pick()</code> shows it and waits. <code>None</code> means the user cancelled, or there is no dialog on this system (the reason is logged).</p>
+<p>The dialogs are the OS's own: <code>NSOpenPanel</code> on macOS, the common item dialog on Windows, and <code>zenity</code> or <code>kdialog</code> on Linux (install one; GNOME and KDE desktops already have them).</p>
+<h2>Testing</h2>
+<p><code>Harness</code> can play the OS's part:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="n">n</span><span class="p">.</span><span class="n">to_string</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">menu</span><span class="p">(</span><span class="s">"File"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">m</span><span class="o">|</span><span class="w"> </span><span class="n">m</span><span class="p">.</span><span class="n">item</span><span class="p">(</span><span class="s">"Add"</span><span class="p">,</span><span class="w"> </span><span class="s">"mod+a"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">global_hotkey</span><span class="p">(</span><span class="s">"ctrl+alt+a"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">10</span><span class="p">),</span>
+<span class="w">    </span><span class="mf">300.0</span><span class="p">,</span>
+<span class="w">    </span><span class="mf">200.0</span><span class="p">,</span>
+<span class="p">);</span>
+<span class="n">h</span><span class="p">.</span><span class="n">desktop</span><span class="p">(</span><span class="s">"mod+a"</span><span class="p">);</span><span class="w">                 </span><span class="c1">// the user chose File &gt; Add</span>
+<span class="n">h</span><span class="p">.</span><span class="n">desktop</span><span class="p">(</span><span class="s">"global:ctrl+alt+a"</span><span class="p">);</span><span class="w">     </span><span class="c1">// the hotkey fired elsewhere</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">h</span><span class="p">.</span><span class="n">has_text</span><span class="p">(</span><span class="s">"11"</span><span class="p">));</span>
+<span class="fm">assert_eq!</span><span class="p">(</span><span class="n">h</span><span class="p">.</span><span class="n">desktop_spec</span><span class="p">().</span><span class="n">menus</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="s">"File"</span><span class="p">);</span>
+</code></pre></div>
+
+<p>Ids are the item's shortcut when it has one, otherwise <code>cmd:&lt;label&gt;</code>; tray items are <code>tray:&lt;label&gt;</code>, the icon click is <code>tray:click</code>, and hotkeys are <code>global:&lt;keys&gt;</code>.</p>
+<nav class="pager"><a href="17-shipping.html">&larr; Shipping</a><a href="19-system-integration.html">System integration &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

@@ -38,6 +38,9 @@ path = "src/bin/settings.rs"
 name = "gallery"
 path = "src/bin/gallery.rs"
 [[bin]]
+name = "desk"
+path = "src/bin/desk.rs"
+[[bin]]
 name = "dashboard"
 path = "src/bin/dashboard.rs"
 

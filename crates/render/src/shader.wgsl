@@ -91,7 +91,36 @@ fn fs_main(in: VOut) -> @location(0) vec4<f32> {
     let fill = premul(in.color);
     let border = premul(in.border_color);
 
-    if (in.kind < 0.5) {
+    if (in.kind > 4.5) {
+        // Triangle: vertices in border_color (a, b) and uv.xy (c); radius holds
+        // the edge flags. A flagged edge is part of the polygon outline and is
+        // anti-aliased. An unflagged edge is an interior seam shared with a
+        // neighbouring triangle: it is a hard pixel-centre test with a
+        // direction-based tie-break, so exactly one neighbour claims each pixel
+        // and translucent fills show no seam.
+        let a = in.border_color.xy;
+        let b = in.border_color.zw;
+        let c = in.uv.xy;
+        let flags = u32(radius + 0.5);
+        let orient = select(-1.0, 1.0, (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x) > 0.0);
+        var cov = 1.0;
+        for (var i = 0u; i < 3u; i = i + 1u) {
+            var p0 = a; var p1 = b;
+            if (i == 1u) { p0 = b; p1 = c; }
+            if (i == 2u) { p0 = c; p1 = a; }
+            let e = p1 - p0;
+            let n = vec2<f32>(e.y, -e.x) * orient / max(length(e), 1e-6);
+            let d = dot(in.p - p0, n);
+            if (((flags >> i) & 1u) == 1u) {
+                cov = min(cov, cover(d));
+            } else {
+                let tie = n.x > 0.0 || (n.x == 0.0 && n.y > 0.0);
+                let inside = d < 0.0 || (d == 0.0 && tie);
+                cov = min(cov, select(0.0, 1.0, inside));
+            }
+        }
+        return fill * cov;
+    } else if (in.kind < 0.5) {
         // Shadow
         let sd = sd_rrect(in.p, in.rect, radius);
         var a = cover(sd);

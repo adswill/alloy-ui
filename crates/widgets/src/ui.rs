@@ -118,6 +118,12 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
+/// Spring that carries scroll offsets: critically damped, so it never overshoots.
+const SCROLL_SPRING: Spring = Spring {
+    stiffness: 620.0,
+    damping: 49.8, // 2 * sqrt(620)
+};
+
 struct Inner {
     theme: Rc<Theme>,
     metrics: Rc<dyn TextMetrics>,
@@ -134,14 +140,18 @@ struct Inner {
     now: u64,
     anims: HashMap<u64, Anim>,
     reduced_motion: bool,
+    icon_pack: crate::IconPack,
     overlay: Vec<DrawCommand>,
     regions: Vec<(u64, Rectangle)>,
     hit: Option<(u64, Point)>,
     clip: Option<Rectangle>,
     histories: HashMap<u64, History>,
     slots: HashMap<u64, i64>,
+    states: HashMap<u64, Box<dyn std::any::Any>>,
+    mods: alloy_ui_core::Modifiers,
     a11y: Vec<A11yNode>,
     viewport: Rectangle,
+    drag: Option<crate::dnd::DragState>,
 }
 
 /// One value (up to four components) moving toward a target, by timed tween
@@ -233,6 +243,7 @@ impl Ui {
             popup: None,
             now: 0,
             anims: HashMap::new(),
+            icon_pack: crate::IconPack::default(),
             reduced_motion: std::env::var("ALLOY_REDUCE_MOTION").is_ok_and(|v| v != "0"),
             overlay: Vec::new(),
             regions: Vec::new(),
@@ -240,11 +251,14 @@ impl Ui {
             clip: None,
             histories: HashMap::new(),
             slots: HashMap::new(),
+            states: HashMap::new(),
+            mods: Default::default(),
             a11y: Vec::new(),
             viewport: Rectangle::new(
                 Point::new(0.0, 0.0),
                 Size::new(f32::INFINITY, f32::INFINITY),
             ),
+            drag: None,
         })))
     }
 
@@ -456,6 +470,14 @@ impl Ui {
     pub fn reduced_motion(&self) -> bool {
         self.0.borrow().reduced_motion
     }
+    /// The icon pack icons are drawn from unless they name one.
+    pub fn icon_pack(&self) -> crate::IconPack {
+        self.0.borrow().icon_pack
+    }
+    /// Choose the window's icon pack.
+    pub fn set_icon_pack(&self, pack: crate::IconPack) {
+        self.0.borrow_mut().icon_pack = pack;
+    }
     /// Turn reduced motion on or off. It starts on when the environment
     /// variable `ALLOY_REDUCE_MOTION` is set to anything but `0`.
     pub fn set_reduced_motion(&self, on: bool) {
@@ -507,6 +529,18 @@ impl Ui {
         }
     }
 
+    pub(crate) fn drag_state<R>(
+        &self,
+        f: impl FnOnce(&mut Option<crate::dnd::DragState>) -> R,
+    ) -> R {
+        f(&mut self.0.borrow_mut().drag)
+    }
+    /// True while a drag started by [`Draggable`](crate::Draggable) is in progress
+    /// (the pointer has moved past the start threshold and the button is still down).
+    pub fn dragging(&self) -> bool {
+        self.0.borrow().drag.as_ref().is_some_and(|d| d.active)
+    }
+
     /// The window area of the last drawn frame, so popups can stay on screen.
     /// Unbounded until the first frame.
     pub fn viewport(&self) -> Rectangle {
@@ -545,6 +579,37 @@ impl Ui {
         self.0.borrow_mut().scroll.insert(id, offset.max(0.0));
     }
 
+    fn scroll_key(id: u64) -> u64 {
+        0x5C01_0000_0000 ^ id
+    }
+    /// Where the scrollable `id` is *drawn*: its target offset followed by a critically
+    /// damped spring (about 150 ms to rest, no overshoot), so wheel notches, keys and
+    /// jumps glide. A burst of wheel events retargets the spring without resetting its
+    /// velocity, which is what makes quick successive notches feel like momentum.
+    /// Jumps at once under reduced motion.
+    pub fn scroll_shown(&self, id: u64, max: f32) -> f32 {
+        let target = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        self.spring(Self::scroll_key(id), target, SCROLL_SPRING)
+    }
+    /// Apply a wheel delta (positive scrolls toward the top) to the target offset of `id`.
+    /// Returns true if the target moved, i.e. the event was used.
+    pub fn scroll_wheel(&self, id: u64, dy: f32, max: f32) -> bool {
+        let before = self.scroll_offset(id).clamp(0.0, max.max(0.0));
+        let next = (before - dy).clamp(0.0, max.max(0.0));
+        self.set_scroll_offset(id, next);
+        next != before
+    }
+    /// Glide to `offset` (clamped to `0..=max`).
+    pub fn scroll_to(&self, id: u64, offset: f32, max: f32) {
+        self.set_scroll_offset(id, offset.clamp(0.0, max.max(0.0)));
+    }
+    /// Move to `offset` immediately, with no glide: for dragging a scrollbar thumb, where the
+    /// content must stay under the pointer.
+    pub fn scroll_jump(&self, id: u64, offset: f32, max: f32) {
+        self.scroll_to(id, offset, max);
+        self.0.borrow_mut().anims.remove(&Self::scroll_key(id));
+    }
+
     /// Id of the widget whose popup (e.g. an open pick list) is showing.
     pub fn popup(&self) -> Option<u64> {
         self.0.borrow().popup
@@ -569,6 +634,31 @@ impl Ui {
             Some(v) => s.slots.insert(id, v),
             None => s.slots.remove(&id),
         };
+    }
+
+    /// The modifier keys as of the last key event. Mouse events carry none, so widgets that
+    /// need Shift/Ctrl-click read it here. The platform shell sends a `KeyReleased` of the
+    /// pseudo key `Named("Modifiers")` whenever the modifier state changes.
+    pub fn modifiers(&self) -> alloy_ui_core::Modifiers {
+        self.0.borrow().mods
+    }
+    pub(crate) fn set_modifiers(&self, m: alloy_ui_core::Modifiers) {
+        self.0.borrow_mut().mods = m;
+    }
+    /// Run `f` on the typed state of widget `id` (created with `T::default()` on first use).
+    /// `f` must not call back into `Ui`. For state too rich for a slot: a grid's selection,
+    /// a find query, a rich-text caret.
+    pub(crate) fn state<T: std::any::Any + Default, R>(
+        &self,
+        id: u64,
+        f: impl FnOnce(&mut T) -> R,
+    ) -> R {
+        let mut s = self.0.borrow_mut();
+        let b = s.states.entry(id).or_insert_with(|| Box::new(T::default()));
+        if !b.is::<T>() {
+            *b = Box::new(T::default());
+        }
+        f(b.downcast_mut::<T>().expect("type checked above"))
     }
 
     pub(crate) fn edit(&self, id: u64) -> Edit {
@@ -638,6 +728,7 @@ impl<M: 'static> Widget<M> for Root<M> {
             }
         }
         match event {
+            Event::KeyPressed(_, m) | Event::KeyReleased(_, m) => self.ui.set_modifiers(*m),
             Event::CursorMoved(p) => self.ui.set_cursor(*p),
             Event::CursorLeft => self.ui.set_cursor(Point::new(-1.0e6, -1.0e6)),
             Event::MousePressed(_) => {
@@ -648,7 +739,11 @@ impl<M: 'static> Widget<M> for Root<M> {
         }
         let consumed = util::dispatch(&mut self.child, event, layout, cursor, out);
         match event {
-            Event::MouseReleased(_) => self.ui.set_pressed(None),
+            Event::MouseReleased(_) => {
+                self.ui.set_pressed(None);
+                // Every drop target has now seen the release: the drag is over.
+                self.ui.drag_state(|d| *d = None);
+            }
             Event::KeyPressed(Key::Tab, m) if !consumed => {
                 if m.shift {
                     self.ui.focus_prev();

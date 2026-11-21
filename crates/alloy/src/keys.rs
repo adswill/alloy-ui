@@ -1,13 +1,16 @@
 //! Shortcuts, toasts and undo: the per-thread registry that views and handlers write to and the
 //! shell reads from.
 
-use crate::{dsl::Act, view::View};
+use crate::{desktop::DesktopSpec, dsl::Act, view::View};
 use std::{any::Any, cell::RefCell};
 
 /// A keyboard shortcut and the message it sends. See [`App::shortcuts`](crate::App::shortcuts).
 pub struct Hotkey<M> {
     pub(crate) keys: String,
     pub(crate) label: Option<String>,
+    /// Name the desktop uses to ask for this command (menu click, tray, global hotkey).
+    /// Defaults to `cmd:<label>` for a labelled command.
+    pub(crate) id: Option<String>,
     pub(crate) msg: M,
 }
 
@@ -18,6 +21,16 @@ impl<M> Hotkey<M> {
         Self {
             keys: keys.into(),
             label: None,
+            id: None,
+            msg,
+        }
+    }
+    /// A command only the desktop can call (a tray item, a global hotkey): no key, not in the palette.
+    pub(crate) fn hidden(id: &str, msg: M) -> Self {
+        Self {
+            keys: String::new(),
+            label: None,
+            id: Some(id.into()),
             msg,
         }
     }
@@ -26,6 +39,7 @@ impl<M> Hotkey<M> {
         Self {
             keys: String::new(),
             label: Some(label.into()),
+            id: None,
             msg,
         }
     }
@@ -90,9 +104,12 @@ pub(crate) struct ToastItem {
     pub born: Option<u64>,
 }
 
+/// A shortcut registered from a view: keys, label, desktop id and the boxed message.
+type Registered = (String, Option<String>, Option<String>, Box<dyn Any>);
+
 #[derive(Default)]
 struct Reg {
-    keys: Vec<(String, Option<String>, Box<dyn Any>)>,
+    keys: Vec<Registered>,
     meta: Option<Meta>,
     toasts: Vec<ToastItem>,
     next_toast: u64,
@@ -100,6 +117,11 @@ struct Reg {
     menu: Vec<(String, String)>,
     menu_sent: Vec<(String, String)>,
     undoable: bool,
+    /// Desktop commands waiting for the page's shortcut layer to run them.
+    invoked: Vec<String>,
+    desktop: DesktopSpec,
+    desktop_sent: Option<DesktopSpec>,
+    quit: bool,
 }
 
 thread_local! {
@@ -112,17 +134,18 @@ fn reg<R>(f: impl FnOnce(&mut Reg) -> R) -> R {
 
 /// Remember a shortcut registered while building the view.
 pub(crate) fn register<M: 'static>(h: Hotkey<M>) {
-    reg(|r| r.keys.push((h.keys, h.label, Box::new(h.msg))));
+    reg(|r| r.keys.push((h.keys, h.label, h.id, Box::new(h.msg))));
 }
 
 /// The shortcuts registered since the last call, of message type `M`.
 pub(crate) fn take_registered<M: 'static>() -> Vec<Hotkey<M>> {
     reg(|r| std::mem::take(&mut r.keys))
         .into_iter()
-        .filter_map(|(keys, label, m)| {
+        .filter_map(|(keys, label, id, m)| {
             m.downcast::<M>().ok().map(|m| Hotkey {
                 keys,
                 label,
+                id,
                 msg: *m,
             })
         })
@@ -136,17 +159,48 @@ pub(crate) fn publish_menu(items: Vec<(String, String)>, undoable: bool) {
     });
 }
 
+/// Ask the page's shortcut layer to run the command named `id` on its next event.
+pub(crate) fn invoke(id: String) {
+    reg(|r| r.invoked.push(id));
+}
+
+/// The commands the desktop asked for since the last call.
+pub(crate) fn take_invoked() -> Vec<String> {
+    reg(|r| std::mem::take(&mut r.invoked))
+}
+
+pub(crate) fn publish_desktop(spec: DesktopSpec) {
+    reg(|r| r.desktop = spec);
+}
+
+/// The desktop spec the last view build published.
+pub(crate) fn current_desktop() -> DesktopSpec {
+    reg(|r| r.desktop.clone())
+}
+
+/// Close every window and exit the app. Call it from a handler, such as a menu's Quit item:
+/// `.menu("File", |m| m.item("Quit", "mod+q", |_| quit()))`.
+pub fn quit() {
+    reg(|r| r.quit = true);
+}
+
+pub(crate) fn take_quit() -> bool {
+    reg(|r| std::mem::take(&mut r.quit))
+}
+
 /// Whether the running app has undo, so a block can skip its "are you sure?" and offer a toast.
 pub(crate) fn undoable() -> bool {
     reg(|r| r.undoable)
 }
 
-/// The menu entries (shortcut, label) if they changed since the last call.
-pub(crate) fn menu_changed() -> Option<Vec<(String, String)>> {
+/// The labelled shortcuts and the desktop spec if either changed since the last call.
+pub(crate) fn shell_changed() -> Option<(Vec<(String, String)>, DesktopSpec)> {
     reg(|r| {
-        (r.menu != r.menu_sent).then(|| {
+        let same = r.menu == r.menu_sent && r.desktop_sent.as_ref() == Some(&r.desktop);
+        (!same).then(|| {
             r.menu_sent = r.menu.clone();
-            r.menu.clone()
+            r.desktop_sent = Some(r.desktop.clone());
+            (r.menu.clone(), r.desktop.clone())
         })
     })
 }

@@ -43,6 +43,36 @@ fn view(_: &()) -> impl View<Act<()>> {
 
 `reload()` refetches now, `every(period)` always refetches, `every_if(flag, period)` only while `flag` is true, `busy()` says whether a fetch is running and `get()` copies the latest data.
 
+## Data that depends on something: `resource_for` and cancellation
+
+When the data depends on a value, such as a search query or the selected row, give `resource_for` that value as the key:
+
+```rust
+use alloy_ui::prelude::*;
+
+async fn search(q: String) -> Result<Vec<String>, String> {
+    sleep(secs(0.3)).await; // debounce: a newer query cancels us during this wait
+    Ok(vec![format!("result for {q}")])
+}
+
+struct Page { query: String }
+
+fn view(s: &Page) -> impl View<Act<Page>> {
+    let hits = resource_for(s.query.clone(), search);
+    col![
+        input(at!(s.query)).hint("Search"),
+        hits.show(|rows| col(rows.iter().map(|r| text(r.clone()))).into()),
+    ]
+    .gap(12.0)
+    .pad(24.0)
+}
+# fn main() { let _ = sketch(Page { query: String::new() }, view); }
+```
+
+Whenever the key differs from the last frame, the running fetch is **cancelled**: its future is dropped at the next `.await`, and a late answer can never replace newer data. The old data stays on screen while the new fetch runs (`busy()` tells you). Starting the fetch with a `sleep` therefore debounces typing for free, because a keystroke within that time cancels the fetch before it does any work.
+
+The key must be `PartialEq + Clone + Send + Sync`. For manual control, `cancel()` stops the running fetch and keeps what is shown, and `restart()` cancels and fetches again (unlike `reload()`, which ignores the call while a fetch is running).
+
 ## One-off commands
 
 For work started by a click rather than by showing a view, the Elm `App` trait's `Cmd::perform` runs a future and sends its result back as a message:
