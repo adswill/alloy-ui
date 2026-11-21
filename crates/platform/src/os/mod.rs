@@ -223,12 +223,35 @@ pub(crate) fn unavailable(what: &str) -> PlatformError {
 
 #[cfg(target_os = "android")]
 pub(crate) use android::app as android_app;
+#[cfg(target_os = "macos")]
+pub(crate) use backend::dialog_panel_summary;
+#[cfg(any(target_os = "macos", windows))]
+pub(crate) use backend::{activate_menu_item, activate_tray_item, menu_outline, tray_visible};
 /// Native menu bar / tray entry points; each backend implements these.
 pub(crate) use backend::{
     clear_tray, file_dialog, notify, register_hotkey, set_menu, set_tray, unregister_hotkeys,
 };
+/// Test hooks the Linux backend has no live-state readback for (its menus and tray live in
+/// another process, reached over D-Bus).
+#[cfg(not(any(target_os = "macos", windows)))]
+mod no_readback {
+    pub(crate) fn menu_outline() -> Vec<String> {
+        Vec::new()
+    }
+    pub(crate) fn activate_menu_item(_: &str) -> bool {
+        false
+    }
+    pub(crate) fn tray_visible() -> bool {
+        false
+    }
+    pub(crate) fn activate_tray_item(_: &str) -> bool {
+        false
+    }
+}
 #[cfg(target_os = "linux")]
 pub(crate) use linux::watch_theme;
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) use no_readback::{activate_menu_item, activate_tray_item, menu_outline, tray_visible};
 #[cfg(windows)]
 pub(crate) use windows::msg_hook;
 

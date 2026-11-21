@@ -58,3 +58,8 @@ winit = { version = "0.30", default-features = false, features = ["rwh_06", "and
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["NSString", "NSObject", "NSGeometry"] }
 objc2-ui-kit = { version = "0.3", features = ["UIView", "UIResponder", "UIPasteboard", "UIGeometry"] }
+
+# Opens a real window, so it needs the main thread: it has its own `main`.
+[[test]]
+name = "desktop_smoke"
+harness = false

@@ -286,12 +286,17 @@ pub fn is_dark() -> Option<bool> {
 /// Window message the tray icon posts to our window.
 const WM_TRAY: u32 = WM_APP + 1;
 const TRAY_ID: u32 = 1;
+/// First command id used by the tray menu (menu-bar ids stay below it).
+const TRAY_BASE: usize = 0x4000;
 
 #[derive(Default)]
 struct State {
     hwnd: isize,
     /// Menu-item command id (index + 1) -> action id.
     ids: Vec<String>,
+    /// Tray-menu command id (`TRAY_BASE` + index + 1) -> action id. Separate from `ids` so
+    /// installing the menu bar never invalidates the tray menu.
+    tray_ids: Vec<String>,
     tray_menu: isize,
     tray_icon: isize,
 }
@@ -299,6 +304,7 @@ struct State {
 static STATE: Mutex<State> = Mutex::new(State {
     hwnd: 0,
     ids: Vec::new(),
+    tray_ids: Vec::new(),
     tray_menu: 0,
     tray_icon: 0,
 });
@@ -316,7 +322,7 @@ fn hwnd_of(w: &winit::window::Window) -> Result<isize, PlatformError> {
 }
 
 /// Build an HMENU tree, registering action ids in `ids`.
-fn build(items: &[MenuItem], ids: &mut Vec<String>) -> isize {
+fn build(items: &[MenuItem], ids: &mut Vec<String>, base: usize) -> isize {
     // SAFETY: plain Win32 calls; the returned handle is owned by the caller
     // (or by the window once attached with SetMenu / used as a popup).
     unsafe {
@@ -327,7 +333,7 @@ fn build(items: &[MenuItem], ids: &mut Vec<String>) -> isize {
                     AppendMenuW(m, MF_SEPARATOR, 0, std::ptr::null());
                 }
                 MenuItem::Submenu(sub) => {
-                    let h = build(&sub.items, ids);
+                    let h = build(&sub.items, ids, base);
                     AppendMenuW(
                         m,
                         MF_POPUP | MF_STRING,
@@ -348,7 +354,7 @@ fn build(items: &[MenuItem], ids: &mut Vec<String>) -> isize {
                         text.push_str(&crate::menu::format_shortcut(s));
                     }
                     let flags = MF_STRING | if *enabled { MF_ENABLED } else { MF_GRAYED };
-                    AppendMenuW(m, flags, ids.len(), wide(&text).as_ptr());
+                    AppendMenuW(m, flags, base + ids.len(), wide(&text).as_ptr());
                 }
             }
         }
@@ -367,7 +373,7 @@ pub fn set_menu(w: &winit::window::Window, menus: &[Menu]) -> Result<(), Platfor
     unsafe {
         let bar = CreateMenu();
         for m in menus {
-            let h = build(&m.items, &mut st.ids);
+            let h = build(&m.items, &mut st.ids, 0);
             AppendMenuW(
                 bar,
                 MF_POPUP | MF_STRING,
@@ -375,7 +381,11 @@ pub fn set_menu(w: &winit::window::Window, menus: &[Menu]) -> Result<(), Platfor
                 wide(&m.title).as_ptr(),
             );
         }
+        let old = GetMenu(hwnd as HWND);
         SetMenu(hwnd as HWND, bar);
+        if !old.is_null() {
+            DestroyMenu(old); // the window no longer owns it
+        }
         DrawMenuBar(hwnd as HWND);
     }
     Ok(())
@@ -400,7 +410,10 @@ pub fn set_tray(w: &winit::window::Window, t: &TraySettings) -> Result<(), Platf
     }
     let and_mask = vec![0u8; (t.icon_width as usize * t.icon_height as usize).div_ceil(8)];
     if let Some(menu) = &t.menu {
-        st.tray_menu = build(&menu.items, &mut st.ids);
+        st.tray_ids.clear();
+        let mut ids = Vec::new();
+        st.tray_menu = build(&menu.items, &mut ids, TRAY_BASE);
+        st.tray_ids = ids;
     }
     // SAFETY: buffers outlive the calls (CreateIcon copies them); NOTIFYICONDATAW
     // is zero-initialised then filled with valid fields before Shell_NotifyIconW.
@@ -498,11 +511,7 @@ pub fn msg_hook(msg: *const c_void) -> bool {
                     )
                 };
                 if cmd > 0 {
-                    if let Ok(st) = STATE.lock() {
-                        if let Some(id) = st.ids.get(cmd as usize - 1) {
-                            super::push_pending(PlatformEvent::MenuAction(id.clone()));
-                        }
-                    }
+                    push_tray_command(cmd as usize);
                 }
             }
             _ => {}
@@ -595,4 +604,75 @@ pub fn unregister_hotkeys() {
         // that already exited just makes the call fail harmlessly.
         unsafe { PostThreadMessageW(tid, WM_QUIT, 0, 0) };
     }
+}
+
+/// Turn a tray-menu command id into the `MenuAction` event it stands for.
+fn push_tray_command(cmd: usize) {
+    if let Ok(st) = STATE.lock() {
+        if let Some(id) = cmd
+            .checked_sub(TRAY_BASE + 1)
+            .and_then(|i| st.tray_ids.get(i))
+        {
+            super::push_pending(PlatformEvent::MenuAction(id.clone()));
+        }
+    }
+}
+
+// ---- Test hooks (see `crate::testing`): read the live Win32 state back and click items. ----
+
+/// Titles of the top-level menus Windows holds for the main window.
+pub fn menu_outline() -> Vec<String> {
+    let Ok(st) = STATE.lock() else {
+        return Vec::new();
+    };
+    // SAFETY: `hwnd` is the live window set_menu stored; the buffer outlives each call.
+    unsafe {
+        let bar = GetMenu(st.hwnd as HWND);
+        if bar.is_null() {
+            return Vec::new();
+        }
+        (0..GetMenuItemCount(bar).max(0))
+            .map(|i| {
+                let mut buf = [0u16; 256];
+                let n = GetMenuStringW(bar, i as u32, buf.as_mut_ptr(), 256, MF_BYPOSITION);
+                String::from_utf16_lossy(&buf[..n.max(0) as usize])
+            })
+            .collect()
+    }
+}
+
+/// Post the `WM_COMMAND` a click on menu-bar item `id` would send; the shell's message
+/// hook then turns it into a `MenuAction` event.
+pub fn activate_menu_item(id: &str) -> bool {
+    let Ok(st) = STATE.lock() else { return false };
+    let Some(pos) = st.ids.iter().position(|x| x == id) else {
+        return false;
+    };
+    // SAFETY: posting a message to our own live window.
+    unsafe { PostMessageW(st.hwnd as HWND, WM_COMMAND, pos + 1, 0) != 0 }
+}
+
+/// True while the notification-area icon added by `set_tray` exists.
+pub fn tray_visible() -> bool {
+    STATE.lock().is_ok_and(|st| st.tray_icon != 0)
+}
+
+/// Pick tray-menu item `id` (checked against the live popup menu first).
+pub fn activate_tray_item(id: &str) -> bool {
+    let cmd = {
+        let Ok(st) = STATE.lock() else { return false };
+        let Some(pos) = st.tray_ids.iter().position(|x| x == id) else {
+            return false;
+        };
+        let cmd = TRAY_BASE + pos + 1;
+        // SAFETY: `tray_menu` is the popup menu created by set_tray, still alive.
+        if st.tray_menu == 0
+            || unsafe { GetMenuState(st.tray_menu as _, cmd as u32, MF_BYCOMMAND) } == u32::MAX
+        {
+            return false;
+        }
+        cmd
+    };
+    push_tray_command(cmd);
+    true
 }
