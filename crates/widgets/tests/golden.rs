@@ -226,3 +226,74 @@ fn number_and_date_inputs_light() {
     );
     check("inputs_light", &img);
 }
+
+fn rich(ui: &Ui) -> Element<()> {
+    let series = || {
+        vec![
+            Series::new("A", vec![3.0, 5.0, 4.0, 8.0, 6.0]),
+            Series::new("B", vec![1.0, 2.0, 2.0, 3.0, 2.0]),
+        ]
+    };
+    page(
+        ui,
+        vec![
+            Row::new(vec![
+                Badge::new(ui, "Active")
+                    .tone(Tone::Success)
+                    .dot()
+                    .into_element(),
+                Badge::new(ui, "Failed")
+                    .tone(Tone::Danger)
+                    .solid()
+                    .into_element(),
+                Badge::new(ui, "Beta")
+                    .tone(Tone::Accent)
+                    .outline()
+                    .into_element(),
+                Swatch::<()>::new(ui, Color::hex(0x4338CA))
+                    .selected(true)
+                    .into_element(),
+                Swatch::<()>::new(ui, Color::hex(0xC2185B)).into_element(),
+                Sparkline::new(ui, vec![1.0, 3.0, 2.0, 5.0, 4.0]).into_element(),
+            ])
+            .spacing(10.0)
+            .into_element(),
+            Chart::line(ui, series())
+                .x_labels(["a", "b", "c", "d", "e"])
+                .area()
+                .height(110.0)
+                .into_element(),
+            Row::new(vec![
+                Tree::<()>::new(
+                    ui,
+                    vec![
+                        TreeItem::new(1, "src").children([TreeItem::new(2, "lib.rs")]),
+                        TreeItem::new(3, "Cargo.toml"),
+                    ],
+                )
+                .expanded([1])
+                .selected(Some(2))
+                .into_element(),
+                ColorPicker::<()>::new(ui, 9, Color::hex(0x0B6B5F)).into_element(),
+            ])
+            .spacing(16.0)
+            .into_element(),
+        ],
+    )
+}
+
+#[test]
+fn rich_light() {
+    let img = render(Theme::light(), rich, |_| {});
+    check("rich_light", &img);
+}
+
+#[test]
+fn rich_dark_accent() {
+    let img = render(
+        Theme::dark().with_accent(Color::hex(0x4338CA)),
+        rich,
+        |_| {},
+    );
+    check("rich_dark_accent", &img);
+}

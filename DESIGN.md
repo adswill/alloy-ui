@@ -53,3 +53,12 @@ Found by rendering the admin, status, notes and wizard apps and critiquing them 
 - **Browse detail**: checkboxes (Pinned) move into the footer beside the count and Delete instead of floating under the editor; both panes use 16 px padding so their tops line up.
 - **Placeholder text** is 70% of secondary text so a hint is never mistaken for a value.
 - **Command palette** (`mod+k`): a 560 px panel 14% from the top over a light 14% scrim, raised surface, 1 px border, `elevation.high`. One search row, up to eight results with the selected row on the selection tint, shortcut keys right-aligned and dim (`Ctrl+S`, or `⌘S` on macOS). No icons, no animation, no category headers. It lists every shortcut, every `.command(label, f)`, and for `app()` apps "Go to <page>" and the theme switch. Arrow keys, Enter, Escape and mouse all work; it swallows other input while open.
+
+## Rich widgets and theming (2026-11-21)
+Renders: `gallery/rich/showcase_*.png` (light, dark with an indigo accent, high contrast); golden tests `rich_light` and `rich_dark_accent`.
+
+- **Badges** are pills (`badge("Active").success().dot()`): tinted fill with tone-coloured text by default, `.solid()` for the one thing that must stand out, `.outline()` for hairline. The label always carries the meaning.
+- **Charts** (`line_chart`, `bar_chart`) get a real y axis with nice ticks, hairline gridlines (only the base line is strong), thinned x labels, a legend for more than one series, and a hover readout on the overlay layer. Series colours are the accent first, then hues kept apart from success, danger and warning. `sparkline` is the axis-free version for cells and stat cards.
+- **Swatches** carry a hairline so near-white and near-black stay visible; the selected one gets a ring plus a tick, never colour alone.
+- **Accent theming** nudges the brand colour toward black or white until it passes AA on all three surfaces, and re-derives hover, pressed, on-accent, focus ring and selection; tests run six awkward brand colours through both themes.
+- **High contrast** is pure black/white, 7:1 text and borders, and a yellow or blue focus ring. **Density** scales the spacing tokens to 80% or 125%.

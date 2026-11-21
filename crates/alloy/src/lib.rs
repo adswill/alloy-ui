@@ -70,6 +70,7 @@ mod palette;
 mod persist;
 mod records;
 mod resource;
+mod rich;
 pub mod testing;
 mod tone;
 pub mod valid;
@@ -86,7 +87,7 @@ pub use collections::{
     browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
     Prop, TextCell,
 };
-pub use cx::{palette, set_dark, theme, ui};
+pub use cx::{palette, set_accent, set_dark, set_look, theme, ui, Look};
 pub use declare::{clock, money};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
@@ -101,25 +102,31 @@ pub use records::{
     Stamp, Value,
 };
 pub use resource::{block_on, resource, sleep, Resource};
+pub use rich::{
+    badge, bar_chart, color_picker, line_chart, sparkline, swatch, tree, Badge, Chart, Picker,
+    Series, Spark, Swatch, Tone, Tree, TreeItem,
+};
 pub use view::{col, row, Boxed, Flex, Node, View};
 pub use {serde, serde_json};
 
 /// One import for everything an app needs: `use alloy_ui::prelude::*;`.
 pub mod prelude {
     pub use crate::{
-        app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
-        custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
-        nav, number, options, palette, pick, progress, radio, radio_list, radio_list_with, radios,
-        records, records_in, resource, rule, scroll, secs, section, series, set_dark, shell,
-        sketch, sleep, slider, space, stat, stats, stepper, store, store_as, table, table_of, tabs,
-        tally, text, theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
-        FlagCell, Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View,
-        Wizard,
+        app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check, choose,
+        color_picker, crud, crud_app, custom, editor, every, field, field_after, filter_by, gap,
+        heading, input, line_chart, list, local, nav, number, options, palette, pick, progress,
+        radio, radio_list, radio_list_with, radios, records, records_in, resource, rule, scroll,
+        secs, section, series, set_accent, set_dark, set_look, shell, sketch, sleep, slider, space,
+        sparkline, stat, stats, stepper, store, store_as, swatch, table, table_of, tabs, tally,
+        text, theme_switch, toggle, tree, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
+        FlagCell, Item, Local, Look, Node, Place, Record, Records, Resource, Stamp, TextCell,
+        TreeItem, View, Wizard,
     };
     pub use crate::{
         at, choices, clock, col, money, redo, row, state, toast, undo, vals, Hotkey, Shortcuts,
     };
     pub use alloy_ui_core::Color;
+    pub use alloy_ui_theme::Density;
     pub use std::time::Duration;
 }
 

@@ -49,3 +49,21 @@ Prefer the semantic helpers (`.dim()`, `.accent()`, `.danger()`, `.surface()`, `
 ## Tokens
 
 The `alloy_ui::theme` crate (`alloy-ui-theme`) holds every token: `Theme::light()` and `Theme::dark()`, the palette, the type scale (display, heading, body, caption at a 1.5 line height), spacing, radii (2, 4 and 6 px), elevation and motion. `ThemeMode` is a user preference (`Light`, `Dark`, `System`) that resolves to an `Appearance`. Install a custom `Theme` on the low-level `Ui` with `Ui::set_theme`.
+
+## Brand accent, high contrast and density
+
+A `Look` describes the whole window in one value. Every part is optional, and it can be applied again at any time (a settings page, a keyboard shortcut) with no restart:
+
+```ignore
+set_look(
+    Look::light()
+        .is_dark(state.dark)
+        .accent(Color::hex(0x4338CA))   // any colour; nudged until it passes WCAG AA
+        .high_contrast(state.contrast)  // 7:1 text, solid borders, a bold focus ring
+        .density(Density::Compact),     // Compact, Comfortable or Spacious spacing
+);
+```
+
+`set_accent(color)` changes only the accent. The same pieces exist on `Theme` (`with_accent`, `high_contrast`, `density`) for the low-level API. Light and dark themes now also carry a `warning` colour, so amber is a palette role like `danger` and `success`.
+
+`cargo run -p alloy-ui --example showcase` shows all of it live, along with the new badges, swatches, charts with axes, sparklines, tree and colour picker.
