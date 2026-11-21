@@ -540,8 +540,11 @@ mod tests {
         h.record("a", 1, "ab", 200); // merged with the first
         h.record("ab", 2, "ab ", 300);
         h.record("ab ", 3, "", 5000); // a deletion is its own step
+                                      // The shortcut modifier is Cmd on macOS and Ctrl elsewhere.
+        let mac = is_mac();
         let ctrl = Modifiers {
-            ctrl: true,
+            ctrl: !mac,
+            logo: mac,
             ..Default::default()
         };
         let z = Key::Character("z".into());
@@ -555,7 +558,8 @@ mod tests {
             Some("")
         );
         let shift = Modifiers {
-            ctrl: true,
+            ctrl: !mac,
+            logo: mac,
             shift: true,
             ..Default::default()
         };
@@ -563,14 +567,19 @@ mod tests {
             history_key(&mut e, &mut h, "", &z, &shift).as_deref(),
             Some("ab ")
         );
-        let y = Key::Character("y".into());
+        // Redo is Ctrl+Y off macOS; macOS only has Cmd+Shift+Z.
+        let (y, ymods) = if mac {
+            (z.clone(), shift)
+        } else {
+            (Key::Character("y".into()), ctrl)
+        };
         assert_eq!(
-            history_key(&mut e, &mut h, "ab ", &y, &ctrl).as_deref(),
+            history_key(&mut e, &mut h, "ab ", &y, &ymods).as_deref(),
             Some("")
         );
         // nothing left to redo: still "handled", value unchanged
         assert_eq!(
-            history_key(&mut e, &mut h, "", &y, &ctrl).as_deref(),
+            history_key(&mut e, &mut h, "", &y, &ymods).as_deref(),
             Some("")
         );
         // a new edit clears redo
