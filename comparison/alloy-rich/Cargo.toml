@@ -1,0 +1,21 @@
+[package]
+name = "compare-alloy-rich"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+alloy-ui = { path = "../../crates/alloy" }
+
+[workspace]
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[lib]
+name = "rich"
+path = "src/lib.rs"
