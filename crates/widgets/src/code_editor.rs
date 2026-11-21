@@ -1,6 +1,7 @@
 //! A code editor: line numbers, syntax colours, auto-indent, find, comment toggle.
 
 use crate::{
+    code_ops::{self, Dir, Sel},
     highlight::{tokenize, Lang, State, Token},
     text_edit::{
         apply_key, commit_edit, history_edit, line_range, primary, sanitize, word_bounds, Edit,
@@ -23,6 +24,8 @@ const FIND_W: f32 = 304.0;
 const FIND_H: f32 = 34.0;
 const STATUS_H: f32 = 26.0;
 const MAX_MATCHES: usize = 100_000;
+/// Ui state slot for extra carets (the editor's own id holds the find state).
+const K_MULTI: u64 = 0x_3c17;
 
 /// A monospace editor for source code. Controlled like [`crate::TextEditor`]: you own the
 /// string and receive the new one from `on_input`. Without `on_input` it is a read-only
@@ -31,7 +34,14 @@ const MAX_MATCHES: usize = 100_000;
 /// Enter keeps the indent (and opens a block after `{`, `(`, `[` or `:`), Tab and Shift+Tab
 /// indent and dedent whole selections, brackets and quotes close themselves, `Ctrl+/`
 /// toggles line comments for the language, and `Ctrl+F` opens find (Enter and Shift+Enter
-/// step through matches, Escape closes). Lines never wrap; the view scrolls both ways and
+/// step through matches, Escape closes). The bracket next to the caret is outlined together
+/// with its match.
+///
+/// **Multiple cursors**: `Alt`+click adds a caret, `Alt+Shift+Up/Down` adds one above or below,
+/// `Ctrl+Shift+D` selects the word under the caret and then each next occurrence, and
+/// `Ctrl+Shift+L` selects them all. Typing, Backspace, Delete, Enter, Tab, the arrows, Home,
+/// End, copy and paste then act at every caret; Escape (or a plain click) returns to one.
+/// Undo reverts a multi-cursor edit as one step. Lines never wrap; the view scrolls both ways and
 /// only lines in view are drawn, so a 100 000-line file costs a screenful.
 pub struct CodeEditor<M> {
     ui: Ui,
@@ -192,6 +202,233 @@ impl<M: 'static> CodeEditor<M> {
             &self.on_input,
             out,
         );
+    }
+    /// The extra carets, if they still belong to the text on screen.
+    fn multi(&self, doc: &Doc) -> Multi {
+        let m = self.ui.state(self.id ^ K_MULTI, |m: &mut Multi| m.clone());
+        if m.hash == doc.hash {
+            m
+        } else {
+            Multi::default()
+        }
+    }
+    /// Every selection, primary last in the input and tracked through sorting.
+    fn all_sels(e: &Edit, mc: &Multi) -> (Vec<Sel>, usize) {
+        let mut v = mc.extras.clone();
+        v.push(Sel {
+            anchor: e.anchor,
+            caret: e.caret,
+        });
+        let keep = v.len() - 1;
+        let at = code_ops::normalize(&mut v, keep);
+        (v, at)
+    }
+    /// Make `sels` the selections, with the one at `keep` as the primary.
+    fn set_sels(&self, e: &mut Edit, mc: &mut Multi, mut sels: Vec<Sel>, keep: usize) {
+        if sels.is_empty() {
+            return;
+        }
+        let k = keep.min(sels.len() - 1);
+        let at = code_ops::normalize(&mut sels, k);
+        let p = sels.remove(at);
+        (e.anchor, e.caret) = (p.anchor, p.caret);
+        e.goal_col = None;
+        mc.extras = sels;
+        mc.hash = doc_hash(&self.value);
+    }
+    /// Apply a text edit at every selection and commit it as one undo step.
+    fn multi_edit(
+        &self,
+        mc: &mut Multi,
+        e: &mut Edit,
+        caret0: usize,
+        out: &mut Vec<M>,
+        op: impl FnOnce(&str, &[Sel]) -> (String, Vec<Sel>),
+    ) {
+        let (sels, _) = Self::all_sels(e, mc);
+        let (new, carets) = op(&self.value, &sels);
+        mc.hash = doc_hash(&new);
+        let mut it = carets;
+        if let Some(p) = it.pop() {
+            (e.anchor, e.caret) = (p.anchor, p.caret);
+        }
+        mc.extras = it;
+        e.goal_col = None;
+        if new != self.value {
+            // Typing one character at each of n carets is one burst for undo, like typing one.
+            let (now, n) = (self.ui.now(), mc.extras.len() + 1);
+            self.ui
+                .with_history(self.id, |h| h.record_carets(&self.value, caret0, &new, now, n));
+            if let Some(f) = &self.on_input {
+                out.push(f(new));
+            }
+        }
+    }
+    /// Multi-cursor handling for one event. `None` lets the single-caret code run.
+    #[allow(clippy::too_many_arguments)]
+    fn multi_event(
+        &self,
+        event: &Event,
+        e: &mut Edit,
+        mc: &mut Multi,
+        fs: &FindState,
+        doc: &Doc,
+        caret0: usize,
+        b: &Rectangle,
+        cursor: Point,
+        out: &mut Vec<M>,
+    ) -> Option<bool> {
+        let editable = self.on_input.is_some();
+        let focused = self.ui.is_focused(Some(self.id));
+        match event {
+            Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
+                let v = self.view(b);
+                let on_bar = self.max_scroll_y(b, doc) > 0.0
+                    && cursor.x >= v.origin.x + v.size.width - BAR - 6.0;
+                let in_gutter = self.numbers && cursor.x < v.origin.x + self.gutter(doc);
+                let on_find = fs.open && self.find_rect(b).contains(cursor);
+                if self.ui.modifiers().alt && editable && !on_bar && !in_gutter && !on_find {
+                    self.ui.set_focus(Some(self.id));
+                    let i = self.index_at(b, doc, e.scroll_x, cursor);
+                    let (mut sels, _) = Self::all_sels(e, mc);
+                    sels.push(Sel::at(i));
+                    let keep = sels.len() - 1;
+                    self.set_sels(e, mc, sels, keep);
+                    return Some(true);
+                }
+                mc.extras.clear();
+                None
+            }
+            _ if !focused || fs.focus || !e.preedit.is_empty() => None,
+            Event::TextInput(s) if editable && !mc.extras.is_empty() => {
+                let clean = sanitize(s, true);
+                if !clean.is_empty() {
+                    self.multi_edit(mc, e, caret0, out, |t, sels| code_ops::insert(t, sels, &clean));
+                }
+                Some(true)
+            }
+            Event::KeyPressed(k, m) => {
+                let cmd = primary(m);
+                // Ctrl+Alt is AltGr on many layouts, so adding a caret is Alt+Shift+arrow.
+                let add_caret = m.alt && m.shift && !m.ctrl && !m.logo;
+                // Ways in.
+                match k {
+                    Key::Character(c) if cmd && m.shift && c.eq_ignore_ascii_case("d") => {
+                        let (sels, keep) = Self::all_sels(e, mc);
+                        let (mut next, changed) = code_ops::add_next_occurrence(&self.value, &sels, keep);
+                        if changed {
+                            let newest = next.len() - 1;
+                            // A first press only selects the word: keep it primary.
+                            let k = if next.len() == sels.len() { keep } else { newest };
+                            self.set_sels(e, mc, std::mem::take(&mut next), k);
+                        }
+                        return Some(true);
+                    }
+                    Key::Character(c) if cmd && m.shift && c.eq_ignore_ascii_case("l") => {
+                        let (sels, keep) = Self::all_sels(e, mc);
+                        let all = code_ops::select_all_occurrences(&self.value, &sels, keep);
+                        let last = all.len().saturating_sub(1);
+                        self.set_sels(e, mc, all, last);
+                        return Some(true);
+                    }
+                    Key::Named(n) if add_caret && (n == "ArrowUp" || n == "ArrowDown") => {
+                        let (sels, _) = Self::all_sels(e, mc);
+                        let next = code_ops::add_caret_vertical(&self.value, &sels, n == "ArrowDown");
+                        let keep = next.len().saturating_sub(1);
+                        // The new caret is the one that was not there before.
+                        let pos = next.iter().position(|s| !sels.contains(s)).unwrap_or(keep);
+                        self.set_sels(e, mc, next, pos);
+                        return Some(true);
+                    }
+                    _ => {}
+                }
+                if mc.extras.is_empty() {
+                    return None;
+                }
+                let (sels, _) = Self::all_sels(e, mc);
+                let plain = !cmd && !m.alt;
+                match k {
+                    Key::Escape => {
+                        mc.extras.clear();
+                        Some(true)
+                    }
+                    Key::Backspace if editable && plain => {
+                        self.multi_edit(mc, e, caret0, out, |t, s| code_ops::delete(t, s, false));
+                        Some(true)
+                    }
+                    Key::Named(n) if editable && plain && n == "Delete" => {
+                        self.multi_edit(mc, e, caret0, out, |t, s| code_ops::delete(t, s, true));
+                        Some(true)
+                    }
+                    Key::Enter if editable && plain => {
+                        self.multi_edit(mc, e, caret0, out, code_ops::newline);
+                        Some(true)
+                    }
+                    Key::Tab if editable && plain => {
+                        let unit = self.indent_unit();
+                        self.multi_edit(mc, e, caret0, out, |t, s| code_ops::insert(t, s, &unit));
+                        Some(true)
+                    }
+                    Key::Named(n) if plain => {
+                        let dir = match n.as_str() {
+                            "ArrowLeft" => Some(Dir::Left),
+                            "ArrowRight" => Some(Dir::Right),
+                            "ArrowUp" => Some(Dir::Up),
+                            "ArrowDown" => Some(Dir::Down),
+                            "Home" => Some(Dir::Home),
+                            "End" => Some(Dir::End),
+                            _ => None,
+                        };
+                        match dir {
+                            Some(d) => {
+                                let next = code_ops::step(&self.value, &sels, d, m.shift);
+                                let last = next.len().saturating_sub(1);
+                                self.set_sels(e, mc, next, last);
+                                Some(true)
+                            }
+                            None => None,
+                        }
+                    }
+                    Key::Character(c) if cmd && !m.alt && c.eq_ignore_ascii_case("v") && editable => {
+                        if let Some(text) = self.ui.clipboard().get() {
+                            let text = sanitize(&text, true);
+                            let lines: Vec<String> = text.split('\n').map(str::to_string).collect();
+                            if lines.len() == sels.len() {
+                                // One line per caret.
+                                self.multi_edit(mc, e, caret0, out, |t, s| {
+                                    code_ops::replace_all(t, s, &|i, _| lines[i].clone())
+                                });
+                            } else {
+                                self.multi_edit(mc, e, caret0, out, |t, s| code_ops::insert(t, s, &text));
+                            }
+                        }
+                        Some(true)
+                    }
+                    Key::Character(c) if cmd && !m.alt && c.eq_ignore_ascii_case("c") => {
+                        let parts: Vec<String> = sels
+                            .iter()
+                            .filter(|s| !s.is_empty())
+                            .map(|s| {
+                                let (a, z) = s.range();
+                                self.value.chars().skip(a).take(z - a).collect()
+                            })
+                            .collect();
+                        if !parts.is_empty() {
+                            self.ui.clipboard().set(parts.join("\n"));
+                        }
+                        Some(true)
+                    }
+                    // Plain characters arrive as text; everything else (undo, comment
+                    // toggle, find...) works on one caret, so drop the extras first.
+                    Key::Character(_) if !cmd => None,
+                    _ => {
+                        mc.extras.clear();
+                        None
+                    }
+                }
+            }
+            _ => None,
+        }
     }
     fn indent_unit(&self) -> String {
         " ".repeat(self.tab)
@@ -453,7 +690,14 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
         let mut fs: FindState = self.ui.state(self.id, |s: &mut FindState| s.clone());
         let fs0 = fs.clone();
         let view = self.view(&b);
+        let mut mc = self.multi(&doc);
+        let mc0 = mc.clone();
         let consumed = 'ev: {
+            if let Some(handled) =
+                self.multi_event(event, &mut e, &mut mc, &fs, &doc, caret0, &b, cursor, out)
+            {
+                break 'ev handled;
+            }
             match event {
                 Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
                     self.ui.set_focus(Some(self.id));
@@ -823,6 +1067,9 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
         if fs != fs0 {
             self.ui.state(self.id, |s: &mut FindState| *s = fs);
         }
+        if mc != mc0 {
+            self.ui.state(self.id ^ K_MULTI, |m: &mut Multi| *m = mc);
+        }
         self.ui.set_edit(self.id, e);
         consumed
     }
@@ -846,6 +1093,7 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
         let view = self.view(&b);
         let gutter = self.gutter(&doc);
         let (cl, cc) = doc.line_col(e.caret);
+        let mc = self.multi(&doc);
 
         // Keep the caret in view, but only when it (or the text) moved: otherwise the
         // wheel could never scroll away from the caret.
@@ -995,6 +1243,32 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
                     ));
                 }
             }
+            // The other cursors' selections.
+            for x in mc.extras.iter().filter(|x| !x.is_empty()) {
+                let (xa, xz) = x.range();
+                if focused && xa <= le && xz > ls {
+                    let from = if xa > ls {
+                        col_cells(raw, xa - ls, self.tab)
+                    } else {
+                        0
+                    };
+                    let to = if xz > le {
+                        col_cells(raw, usize::MAX, self.tab) + 1
+                    } else {
+                        col_cells(raw, xz - ls, self.tab)
+                    };
+                    if to > from {
+                        out.push(quad(
+                            Rectangle::new(
+                                Point::new(ox + from as f32 * cw, y),
+                                Size::new((to - from) as f32 * cw, lh),
+                            ),
+                            p.selection,
+                            0.0,
+                        ));
+                    }
+                }
+            }
             // Search hits on this line.
             if !ms.is_empty() {
                 let lo = ms.partition_point(|m| m.0 + m.1 <= ls);
@@ -1075,6 +1349,57 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
                 p.text,
                 0.0,
             ));
+        }
+        if focused && editable && blink && !fs.focus {
+            for x in &mc.extras {
+                let (l, c) = doc.line_col(x.caret);
+                if l < first || l >= last {
+                    continue;
+                }
+                let raw = doc.line(&self.value, l);
+                let at = cells(&raw[..byte_col(raw, c)], self.tab) as f32 * cw;
+                out.push(quad(
+                    Rectangle::new(Point::new(ox + at, oy + l as f32 * lh), Size::new(1.5, lh)),
+                    p.text,
+                    0.0,
+                ));
+            }
+        }
+        // The bracket beside the caret and its match.
+        if focused {
+            let line = doc.line(&self.value, cl);
+            let caret_byte = doc.starts[cl.min(doc.len() - 1)].0 + byte_col(line, cc);
+            let mark = |byte: usize, good: bool, out: &mut DrawList| {
+                let l = doc.starts.partition_point(|s| s.0 <= byte).saturating_sub(1);
+                if l < first || l >= last {
+                    return;
+                }
+                let raw = doc.line(&self.value, l);
+                let col = self.value[doc.starts[l].0..byte].chars().count();
+                let at = cells(&raw[..byte_col(raw, col)], self.tab) as f32 * cw;
+                let ink = if good { p.accent } else { p.danger };
+                out.push(DrawCommand::Quad {
+                    bounds: Rectangle::new(
+                        Point::new(ox + at, oy + l as f32 * lh + 1.0),
+                        Size::new(cw, lh - 2.0),
+                    ),
+                    fill: ink.with_alpha(0.2),
+                    radius: t.radii.small,
+                    border: Some(Border {
+                        color: ink.with_alpha(0.8),
+                        width: 1.0,
+                    }),
+                    shadow: None,
+                });
+            };
+            match code_ops::bracket_pair(&self.value, caret_byte) {
+                Some(Ok((a, z))) => {
+                    mark(a, true, out);
+                    mark(z, true, out);
+                }
+                Some(Err(a)) => mark(a, false, out),
+                None => {}
+            }
         }
         out.push(DrawCommand::PopClip);
 
@@ -1180,11 +1505,14 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
                 });
             };
             let sel = sz - sa;
-            let pos = if sel > 0 {
+            let mut pos = if sel > 0 {
                 format!("Ln {}, Col {}  ·  {} selected", cl + 1, cc + 1, sel)
             } else {
                 format!("Ln {}, Col {}", cl + 1, cc + 1)
             };
+            if !mc.extras.is_empty() {
+                pos.push_str(&format!("  ·  {} cursors", mc.extras.len() + 1));
+            }
             say(r.origin.x + 12.0, pos, p.text_secondary, out);
             let name = format!("{} lines  ·  {}", doc.len(), lang_name(self.lang));
             let w = self.ui.metrics().width(&name, small.size);
@@ -1301,6 +1629,13 @@ fn lang_name(l: Lang) -> &'static str {
         Lang::Shell => "Shell",
         Lang::C => "C / C++",
         Lang::Sql => "SQL",
+        Lang::Go => "Go",
+        Lang::Java => "Java",
+        Lang::Kotlin => "Kotlin",
+        Lang::Swift => "Swift",
+        Lang::Ruby => "Ruby",
+        Lang::Yaml => "YAML",
+        Lang::Css => "CSS",
     }
 }
 
@@ -1409,6 +1744,8 @@ struct FindState {
 
 /// Line index of a text: byte and char starts of every line, cached between frames.
 struct Doc {
+    /// Hash of the text this was built from (see [`doc_hash`]).
+    hash: u64,
     /// `(byte start, byte end)` of each line, newline excluded.
     starts: Vec<(usize, usize)>,
     cstart: Vec<usize>,
@@ -1429,9 +1766,22 @@ fn hash_of(s: &str) -> u64 {
     h.finish()
 }
 
+/// What identifies a text for cached line indexes and multi-cursor validity.
+fn doc_hash(s: &str) -> u64 {
+    hash_of(s) ^ s.len() as u64
+}
+
+/// Extra carets and selections beyond the primary one in the shared [`Edit`]. Valid only for
+/// the text they were made against: any other change (undo, an app-side edit) drops them.
+#[derive(Clone, Default, PartialEq)]
+struct Multi {
+    extras: Vec<Sel>,
+    hash: u64,
+}
+
 impl Doc {
     fn get(id: u64, text: &str) -> Rc<Doc> {
-        let h = hash_of(text) ^ text.len() as u64;
+        let h = doc_hash(text);
         DOCS.with(|d| {
             let mut d = d.borrow_mut();
             if let Some((hh, doc)) = d.get(&id) {
@@ -1439,7 +1789,9 @@ impl Doc {
                     return doc.clone();
                 }
             }
-            let doc = Rc::new(Doc::build(text));
+            let mut built = Doc::build(text);
+            built.hash = h;
+            let doc = Rc::new(built);
             d.insert(id, (h, doc.clone()));
             doc
         })
@@ -1455,6 +1807,7 @@ impl Doc {
             c += line.chars().count() + 1;
         }
         Doc {
+            hash: 0,
             starts,
             cstart,
             nchars: text.chars().count(),

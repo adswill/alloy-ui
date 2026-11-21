@@ -265,7 +265,20 @@ impl History {
 
     /// Note that `before` (with the caret at `caret`) became `after` at time `now`.
     pub(crate) fn record(&mut self, before: &str, caret: usize, after: &str, now: u64) {
-        let typing = after.chars().count() == before.chars().count() + 1;
+        self.record_carets(before, caret, after, now, 1);
+    }
+
+    /// Like [`History::record`] for an edit made at `carets` carets at once: typing one
+    /// character at each still counts as typing.
+    pub(crate) fn record_carets(
+        &mut self,
+        before: &str,
+        caret: usize,
+        after: &str,
+        now: u64,
+        carets: usize,
+    ) {
+        let typing = after.chars().count() == before.chars().count() + carets;
         let merge = typing
             && self.typing
             && !self.undo.is_empty()

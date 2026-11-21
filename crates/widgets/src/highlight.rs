@@ -29,6 +29,20 @@ pub enum Lang {
     C,
     /// SQL.
     Sql,
+    /// Go.
+    Go,
+    /// Java.
+    Java,
+    /// Kotlin.
+    Kotlin,
+    /// Swift.
+    Swift,
+    /// Ruby.
+    Ruby,
+    /// YAML.
+    Yaml,
+    /// CSS and SCSS.
+    Css,
 }
 
 impl Lang {
@@ -45,6 +59,13 @@ impl Lang {
             "sh" | "bash" | "zsh" | "shell" => Lang::Shell,
             "c" | "h" | "cc" | "cpp" | "hpp" | "cxx" => Lang::C,
             "sql" => Lang::Sql,
+            "go" | "golang" => Lang::Go,
+            "java" => Lang::Java,
+            "kt" | "kts" | "kotlin" => Lang::Kotlin,
+            "swift" => Lang::Swift,
+            "rb" | "ruby" | "rake" | "gemspec" => Lang::Ruby,
+            "yml" | "yaml" => Lang::Yaml,
+            "css" | "scss" => Lang::Css,
             _ => Lang::Plain,
         }
     }
@@ -63,6 +84,13 @@ impl Lang {
             Lang::Shell => &SHELL,
             Lang::C => &C,
             Lang::Sql => &SQL,
+            Lang::Go => &GO,
+            Lang::Java => &JAVA,
+            Lang::Kotlin => &KOTLIN,
+            Lang::Swift => &SWIFT,
+            Lang::Ruby => &RUBY,
+            Lang::Yaml => &YAML,
+            Lang::Css => &CSS,
         }
     }
 }
@@ -336,6 +364,112 @@ static SQL: Spec = Spec {
     block: Some(("/*", "*/")),
     quotes: &['\''],
     nocase: true,
+    ..NONE
+};
+
+static GO: Spec = Spec {
+    keywords: &[
+        "break", "case", "chan", "const", "continue", "default", "defer", "else", "fallthrough",
+        "false", "for", "func", "go", "goto", "if", "import", "interface", "map", "nil", "package",
+        "range", "return", "select", "struct", "switch", "true", "type", "var",
+    ],
+    types: &[
+        "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32", "uint64",
+        "uintptr", "float32", "float64", "string", "bool", "byte", "rune", "error", "any",
+    ],
+    line_comment: &["//"],
+    block: Some(("/*", "*/")),
+    quotes: &['"', '\'', '`'],
+    template: true,
+    caps_are_types: true,
+    ..NONE
+};
+static JAVA: Spec = Spec {
+    keywords: &[
+        "abstract", "assert", "break", "case", "catch", "class", "const", "continue", "default",
+        "do", "else", "enum", "extends", "false", "final", "finally", "for", "if", "implements",
+        "import", "instanceof", "interface", "native", "new", "null", "package", "private",
+        "protected", "public", "record", "return", "static", "super", "switch", "synchronized",
+        "this", "throw", "throws", "transient", "true", "try", "var", "void", "volatile", "while",
+    ],
+    types: &[
+        "int", "long", "short", "byte", "char", "float", "double", "boolean", "String", "Object",
+    ],
+    line_comment: &["//"],
+    block: Some(("/*", "*/")),
+    quotes: &['"', '\''],
+    triple: true,
+    attrs: &['@'],
+    caps_are_types: true,
+    ..NONE
+};
+static KOTLIN: Spec = Spec {
+    keywords: &[
+        "abstract", "as", "break", "by", "catch", "class", "companion", "const", "constructor",
+        "continue", "data", "do", "else", "enum", "false", "finally", "for", "fun", "if", "import",
+        "in", "init", "interface", "internal", "is", "lateinit", "null", "object", "open",
+        "override", "package", "private", "protected", "public", "return", "sealed", "super",
+        "suspend", "this", "throw", "true", "try", "typealias", "val", "var", "when", "while",
+    ],
+    types: &[
+        "Int", "Long", "Short", "Byte", "Char", "Float", "Double", "Boolean", "String", "Unit",
+        "Any", "Nothing",
+    ],
+    line_comment: &["//"],
+    block: Some(("/*", "*/")),
+    quotes: &['"', '\''],
+    triple: true,
+    attrs: &['@'],
+    caps_are_types: true,
+    ..NONE
+};
+static SWIFT: Spec = Spec {
+    keywords: &[
+        "actor", "as", "async", "await", "break", "case", "catch", "class", "continue", "default",
+        "defer", "do", "else", "enum", "extension", "false", "fileprivate", "for", "func", "guard",
+        "if", "import", "in", "init", "inout", "internal", "is", "let", "nil", "open", "operator",
+        "override", "private", "protocol", "public", "repeat", "return", "self", "Self", "static",
+        "struct", "subscript", "super", "switch", "throw", "throws", "true", "try", "typealias",
+        "var", "where", "while",
+    ],
+    types: &[
+        "Int", "UInt", "Double", "Float", "Bool", "String", "Character", "Array", "Dictionary",
+        "Set", "Optional", "Any", "Void",
+    ],
+    line_comment: &["//"],
+    block: Some(("/*", "*/")),
+    quotes: &['"'],
+    triple: true,
+    attrs: &['@', '#'],
+    caps_are_types: true,
+    ..NONE
+};
+static RUBY: Spec = Spec {
+    keywords: &[
+        "and", "begin", "break", "case", "class", "def", "do", "else", "elsif", "end", "ensure",
+        "false", "for", "if", "in", "include", "lambda", "module", "next", "nil", "not", "or",
+        "proc", "puts", "raise", "require", "rescue", "retry", "return", "self", "super", "then",
+        "true", "unless", "until", "when", "while", "yield",
+    ],
+    line_comment: &["#"],
+    quotes: &['"', '\''],
+    caps_are_types: true,
+    ..NONE
+};
+static YAML: Spec = Spec {
+    keywords: &["true", "false", "null", "yes", "no"],
+    line_comment: &["#"],
+    quotes: &['"', '\''],
+    ..NONE
+};
+static CSS: Spec = Spec {
+    keywords: &[
+        "absolute", "auto", "block", "calc", "fixed", "flex", "grid", "important", "inherit",
+        "initial", "inline", "none", "relative", "solid", "var",
+    ],
+    block: Some(("/*", "*/")),
+    quotes: &['"', '\''],
+    attrs: &['@'],
     ..NONE
 };
 
@@ -642,6 +776,28 @@ mod tests {
         assert_eq!(st, State::Normal);
         assert_eq!(s[0].end, 6);
     }
+    #[test]
+    fn newer_languages_colour_their_keywords_and_comments() {
+        assert!(kinds(Lang::Go, "func main() { go run() } // go").contains(&("func", Token::Keyword)));
+        assert!(kinds(Lang::Java, "public class A { }").contains(&("class", Token::Keyword)));
+        assert!(kinds(Lang::Kotlin, "fun f(): Int = 1").contains(&("Int", Token::Type)));
+        assert!(kinds(Lang::Swift, "guard let x = y else { return }").contains(&("guard", Token::Keyword)));
+        assert!(kinds(Lang::Ruby, "def hi # note\nend").contains(&("def", Token::Keyword)));
+        assert!(kinds(Lang::Yaml, "on: true # yes").iter().any(|k| k.1 == Token::Comment));
+        assert!(kinds(Lang::Css, "a { display: flex; } /* x */").contains(&("flex", Token::Keyword)));
+        for (name, lang) in [
+            ("main.go", Lang::Go),
+            ("A.java", Lang::Java),
+            ("a.kt", Lang::Kotlin),
+            ("a.swift", Lang::Swift),
+            ("a.rb", Lang::Ruby),
+            ("ci.yml", Lang::Yaml),
+            ("app.scss", Lang::Css),
+        ] {
+            assert_eq!(Lang::from_name(name), lang, "{name}");
+        }
+    }
+
     #[test]
     fn plain_text_has_no_spans_and_unterminated_quote_resets() {
         assert!(tokenize(Lang::Plain, "fn main() { 1 }", State::Normal)

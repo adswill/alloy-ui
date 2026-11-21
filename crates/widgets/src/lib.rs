@@ -20,6 +20,7 @@ mod button;
 mod calendar;
 mod candles;
 mod canvas;
+mod code_ops;
 mod chart;
 mod checkbox;
 mod code_editor;

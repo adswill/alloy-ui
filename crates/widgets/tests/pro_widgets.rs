@@ -315,3 +315,181 @@ fn row_model_handles_a_million_rows() {
     assert!(draw.as_millis() < 100, "one frame of a million-row grid took {draw:?}");
     assert!(rebuild.as_secs() < 20 && grouped.as_secs() < 20);
 }
+
+// ------------------------------------------------------------------ code editor
+
+fn code(initial: &str) -> App<String, String> {
+    let mut a = App::new(
+        initial.to_string(),
+        |ui, s| {
+            CodeEditor::new(ui, 1, s.clone())
+                .lang(Lang::Rust)
+                .on_input(|v| v)
+                .into_element()
+        },
+        |s, m| *s = m,
+    );
+    a.click(100.0, 20.0);
+    a
+}
+
+fn shortcut(a: &mut App<String, String>, k: Key, shift: bool, alt: bool) {
+    let m = Modifiers {
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
+        shift,
+        alt,
+        ..Default::default()
+    };
+    a.key_mod(k, m);
+}
+
+fn type_str(a: &mut App<String, String>, s: &str) {
+    for ch in s.chars() {
+        a.send(Event::TextInput(ch.to_string()));
+    }
+}
+
+#[test]
+fn code_next_occurrence_selects_each_match_and_typing_edits_all() {
+    let mut a = code("foo bar foo baz foo");
+    shortcut(&mut a, Key::Named("Home".into()), false, false);
+    a.named("ArrowRight");
+    for _ in 0..3 {
+        shortcut(&mut a, Key::Character("d".into()), true, false);
+    }
+    type_str(&mut a, "qux");
+    assert_eq!(a.state, "qux bar qux baz qux");
+    // Typing over the selections is one step and the burst after it another, as with one caret.
+    a.chord("z");
+    assert_eq!(a.state, "q bar q baz q");
+    a.chord("z");
+    assert_eq!(a.state, "foo bar foo baz foo");
+}
+
+#[test]
+fn code_select_all_occurrences_and_escape_returns_to_one_caret() {
+    let mut a = code("let a = 1;\nlet b = a;\nlet c = a;");
+    shortcut(&mut a, Key::Named("Home".into()), false, false);
+    for _ in 0..4 {
+        a.named("ArrowRight");
+    }
+    shortcut(&mut a, Key::Character("l".into()), true, false);
+    type_str(&mut a, "mut");
+    assert_eq!(a.state, "let mut = 1;\nlet b = mut;\nlet c = mut;");
+    a.key_mod(Key::Escape, Modifiers::default());
+    type_str(&mut a, "!");
+    assert_eq!(a.state.matches('!').count(), 1, "Escape leaves one caret");
+}
+
+#[test]
+fn code_carets_added_below_type_backspace_and_split_lines_together() {
+    let mut a = code("a\nb\nc");
+    a.chord("a");
+    a.named("ArrowLeft"); // caret at the start of the text
+    let alt_shift = Modifiers {
+        alt: true,
+        shift: true,
+        ..Default::default()
+    };
+    a.key_mod(Key::Named("ArrowDown".into()), alt_shift);
+    a.key_mod(Key::Named("ArrowDown".into()), alt_shift);
+    type_str(&mut a, "-");
+    assert_eq!(a.state, "-a\n-b\n-c", "one caret per line");
+    a.key_mod(Key::Backspace, Modifiers::default());
+    assert_eq!(a.state, "a\nb\nc");
+    a.named("End");
+    a.key_mod(Key::Enter, Modifiers::default());
+    assert_eq!(a.state, "a\n\nb\n\nc\n", "Enter at each caret");
+    // Escape drops the extra carets: typing now affects only one.
+    a.key_mod(Key::Escape, Modifiers::default());
+    type_str(&mut a, "!");
+    assert_eq!(a.state.matches('!').count(), 1);
+}
+
+#[test]
+fn code_alt_click_adds_a_caret() {
+    let mut a = code("one\ntwo\nthree");
+    a.named("Home");
+    a.send(Event::KeyReleased(
+        Key::Named("Modifiers".into()),
+        Modifiers {
+            alt: true,
+            ..Default::default()
+        },
+    ));
+    // Alt+click on the third line (gutter is about 46 px wide, lines are ~20 px tall).
+    a.click(120.0, 8.0 + 2.5 * 20.0);
+    a.send(Event::KeyReleased(Key::Named("Modifiers".into()), Modifiers::default()));
+    type_str(&mut a, "#");
+    assert_eq!(a.state, "#one\ntwo\nthree#", "one caret at the start, one added at the end of line 3");
+}
+
+#[test]
+fn code_editor_stays_fast_on_a_huge_file_with_many_carets() {
+    // Debug builds are far slower than release; the release numbers are in BENCHMARKS.md.
+    let lines = if cfg!(debug_assertions) { 50_000 } else { 200_000 };
+    let text: String = (0..lines)
+        .map(|i| format!("    let value_{i} = compute({i}, \"item\"); // line {i}\n"))
+        .collect();
+    let ui = Ui::new(Theme::light());
+    let mk = |t: &str| {
+        Root::new(
+            &ui,
+            CodeEditor::<()>::new(&ui, 1, t.to_string())
+                .lang(Lang::Rust)
+                .into_element(),
+        )
+        .into_element()
+    };
+    let root = mk(&text);
+    let l = alloy_ui_widgets::layout(&root, Size::new(W, H));
+    let t = Instant::now();
+    let mut list = DrawList::default();
+    root.0.draw(&l, &mut list); // first draw indexes the file
+    let first = t.elapsed();
+    let t = Instant::now();
+    let mut list = DrawList::default();
+    root.0.draw(&l, &mut list);
+    let again = t.elapsed();
+    let texts = list
+        .0
+        .iter()
+        .filter(|c| matches!(c, DrawCommand::Text { .. }))
+        .count();
+    // Every occurrence of `compute` gets a caret, then one keystroke edits them all.
+    let mut a = App::new(
+        text.clone(),
+        |ui, s| {
+            CodeEditor::new(ui, 1, s.clone())
+                .lang(Lang::Rust)
+                .on_input(|v| v)
+                .into_element()
+        },
+        |s, m| *s = m,
+    );
+    a.click(100.0, 20.0);
+    shortcut(&mut a, Key::Named("Home".into()), false, false);
+    for _ in 0..(4 + "let value_0 = ".len()) {
+        a.named("ArrowRight");
+    }
+    let t = Instant::now();
+    shortcut(&mut a, Key::Character("l".into()), true, false);
+    let select_all = t.elapsed();
+    let t = Instant::now();
+    a.send(Event::TextInput("X".into()));
+    let type_at_all = t.elapsed();
+    let edited = a.state.matches("Xcompute").count() + a.state.matches("X(").count();
+    let again = {
+        let _ = edited;
+        again
+    };
+    println!(
+        "lines={lines} first_draw={first:?} second_draw={again:?} select_all_occurrences={select_all:?} type_at_every_caret={type_at_all:?}"
+    );
+    assert!(a.state.matches("X(").count() == lines, "one edit per line: {}", a.state.matches("X(").count());
+    assert!(texts < 400, "{texts} text commands for one screen");
+    assert!(again.as_millis() < 100, "a frame of a {lines}-line file took {again:?}");
+    assert!(first.as_secs() < 10);
+}
+
