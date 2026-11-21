@@ -360,7 +360,8 @@ fn text_input_typing_selection_and_clipboard() {
     assert_eq!(h.key(Key::Backspace), vec![Msg::Text("hello".into())]);
     // select all + replace
     let m = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     h.send(Event::KeyPressed(Key::Character("a".into()), m));
@@ -398,7 +399,8 @@ fn text_input_shift_arrows_select_and_cut() {
         h.send(Event::KeyPressed(Key::Named("ArrowLeft".into()), shift));
     }
     let cut = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     assert_eq!(
@@ -922,7 +924,8 @@ fn editor_select_all_and_paste_keeps_newlines() {
     let mut h = Harness::new(&ui, editor(&ui, "zz"), 300.0, 200.0);
     h.click(290.0, 8.0);
     let m = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     h.send(Event::KeyPressed(Key::Character("a".into()), m));
@@ -1047,7 +1050,8 @@ fn text_input_undo_redo_round_trip() {
     let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
     assert_eq!(h.key(Key::Backspace), vec![Msg::Text("ab".into())]);
     let ctrl = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         ..Default::default()
     };
     let z = Key::Character("z".into());
@@ -1059,7 +1063,8 @@ fn text_input_undo_redo_round_trip() {
     );
     let mut h = Harness::new(&ui, mk(&ui, "abc"), 300.0, 40.0);
     let shift = Modifiers {
-        ctrl: true,
+        ctrl: !cfg!(target_os = "macos"),
+        logo: cfg!(target_os = "macos"),
         shift: true,
         ..Default::default()
     };

@@ -580,14 +580,19 @@ mod tests {
             history_key(&mut e, &mut h, "", &z, &shift).as_deref(),
             Some("ab ")
         );
-        let y = Key::Character("y".into());
+        // Redo is Ctrl+Y off macOS; macOS only has Cmd+Shift+Z.
+        let (y, ymods) = if mac {
+            (z.clone(), shift)
+        } else {
+            (Key::Character("y".into()), ctrl)
+        };
         assert_eq!(
-            history_key(&mut e, &mut h, "ab ", &y, &ctrl).as_deref(),
+            history_key(&mut e, &mut h, "ab ", &y, &ymods).as_deref(),
             Some("")
         );
         // nothing left to redo: still "handled", value unchanged
         assert_eq!(
-            history_key(&mut e, &mut h, "", &y, &ctrl).as_deref(),
+            history_key(&mut e, &mut h, "", &y, &ymods).as_deref(),
             Some("")
         );
         // a new edit clears redo
