@@ -226,12 +226,14 @@ fn screen_reader_sees_and_drives_the_app() {
     let exe = std::env::current_exe().unwrap();
     let app_name = exe.file_name().unwrap().to_string_lossy().into_owned();
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/atspi_client.py");
-    let mut child = Command::new("/usr/bin/python3.12")
+    // The system Python, which is the one that has `gi` (apt python3-gi); `ALLOY_ATSPI_PYTHON` overrides.
+    let python = std::env::var("ALLOY_ATSPI_PYTHON").unwrap_or_else(|_| "/usr/bin/python3".into());
+    let mut child = Command::new(python)
         .args([script, &app_name])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .expect("python3.12 with gi.Atspi (apt: python3-gi gir1.2-atspi-2.0)");
+        .expect("system python3 with gi.Atspi (apt: python3-gi gir1.2-atspi-2.0)");
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     let mut stdin = child.stdin.take().unwrap();
     let mut result = None;
