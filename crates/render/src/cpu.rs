@@ -215,7 +215,8 @@ fn sample(rgba: &[u8], w: u32, h: u32, u: f32, v: f32) -> [f32; 4] {
 /// Per-pixel noise in `[-1, 1)` from integer pixel coordinates and a seed.
 /// The WGSL shader computes the same value with `u32` arithmetic.
 fn grain_noise(x: u32, y: u32, seed: u32) -> f32 {
-    let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA6B) ^ seed.wrapping_mul(0xC2B2_AE35);
+    let mut h =
+        x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA6B) ^ seed.wrapping_mul(0xC2B2_AE35);
     h ^= h >> 15;
     h = h.wrapping_mul(0x2C1B_3C6D);
     h ^= h >> 12;
@@ -248,7 +249,11 @@ fn backdrop(p: &Prim, buf: &mut [[f32; 4]], width: u32, height: u32) {
         return;
     }
     let tint = premul(p.color);
-    let kernel = if p.blur > 0.05 { gaussian(p.blur) } else { vec![1.0] };
+    let kernel = if p.blur > 0.05 {
+        gaussian(p.blur)
+    } else {
+        vec![1.0]
+    };
     let rad = (kernel.len() as i32 - 1) / 2;
     // Source window: the region grown by the kernel, clamped to the target.
     let (sx0, sy0) = ((x0 - rad).max(0), (y0 - rad).max(0));
@@ -428,7 +433,8 @@ impl CpuRenderer {
                     }
                     Kind::Inner => {
                         let cov = cover(sd_rrect(pt, p.rect, p.radius));
-                        let shifted = sd_rrect((pt.0 - p.dir[0], pt.1 - p.dir[1]), p.rect, p.radius);
+                        let shifted =
+                            sd_rrect((pt.0 - p.dir[0], pt.1 - p.dir[1]), p.rect, p.radius);
                         let a = if p.blur > 0.0 {
                             smooth(((shifted + p.blur * 0.5) / p.blur).clamp(0.0, 1.0))
                         } else {
@@ -441,7 +447,11 @@ impl CpuRenderer {
                         let n = grain_noise(x as u32, y as u32, p.aux as u32);
                         let a = n.abs() * p.color[3] * cov;
                         // Lighten above zero, darken below; premultiplied.
-                        if n >= 0.0 { [a, a, a, a] } else { [0.0, 0.0, 0.0, a] }
+                        if n >= 0.0 {
+                            [a, a, a, a]
+                        } else {
+                            [0.0, 0.0, 0.0, a]
+                        }
                     }
                     Kind::Backdrop => continue,
                     Kind::Mask => {

@@ -89,7 +89,11 @@ fn radial_gradient_fades_from_the_centre_and_respects_the_corner() {
         radius: 16.0,
     });
     let img = cpu(&l, 40, 40, 1.0);
-    assert_eq!(px(&img, 0, 0), [255, 255, 255, 255], "corner is outside the rounded shape");
+    assert_eq!(
+        px(&img, 0, 0),
+        [255, 255, 255, 255],
+        "corner is outside the rounded shape"
+    );
     let centre = px(&img, 20, 20);
     assert!(centre[0] > 240 && centre[2] < 20, "{centre:?}");
     let edge = px(&img, 38, 20);
@@ -113,7 +117,10 @@ fn sheen_band_is_brightest_at_its_position_and_gone_beyond_its_width() {
     };
     let img = mk(0.5);
     assert!(px(&img, 50, 5)[0] > 245, "centre {:?}", px(&img, 50, 5));
-    assert!((px(&img, 10, 5)[0] as i32 - 128).abs() <= 1, "outside the band is the base");
+    assert!(
+        (px(&img, 10, 5)[0] as i32 - 128).abs() <= 1,
+        "outside the band is the base"
+    );
     let moved = mk(0.1);
     assert!(px(&moved, 10, 5)[0] > 245 && (px(&moved, 90, 5)[0] as i32 - 128).abs() <= 1);
 }
@@ -129,11 +136,18 @@ fn inner_shadow_stays_inside_and_is_thickest_away_from_the_light() {
         blur: 8.0,
     });
     let img = cpu(&l, 80, 80, 1.0);
-    assert_eq!(px(&img, 5, 5), [255, 255, 255, 255], "nothing outside the shape");
+    assert_eq!(
+        px(&img, 5, 5),
+        [255, 255, 255, 255],
+        "nothing outside the shape"
+    );
     let top = px(&img, 40, 12)[0];
     let bottom = px(&img, 40, 67)[0];
     let middle = px(&img, 40, 40)[0];
-    assert!(top < 120, "shadow hugs the top edge when offset downwards, got {top}");
+    assert!(
+        top < 120,
+        "shadow hugs the top edge when offset downwards, got {top}"
+    );
     assert!(bottom > 245, "far edge stays light, got {bottom}");
     assert!(middle > 245, "centre untouched, got {middle}");
 }
@@ -162,7 +176,10 @@ fn grain_is_deterministic_zero_mean_and_bounded() {
     }
     let mean = sum as f32 / 4096.0;
     assert!((mean - 128.0).abs() < 2.0, "mean {mean}");
-    assert!(lo >= 128 - 14 && hi <= 128 + 14, "range {lo}..{hi} exceeds amount");
+    assert!(
+        lo >= 128 - 14 && hi <= 128 + 14,
+        "range {lo}..{hi} exceeds amount"
+    );
     assert!(hi - lo > 8, "visible grain {lo}..{hi}");
     l.0.pop();
     l.push(DrawCommand::Grain {
@@ -171,7 +188,11 @@ fn grain_is_deterministic_zero_mean_and_bounded() {
         amount: 0.10,
         seed: 4,
     });
-    assert_ne!(cpu(&l, 64, 64, 1.0).rgba, a.rgba, "seed changes the pattern");
+    assert_ne!(
+        cpu(&l, 64, 64, 1.0).rgba,
+        a.rgba,
+        "seed changes the pattern"
+    );
 }
 
 #[test]
@@ -208,7 +229,10 @@ fn backdrop_tint_lays_over_the_blur() {
         tint: Color::hex(0xFFFFFF).with_alpha(0.5),
     });
     let v = px(&cpu(&l, 20, 20, 1.0), 10, 10)[0];
-    assert!((v as i32 - 128).abs() <= 2, "half white over black, got {v}");
+    assert!(
+        (v as i32 - 128).abs() <= 2,
+        "half white over black, got {v}"
+    );
 }
 
 #[test]

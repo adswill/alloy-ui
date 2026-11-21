@@ -475,7 +475,11 @@ impl Painter {
                 ],
             });
             match batches.last_mut() {
-                Some(b) if b.special.is_none() && b.clip == p.clip && binding.map_or(true, |nb| nb == b.binding) => {
+                Some(b)
+                    if b.special.is_none()
+                        && b.clip == p.clip
+                        && binding.map_or(true, |nb| nb == b.binding) =>
+                {
                     b.range.end = index + 1;
                 }
                 _ => batches.push(Batch {
