@@ -6,6 +6,7 @@
 //! their call site plus an occurrence counter, so `input(..)` just works and
 //! `.id(n)` stays available as an override.
 
+use alloy_ui_core::Color;
 use alloy_ui_theme::{Palette, Theme};
 use alloy_ui_widgets::Ui;
 use std::{cell::RefCell, collections::HashMap, hash::Hasher, rc::Rc};
@@ -76,9 +77,44 @@ pub fn palette() -> Palette {
     theme().palette.clone()
 }
 
-/// Switch the window between the light and dark theme.
+/// Switch the window between the light and dark theme (an accent set with [`set_accent`] stays).
 pub fn set_dark(dark: bool) {
-    ui().set_theme(if dark { Theme::dark() } else { Theme::light() });
+    let accent = ACCENT.with(|a| a.get());
+    let mut t = if dark { Theme::dark() } else { Theme::light() };
+    if let Some(c) = accent {
+        tint(&mut t, c);
+    }
+    ui().set_theme(t);
+}
+
+/// Use `color` as the accent in light and dark. Cheap to call every frame: nothing happens if
+/// the window already has that accent.
+pub fn set_accent(color: Color) {
+    ACCENT.with(|a| a.set(Some(color)));
+    let mut t = (*theme()).clone();
+    if t.palette.accent != color {
+        tint(&mut t, color);
+        ui().set_theme(t);
+    }
+}
+
+fn tint(t: &mut Theme, c: Color) {
+    let shade = |k: f32| Color {
+        r: c.r * k,
+        g: c.g * k,
+        b: c.b * k,
+        a: c.a,
+    };
+    let p = &mut t.palette;
+    p.accent = c;
+    p.accent_hover = shade(0.92);
+    p.accent_pressed = shade(0.82);
+    p.focus_ring = c;
+    p.selection = c.with_alpha(0.22);
+}
+
+thread_local! {
+    static ACCENT: std::cell::Cell<Option<Color>> = const { std::cell::Cell::new(None) };
 }
 
 /// Recolour the whole window with a brand accent, keeping light or dark. The accent is nudged

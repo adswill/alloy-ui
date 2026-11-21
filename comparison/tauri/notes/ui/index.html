@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <input id="search" type="search" placeholder="Search notes" aria-label="Search notes">
+      <button id="new" class="btn primary">New note</button>
+    </div>
+    <ul id="list" class="note-list"></ul>
+  </aside>
+  <main class="editor" id="editor">
+    <input id="title" class="title" placeholder="Title" aria-label="Title">
+    <textarea id="body" placeholder="Start writing" aria-label="Body"></textarea>
+    <footer>
+      <span id="count" class="caption"></span>
+      <span class="spacer"></span>
+      <button id="theme" class="btn">Dark</button>
+      <button id="pin" class="btn">Pin</button>
+      <button id="delete" class="btn danger">Delete</button>
+    </footer>
+  </main>
+  <main class="empty" id="empty" hidden>No note selected</main>
+  <script src="app.js"></script>
+</body>
+</html>
