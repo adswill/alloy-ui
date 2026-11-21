@@ -22,7 +22,7 @@
 <a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
 </div></header>
 <main class="wrap docs">
-<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html" aria-current="page">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html" aria-current="page">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
 <article class="prose">
 <h1>The dev loop: <code>alloy dev</code> and the inspector</h1>
 <h2>Rebuild and restart on save</h2>
@@ -30,11 +30,47 @@
 </code></pre></div>
 
 <p>builds the app, runs it, and watches <code>src/</code>, <code>assets/</code>, <code>Cargo.toml</code> and the capability file. Every save rebuilds and restarts the window. A compile error prints cargo's own message and the old window closes only when a new build succeeds, so you fix the error and save again. Closing the window ends the command. <code>alloy dev --once</code> runs once without watching, and <code>alloy dev -- --flag</code> passes <code>--flag</code> to your app.</p>
-<p>Alloy does not patch code into a running process. It restarts, which is fast for a debug build and always correct. To make a restart feel like a reload, persist the state:</p>
+<p>Rust code is not patched into a running process (see "Why not hot-patch Rust?" below). Rust changes restart the app, which is fast for a debug build and always correct. The parts of a screen that change most often, its layout, copy, spacing and theme, can live in a <a href="#live-views-reload-on-save-with-no-restart">live view</a> that reloads the instant you save, without a restart. To make a Rust restart feel like a reload, persist the state:</p>
 <div class="hl"><pre><span></span><code><span class="n">sketch</span><span class="p">(</span><span class="n">State</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="n">view</span><span class="p">).</span><span class="n">persist</span><span class="p">(</span><span class="s">"my-app"</span><span class="p">)</span>
 </code></pre></div>
 
 <p>The counter, the open page and every <code>store</code> come back as they were, so only the window flickers. Keep transient things (a search box) in <code>local</code> so they reset.</p>
+<h2>Live views: reload on save with no restart</h2>
+<p>Write the screen in a small indented file and let Rust wire the behaviour:</p>
+<div class="hl"><pre><span></span><code># ui/home.alloy
+theme dark accent=#6D4AFF
+col page gap=14
+  heading "Hello, {name}"
+  text "{count} so far" dim
+  row gap=8 center
+    button "Add" primary @add
+    button "Reset" ghost @reset
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">live</span><span class="o">!</span><span class="p">(</span><span class="s">"ui/home.alloy"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">var</span><span class="p">(</span><span class="s">"name"</span><span class="p">,</span><span class="w"> </span><span class="s">"Ada"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">var</span><span class="p">(</span><span class="s">"count"</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">on</span><span class="p">(</span><span class="s">"add"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">i64</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">on</span><span class="p">(</span><span class="s">"reset"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Home"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>Under <code>alloy dev</code> the file is re-read on every save (a 250 ms check that only exists in dev) and the window changes in place: the counter, focus, scroll positions and open page are untouched, because nothing restarted. Try it: <code>cargo run -p alloy-ui --example live</code>, then edit <code>crates/alloy/ui/counter.alloy</code>. In a release build the file is compiled into the binary and never read from disk, so there is no file to ship and no cost.</p>
+<p>A mistake does not close the window. The last good screen stays and a red line names the problem, for example <code>home.alloy: line 4: unknown element</code>bttn<code>`. Elements are</code>col<code>,</code>row<code>(</code>gap=<code>,</code>pad=<code>,</code>w=<code>,</code>h=<code>; flags</code>page<code>,</code>fill<code>,</code>center<code>),</code>text<code>,</code>heading<code>,</code>caption<code>(flags</code>dim<code>,</code>danger<code>,</code>success<code>,</code>accent<code>),</code>button<code>(</code>primary<code>,</code>ghost<code>,</code>fill<code>),</code>rule<code>,</code>space<code>,</code>vspace<code>and</code>gap<code>. Text goes in</code>"quotes"<code>and may contain</code>{var}<code>;</code>@name<code>binds a button to</code>.on("name", ..)<code>; a</code>button<code>with no matching</code>.on<code>is disabled so a typo is visible. A first</code>theme<code>line sets</code>dark<code>,</code>accent=#rrggbb<code>,</code>density=compact|spacious<code>and</code>contrast=high`.</p>
+<p>Live views are deliberately not a second UI language: no loops, conditions or expressions. Anything dynamic (a list from state, a widget that needs a handler with data) stays in Rust, next to live parts: <code>col![live!("ui/header.alloy").var(..), my_table(s)]</code>.</p>
+<h2>Why not hot-patch Rust?</h2>
+<p>Reloading compiled view code in-process means loading the app as a dynamic library and swapping it while the window runs. We looked at it and chose not to ship it:</p>
+<ul>
+<li>Each library would carry its own copy of Alloy, with its own thread-locals, so the ambient window state a view reads would be missing unless Alloy itself became a shared library on all three systems.</li>
+<li>The state type crosses the boundary. Add a field and the old and new layouts disagree, which is undefined behaviour rather than an error message.</li>
+<li>Rust has no stable ABI, so it only works while every compiler flag and dependency version matches exactly, and a failure is a crash, not a message.</li>
+</ul>
+<p>A restart with <code>.persist()</code> is correct in every one of those cases, and a live view covers the edits you make hundreds of times a day. If you need the rest, build the heavy logic as a library and keep the view in a live file.</p>
 <h2>The inspector (F12)</h2>
 <p>Press <strong>F12</strong> in any debug build, or in a release build started with <code>ALLOY_INSPECT=1</code> (<code>alloy dev</code> sets it). Every widget gets an outline coloured by depth. The widget under the cursor is highlighted and labelled with its type, size and position, and the bottom bar shows its path from the root, for example <code>Root &gt; Column &gt; Row &gt; Button</code>.</p>
 <p>Widgets need no code to appear: the inspector reads the same tree and layout the renderer uses. Custom widgets get their type name for free.</p>
