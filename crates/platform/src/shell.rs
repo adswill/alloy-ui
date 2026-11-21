@@ -692,7 +692,6 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         self.dispatch(el, PlatformEvent::Wake);
     }
 
-
     fn exiting(&mut self, _: &ActiveEventLoop) {
         if let Some(ctx) = &self.ctx {
             if perf_log() {
