@@ -6,7 +6,7 @@
 //! thread by [`Pump`], which `sketch` and `app` apps install automatically.
 
 use crate::{
-    cx::{self, auto_id},
+    cx::{self, auto_id, LockExt},
     dsl::{button, caption, heading, text, Act},
     view::{col, Node},
 };
@@ -55,7 +55,7 @@ pub async fn sleep(d: Duration) {
         type Output = ();
         fn poll(mut self: Pin<&mut Self>, c: &mut Context<'_>) -> Poll<()> {
             let state = self.0.clone();
-            let mut g = state.lock().unwrap();
+            let mut g = state.lock_ok();
             if g.0 {
                 return Poll::Ready(());
             }
@@ -65,7 +65,7 @@ pub async fn sleep(d: Duration) {
                 let (s, d) = (self.0.clone(), self.1);
                 std::thread::spawn(move || {
                     std::thread::sleep(d);
-                    let mut g = s.lock().unwrap();
+                    let mut g = s.lock_ok();
                     g.0 = true;
                     if let Some(w) = g.1.take() {
                         w.wake();
@@ -80,11 +80,11 @@ pub async fn sleep(d: Duration) {
 
 /// Apply finished background work and fire due refresh timers. Runs on the UI thread.
 pub(crate) fn pump() {
-    let done: Vec<Job> = std::mem::take(&mut *DONE.lock().unwrap());
+    let done: Vec<Job> = std::mem::take(&mut *DONE.lock_ok());
     for job in done {
         job();
     }
-    let ticks: Vec<_> = TICKERS.lock().unwrap().clone();
+    let ticks: Vec<_> = TICKERS.lock_ok().clone();
     for t in ticks {
         t();
     }
@@ -92,14 +92,14 @@ pub(crate) fn pump() {
 
 /// True when no fetch is running.
 pub(crate) fn idle() -> bool {
-    INFLIGHT.load(Ordering::Relaxed) == 0 && DONE.lock().unwrap().is_empty()
+    INFLIGHT.load(Ordering::Relaxed) == 0 && DONE.lock_ok().is_empty()
 }
 
 /// How often the UI should call [`pump`], if anything is pending.
 pub(crate) fn pump_period() -> Option<Duration> {
     if INFLIGHT.load(Ordering::Relaxed) > 0 {
         Some(Duration::from_millis(50))
-    } else if !TICKERS.lock().unwrap().is_empty() {
+    } else if !TICKERS.lock_ok().is_empty() {
         Some(Duration::from_millis(500))
     } else {
         None
@@ -162,7 +162,7 @@ impl<T: Send + 'static> Resource<T> {
     /// Fetch again now (ignored while a fetch is running). The old data stays visible meanwhile.
     pub fn reload(&self) {
         let fut = {
-            let mut g = self.0.lock().unwrap();
+            let mut g = self.0.lock_ok();
             if g.busy {
                 return;
             }
@@ -173,8 +173,8 @@ impl<T: Send + 'static> Resource<T> {
         let inner = self.0.clone();
         std::thread::spawn(move || {
             let result = block_on(fut);
-            DONE.lock().unwrap().push(Box::new(move || {
-                let mut g = inner.lock().unwrap();
+            DONE.lock_ok().push(Box::new(move || {
+                let mut g = inner.lock_ok();
                 match result {
                     Ok(v) => (g.data, g.error) = (Some(v), None),
                     Err(e) => g.error = Some(e),
@@ -191,7 +191,7 @@ impl<T: Send + 'static> Resource<T> {
     /// Refetch every `period` while `enabled`: `.every_if(auto.get(), secs(10.0))`.
     pub fn every_if(self, enabled: bool, period: Duration) -> Self {
         {
-            let mut g = self.0.lock().unwrap();
+            let mut g = self.0.lock_ok();
             match (enabled, g.every) {
                 (true, None) => g.every = Some((period, Instant::now() + period)),
                 (false, Some(_)) => g.every = None,
@@ -200,9 +200,8 @@ impl<T: Send + 'static> Resource<T> {
             if !g.ticking {
                 g.ticking = true;
                 let me = self.clone();
-                TICKERS.lock().unwrap().push(Arc::new(move || {
-                    let due =
-                        matches!(me.0.lock().unwrap().every, Some((_, at)) if Instant::now() >= at);
+                TICKERS.lock_ok().push(Arc::new(move || {
+                    let due = matches!(me.0.lock_ok().every, Some((_, at)) if Instant::now() >= at);
                     if due {
                         me.reload();
                     }
@@ -217,7 +216,7 @@ impl<T: Send + 'static> Resource<T> {
     #[track_caller]
     pub fn auto(self, period: Duration) -> Self {
         let on = crate::local(false);
-        self.0.lock().unwrap().auto = Some(on);
+        self.0.lock_ok().auto = Some(on);
         self.every_if(on.get(), period)
     }
 
@@ -225,7 +224,7 @@ impl<T: Send + 'static> Resource<T> {
     /// (if [`auto`](Self::auto) was used) and a Refresh button, right-aligned.
     pub fn header<S: 'static>(&self, title: &str) -> Node<Act<S>> {
         let mut items: Vec<Node<Act<S>>> = vec![heading(title).into(), crate::space()];
-        if let Some(on) = self.0.lock().unwrap().auto {
+        if let Some(on) = self.0.lock_ok().auto {
             use crate::FlagCell;
             items.push(on.switch("Auto refresh").into());
         }
@@ -240,7 +239,7 @@ impl<T: Send + 'static> Resource<T> {
 
     /// Whether a fetch is running.
     pub fn busy(&self) -> bool {
-        self.0.lock().unwrap().busy
+        self.0.lock_ok().busy
     }
 
     /// A copy of the latest data, if any has arrived.
@@ -248,7 +247,7 @@ impl<T: Send + 'static> Resource<T> {
     where
         T: Clone,
     {
-        self.0.lock().unwrap().data.clone()
+        self.0.lock_ok().data.clone()
     }
 
     /// A Refresh button that is disabled while loading.
@@ -278,7 +277,7 @@ impl<T: Send + 'static> Resource<T> {
     /// Retry if the first load failed, otherwise `view(data)` (with a note above it if a
     /// later refresh failed).
     pub fn show<S: 'static>(&self, view: impl FnOnce(&T) -> Node<Act<S>>) -> Node<Act<S>> {
-        let g = self.0.lock().unwrap();
+        let g = self.0.lock_ok();
         let retry = self.clone();
         match (&g.data, &g.error) {
             (Some(d), err) => {

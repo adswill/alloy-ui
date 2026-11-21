@@ -238,13 +238,13 @@ pub(crate) fn durable_keyed<T: serde::Serialize + serde::de::DeserializeOwned + 
         d.put.entry(key.clone()).or_insert_with(|| {
             Box::new(move |v| {
                 if let Ok(v) = serde_json::from_value(v) {
-                    *s.lock().unwrap() = v;
+                    *s.lock_ok() = v;
                 }
             })
         });
         d.live.entry(key).or_insert_with(|| {
             let s = slot.clone();
-            Box::new(move || serde_json::to_value(&*s.lock().unwrap()).unwrap_or_default())
+            Box::new(move || serde_json::to_value(&*s.lock_ok()).unwrap_or_default())
         });
     });
     id
@@ -281,4 +281,17 @@ pub(crate) fn window_ui_or_fork(id: alloy_ui_core::WindowId, template: &Ui) -> U
     ui.set_clipboard(template.clipboard());
     register_window_ui(id, &ui);
     ui
+}
+
+/// `Mutex::lock` that survives poisoning: a panicking worker must not take the UI thread
+/// down with it, and the guarded state is plain data that stays valid.
+pub(crate) trait LockExt<T> {
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for std::sync::Mutex<T> {
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }

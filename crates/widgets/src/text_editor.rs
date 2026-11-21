@@ -3,8 +3,8 @@
 use crate::a11y::Role;
 use crate::{
     text_edit::{
-        apply_key, history_key, line_range, nearest_boundary, sanitize, word_bounds, Edit,
-        KeyOutcome,
+        apply_key, commit_edit, history_edit, line_range, nearest_boundary, sanitize, word_bounds,
+        Edit, KeyOutcome,
     },
     ui::Ui,
     util::{self, focus_ring},
@@ -111,28 +111,27 @@ impl<M: 'static> TextEditor<M> {
     }
     /// Emit `new` as an edit, remembering the old state for undo.
     fn commit(&self, new: String, caret_before: usize, out: &mut Vec<M>) {
-        let now = self.ui.now();
-        self.ui
-            .with_history(self.id, |h| h.record(&self.value, caret_before, &new, now));
-        if let Some(f) = &self.on_input {
-            out.push(f(new));
-        }
+        commit_edit(
+            &self.ui,
+            self.id,
+            &self.value,
+            new,
+            caret_before,
+            &self.on_input,
+            out,
+        );
     }
     /// Undo/redo shortcut; returns true when the key was one.
     fn history(&self, e: &mut Edit, k: &Key, m: &Modifiers, out: &mut Vec<M>) -> bool {
-        let Some(f) = &self.on_input else {
-            return false;
-        };
-        match self
-            .ui
-            .with_history(self.id, |h| history_key(e, h, &self.value, k, m))
-        {
-            Some(v) => {
-                out.push(f(v));
-                true
-            }
-            None => false,
-        }
+        history_edit(
+            &self.ui,
+            self.id,
+            &self.value,
+            e,
+            (k, m),
+            &self.on_input,
+            out,
+        )
     }
 }
 

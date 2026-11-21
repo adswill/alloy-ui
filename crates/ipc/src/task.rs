@@ -32,7 +32,7 @@ impl TaskHandle {
     /// their [`CancelToken`] (their result is discarded regardless).
     pub fn cancel(&self) {
         self.token.0.store(true, Ordering::SeqCst);
-        if let Some(t) = self.thread.lock().unwrap().as_ref() {
+        if let Some(t) = self.thread.lock_ok().as_ref() {
             t.unpark();
         }
     }
@@ -95,7 +95,7 @@ impl<M: Send + 'static> TaskRunner<M> {
             }
             d2.store(true, Ordering::SeqCst);
         });
-        *s2.lock().unwrap() = Some(join.thread().clone());
+        *s2.lock_ok() = Some(join.thread().clone());
         TaskHandle {
             token,
             done,
@@ -139,6 +139,18 @@ impl<M: Send + 'static> TaskRunner<M> {
     /// Block up to `timeout` for the next message (mostly useful in tests).
     pub fn recv_timeout(&self, timeout: std::time::Duration) -> Option<M> {
         self.rx.recv_timeout(timeout).ok()
+    }
+}
+
+/// `Mutex::lock` that survives poisoning (the guarded slots stay valid if a task panics).
+trait LockExt<T> {
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T>;
+}
+
+impl<T> LockExt<T> for std::sync::Mutex<T> {
+    fn lock_ok(&self) -> std::sync::MutexGuard<'_, T> {
+        self.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -221,7 +233,7 @@ mod tests {
                 if self.0.load(Ordering::SeqCst) {
                     Poll::Ready(9)
                 } else {
-                    *self.1.lock().unwrap() = Some(cx.waker().clone());
+                    *self.1.lock_ok() = Some(cx.waker().clone());
                     Poll::Pending
                 }
             }
@@ -232,7 +244,7 @@ mod tests {
         r.spawn(Box::pin(Flag(flag.clone(), slot.clone())));
         thread::sleep(Duration::from_millis(50));
         flag.store(true, Ordering::SeqCst);
-        if let Some(w) = slot.lock().unwrap().take() {
+        if let Some(w) = slot.lock_ok().take() {
             w.wake();
         }
         assert_eq!(r.recv_timeout(T), Some(9));

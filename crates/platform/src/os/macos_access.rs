@@ -255,6 +255,7 @@ define_class!(
         }
     }
 
+    // SAFETY: `AccessElement` is an `NSObject` subclass with no extra invariants.
     unsafe impl NSObjectProtocol for AccessElement {}
 );
 
@@ -350,6 +351,7 @@ define_class!(
         }
     }
 
+    // SAFETY: `AccessContainer` is an `NSObject` subclass with no extra invariants.
     unsafe impl NSObjectProtocol for AccessContainer {}
 );
 

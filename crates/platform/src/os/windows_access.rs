@@ -475,6 +475,10 @@ impl IRangeValueProvider_Impl for Pattern_Impl {
 // ----- window hook ----------------------------------------------------------------------
 
 /// Answer `WM_GETOBJECT` for UI Automation.
+///
+/// # Safety
+/// Only installed as a `SetWindowSubclass` callback, so Windows calls it on the window's
+/// thread with a valid `hwnd` and message parameters.
 unsafe extern "system" fn subclass_proc(
     hwnd: HWND,
     msg: u32,

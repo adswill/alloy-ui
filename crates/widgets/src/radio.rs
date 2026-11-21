@@ -3,11 +3,10 @@
 use crate::a11y::Role;
 use crate::{
     ui::Ui,
-    util::{focus_ring, key_of},
+    util::{activation, control_label, focus_ring},
 };
 use alloy_ui_core::{
-    Border, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton, Point, Rectangle,
-    Size, Widget,
+    Border, DrawCommand, DrawList, Element, Event, Layout, Point, Rectangle, Size, Widget,
 };
 
 const D: f32 = 16.0;
@@ -63,35 +62,18 @@ impl<M: Clone + 'static> Widget<M> for Radio<M> {
         cursor: Point,
         out: &mut Vec<M>,
     ) -> bool {
-        let b = layout.bounds;
-        let enabled = self.on_select.is_some();
-        match event {
-            Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
-                if enabled {
-                    self.ui.set_pressed(Some(key_of(&b)));
-                    if self.id.is_some() {
-                        self.ui.set_focus(self.id);
-                    }
-                }
-                true
-            }
-            Event::MouseReleased(MouseButton::Left) => {
-                let was = self.ui.pressed() == Some(key_of(&b));
-                if was && b.contains(cursor) && !self.selected {
-                    out.extend(self.on_select.clone());
-                }
-                was
-            }
-            Event::KeyPressed(Key::Character(c), _)
-                if enabled && c == " " && self.ui.is_focused(self.id) =>
-            {
-                if !self.selected {
-                    out.extend(self.on_select.clone());
-                }
-                true
-            }
-            _ => false,
+        let (consumed, activated) = activation(
+            &self.ui,
+            self.id,
+            self.on_select.is_some(),
+            event,
+            &layout.bounds,
+            cursor,
+        );
+        if activated && !self.selected {
+            out.extend(self.on_select.clone());
         }
+        consumed
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let t = self.ui.theme();
@@ -146,19 +128,6 @@ impl<M: Clone + 'static> Widget<M> for Radio<M> {
                 shadow: None,
             });
         }
-        let s = t.typography.body;
-        out.push(DrawCommand::Text {
-            family: alloy_ui_core::FontFamily::Sans,
-            weight: 400,
-            line_height: None,
-            origin: Point::new(
-                b.origin.x + D + t.spacing.sm,
-                b.origin.y + (b.size.height - s.line_height) / 2.0,
-            ),
-            content: self.label.clone(),
-            size: s.size,
-            color: if enabled { p.text } else { p.text_disabled },
-            max_width: None,
-        });
+        out.push(control_label(&self.ui, &self.label, &b, D, enabled));
     }
 }
