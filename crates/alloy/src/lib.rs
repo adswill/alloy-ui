@@ -73,6 +73,13 @@ mod guide {
     struct G20;
 }
 
+/// `AGENTS.md` teaches coding agents the API; its snippets are compiled too.
+#[cfg(doctest)]
+mod agents {
+    #[doc = include_str!("../../../AGENTS.md")]
+    struct Agents;
+}
+
 /// The cookbook in `docs/cookbook` is compiled and run as doc-tests too.
 #[cfg(doctest)]
 mod cookbook {
