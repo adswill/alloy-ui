@@ -420,7 +420,9 @@ fn hotkeys() -> Result<String, String> {
 
 #[cfg(target_os = "macos")]
 fn app_bundle() -> std::path::PathBuf {
-    std::env::temp_dir().join("AlloySystemRuntime.app")
+    // Launch Services ignores bundles under the per-user temp directory.
+    std::path::PathBuf::from(std::env::var("HOME").unwrap_or_default())
+        .join("Applications/AlloySystemRuntime.app")
 }
 #[cfg(target_os = "macos")]
 fn bundle_result() -> std::path::PathBuf {
@@ -459,7 +461,11 @@ fn macos_bundle() -> Result<String, String> {
         .arg(&app)
         .status();
     let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-    let _ = Command::new(lsregister).arg("-f").arg(&app).status();
+    let _ = Command::new(lsregister)
+        .args(["-f", "-R", "-trusted"])
+        .arg(&app)
+        .status();
+    std::thread::sleep(Duration::from_secs(2));
     let st = Command::new("open")
         .arg(URL)
         .status()
