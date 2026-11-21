@@ -555,8 +555,8 @@ First measurements from real macOS, Windows and Linux runners: the `footprint` j
 | Windows x86_64 (windows-latest) | 4.39 MB | 236.9 / 230.3 / 3892.5 ms | 63.0 / 56.3 / 67.8 ms |
 
 How to read this:
-- **These runners have no real GPU.** The "GPU renderer" column is wgpu on whatever software or virtualised adapter the runner offers (llvmpipe on Linux, a virtualised Metal device on macOS, a software DX12 adapter on Windows). It says nothing about a real graphics card. The CPU column is the renderer without wgpu start-up.
-- Targets: under 10 MB binary is met on all three. Under 200 ms start-up is met by the Linux and CPU-path numbers and by the macOS GPU-path median (195 ms) only barely; **the Windows GPU path (237 ms median) and the first launch (up to 3.9 s on Windows, 1.2 s on macOS) miss it.** The max column is the first launch after the build, with cold file caches.
-- The Windows binary is 4.39 MB against 6.93 MB on Linux for the same source; the Linux build links in more (Vulkan loader support, X11 and Wayland client code). The macOS figure comes from the file size only; its job summary printed the size line garbled, so MiB is not recorded.
+- **These runners have no real GPU.** The "GPU renderer" column is wgpu on whatever adapter the runner offers (llvmpipe on Linux; which adapter macOS and Windows used was not recorded). It says nothing about a real graphics card. The CPU column is the renderer without wgpu start-up.
+- Targets: under 10 MB binary is met on all three. Under 200 ms start-up is met by the Linux and CPU-path numbers and by the macOS GPU-path median (195 ms) only barely; **the Windows GPU path (237 ms median) and the first launch (up to 3.9 s on Windows, 1.2 s on macOS) miss it.** The max column is the slowest of the 10 launches; the cause (for example cold file caches) was not investigated.
+- The binary differs by OS for the same source (3.67 MB macOS, 4.39 MB Windows, 6.93 MB Linux); the reason was not investigated. The macOS figure comes from the file size only; its job summary printed the size line garbled, so MiB is not recorded.
 - Shared CI runners vary run to run. Treat differences under about 30% as noise.
 - Not measured on any of the three: frame rate, idle CPU, memory.
