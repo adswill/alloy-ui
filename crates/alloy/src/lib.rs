@@ -63,6 +63,8 @@ mod guide {
     struct G15;
     #[doc = include_str!("../../../docs/guide/17-shipping.md")]
     struct G16;
+    #[doc = include_str!("../../../docs/guide/18-desktop-integration.md")]
+    struct G17;
 }
 
 // Lets the proc macros name this crate as `::alloy_ui` from inside it too.
@@ -76,6 +78,7 @@ mod chrome;
 mod collections;
 mod cx;
 mod declare;
+mod desktop;
 mod dsl;
 pub mod fs;
 pub mod i18n;
@@ -110,13 +113,14 @@ pub use collections::{
 };
 pub use cx::{palette, set_accent, set_dark, set_look, theme, ui, Look};
 pub use declare::{clock, money};
+pub use desktop::{files, notify, Desktop, DesktopSpec, FileDialog, MenuBuilder, TrayBuilder};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
     options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll, section,
     slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
 };
 pub use inputs::{number, stepper, Count, Stepper};
-pub use keys::{redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
+pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use live::{live_file, Live};
 pub use mock::{series, Mock};
 pub use motion::{animated, fade, reveal, spring};
@@ -154,7 +158,8 @@ pub mod prelude {
         Place, Record, Records, Resource, Router, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
+        at, choices, clock, col, files, money, notify, quit, redo, row, state, t, toast, undo,
+        vals, Hotkey, Shortcuts,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;
@@ -230,6 +235,8 @@ where
             subs: HashMap::new(),
             sub_rx,
             sub_tx,
+            tray_applied: None,
+            hotkeys_applied: Vec::new(),
         }
     })
 }
@@ -282,11 +289,83 @@ struct Host<A: Application> {
     subs: HashMap<u64, Arc<AtomicBool>>,
     sub_rx: mpsc::Receiver<A::Message>,
     sub_tx: mpsc::Sender<A::Message>,
+    tray_applied: Option<platform::tray::TraySettings>,
+    hotkeys_applied: Vec<String>,
 }
 
 impl<A: Application + 'static> Host<A> {
+    /// Hand the menu bar, tray and global hotkeys to the OS. Labelled shortcuts that no
+    /// menu of the app lists go in an "Actions" menu (and Undo/Redo in "Edit"), so every
+    /// shortcut is discoverable; failures are logged because the shortcuts and the palette
+    /// still work without a native menu.
+    fn apply_desktop(
+        &mut self,
+        ctx: &mut ShellContext,
+        items: &[(String, String)],
+        desktop: &DesktopSpec,
+    ) {
+        fn listed(items: &[platform::menu::MenuItem], keys: &str, label: &str) -> bool {
+            items.iter().any(|i| match i {
+                platform::menu::MenuItem::Action {
+                    shortcut, label: l, ..
+                } => l == label && shortcut.as_deref().unwrap_or("") == keys,
+                platform::menu::MenuItem::Submenu(m) => listed(&m.items, keys, label),
+                _ => false,
+            })
+        }
+        let mut edit = platform::menu::Menu::new("Edit");
+        let mut actions = platform::menu::Menu::new("Actions");
+        for (keys, label) in items {
+            if desktop.menus.iter().any(|m| listed(&m.items, keys, label)) {
+                continue;
+            }
+            let target = if label == "Undo" || label == "Redo" {
+                &mut edit
+            } else {
+                &mut actions
+            };
+            *target = std::mem::take(target).action(keys, label, Some(keys));
+        }
+        let mut menus: Vec<_> = desktop.menus.clone();
+        menus.extend([actions, edit].into_iter().filter(|m| !m.items.is_empty()));
+        if cfg!(target_os = "macos") && !menus.is_empty() {
+            // The first menu of a Mac app is the application menu, named after the app.
+            menus.insert(
+                0,
+                platform::menu::Menu::new(ctx.window().title()).action(
+                    "alloy:quit",
+                    "Quit",
+                    Some("mod+q"),
+                ),
+            );
+        }
+        if let Err(e) = ctx.set_menu(&menus) {
+            log::debug!("no native menu bar: {e:?}");
+        }
+        if desktop.tray != self.tray_applied {
+            match &desktop.tray {
+                Some(t) => {
+                    if let Err(e) = ctx.set_tray(t) {
+                        log::warn!("{e}");
+                    }
+                }
+                None => ctx.clear_tray(),
+            }
+            self.tray_applied = desktop.tray.clone();
+        }
+        if desktop.hotkeys != self.hotkeys_applied {
+            ctx.unregister_global_hotkeys();
+            for keys in &desktop.hotkeys {
+                if let Err(e) = ctx.register_global_hotkey(keys) {
+                    log::warn!("{e}");
+                }
+            }
+            self.hotkeys_applied = desktop.hotkeys.clone();
+        }
+    }
+
     fn pump(&mut self, ctx: &mut ShellContext, outcome: Outcome) {
-        if outcome.exit {
+        if outcome.exit || keys::take_quit() {
             ctx.exit();
             return;
         }
@@ -408,6 +487,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             return;
         };
         let win = WindowId(ctx.window_key().0);
+        let tick_ms = self.start.elapsed().as_millis() as u64;
         let outcome = match event {
             PlatformEvent::Accessibility { window, request } => {
                 let w = WindowId(window.0);
@@ -452,6 +532,28 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     };
                 }
                 outcome
+            }
+            // Desktop commands are queued by name and run by the page's shortcut layer on the
+            // tick that follows, so they reach the app exactly as a typed shortcut would.
+            PlatformEvent::TrayClicked => {
+                keys::invoke("tray:click".into());
+                rt.handle_event(&Event::Tick(tick_ms))
+            }
+            PlatformEvent::GlobalHotkey(keys) => {
+                keys::invoke(format!("global:{keys}"));
+                rt.handle_event(&Event::Tick(tick_ms))
+            }
+            PlatformEvent::MenuAction(id) if id == "alloy:quit" => {
+                ctx.exit();
+                return;
+            }
+            PlatformEvent::MenuAction(id)
+                if id.starts_with("cmd:")
+                    || id.starts_with("tray:")
+                    || id.starts_with("global:") =>
+            {
+                keys::invoke(id);
+                rt.handle_event(&Event::Tick(tick_ms))
             }
             PlatformEvent::MenuAction(id) => {
                 // A menu item or shortcut: replay it as the key press it stands for, so the
@@ -499,26 +601,8 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         if let Some(r) = self.renderers.get_mut(&win) {
             r.render(&rt.draw_window(win), ctx.scale_factor() as f32);
         }
-        if let Some(items) = keys::menu_changed() {
-            // Labelled shortcuts go in the menu bar (and, where the OS has no native one, are
-            // still matched by the shell). Fails quietly where there is no menu bar.
-            let mut edit = platform::menu::Menu::new("Edit");
-            let mut actions = platform::menu::Menu::new("Actions");
-            for (keys, label) in &items {
-                let target = if label == "Undo" || label == "Redo" {
-                    &mut edit
-                } else {
-                    &mut actions
-                };
-                *target = std::mem::take(target).action(keys, label, Some(keys));
-            }
-            let menus: Vec<_> = [actions, edit]
-                .into_iter()
-                .filter(|m| !m.items.is_empty())
-                .collect();
-            if let Err(e) = ctx.set_menu(&menus) {
-                log::debug!("no native menu bar: {e:?}");
-            }
+        if let Some((items, desktop)) = keys::shell_changed() {
+            self.apply_desktop(ctx, &items, &desktop);
         }
         if let Some(ui) = cx::window_ui(win).or_else(|| self.ui.clone()) {
             let nodes = access_nodes(&ui.accessibility());

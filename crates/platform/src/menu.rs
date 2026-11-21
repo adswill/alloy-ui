@@ -1,9 +1,9 @@
 //! Menu bar and context-menu model. The model is plain data so apps can build
 //! menus the same way on every OS and tests can inspect them.
 //!
-//! Status: model and shortcut formatting only. Native menu-bar backends are
-//! not implemented yet (see `DECISIONS.md`); [`MenuBackend::install`] reports
-//! `Unsupported`.
+//! The model is installed with [`ShellContext::set_menu`](crate::ShellContext::set_menu):
+//! NSMenu on macOS, an HMENU on Windows, and the desktop's global menu over D-Bus on Linux
+//! (KDE, Unity, MATE; GNOME has no menu bar). [`MenuBackend`] is a separate, unused hook.
 
 use crate::PlatformError;
 

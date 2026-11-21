@@ -19,5 +19,6 @@ Read in order, or jump to what you need. Every code block here is compiled as a 
 15. [Testing](15-testing.md): `Harness`, fill, expect, snapshots
 16. [Coming from iced or egui](16-coming-from-iced-and-egui.md): side-by-side code and a porting checklist
 17. [Shipping](17-shipping.md): signing, notarisation, MSIX and Flatpak, signed auto-update, crash reports
+18. [Desktop integration](18-desktop-integration.md): menu bar, tray, notifications, file dialogs, global hotkeys
 
 Design background: [ARCHITECTURE.md](../../ARCHITECTURE.md), [DECISIONS.md](../../DECISIONS.md), [DESIGN.md](../../DESIGN.md). API reference: `cargo doc --open -p alloy-ui`.

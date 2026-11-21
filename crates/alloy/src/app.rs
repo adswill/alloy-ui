@@ -121,6 +121,13 @@ pub trait App: Sized + 'static {
         Vec::new()
     }
 
+    /// The menu bar, tray icon and global hotkeys. [`Sketch`] and [`Pages`](crate::Pages) fill
+    /// this from `.menu`, `.tray` and `.global_hotkey`; an [`App`] written by hand returns
+    /// `DesktopSpec::default()` (the default) or builds one with a [`Desktop`](crate::Desktop).
+    fn desktop(&self) -> crate::DesktopSpec {
+        crate::DesktopSpec::default()
+    }
+
     /// A copy of the state for undo, or `None` (the default) for an app without it.
     /// `Some(Snap::new(self.clone()))` is usually all it takes, together with
     /// [`restore`](Self::restore) and [`meta`](Self::meta).
@@ -265,6 +272,7 @@ impl<A: App> Application for Shell<A> {
                     hot.push(Hotkey::new(keys, m).labelled(label));
                 }
             }
+            keys::publish_desktop(self.app.desktop());
             keys::publish_menu(
                 hot.iter()
                     .filter(|h| !h.keys.is_empty())
@@ -308,6 +316,7 @@ pub struct Sketch<S: 'static, V> {
     save: Option<Saver<S>>,
     keys: Vec<(String, Option<String>, Act<S>)>,
     undo: Option<Undo<S>>,
+    desktop: crate::Desktop<S>,
 }
 
 struct Undo<S> {
@@ -357,6 +366,38 @@ impl<S: 'static, V> Sketch<S, V> {
     ) -> Self {
         self.keys
             .push((keys.into(), Some(label.into()), Act::new(f)));
+        self
+    }
+
+    /// Add a menu to the menu bar: `.menu("File", |m| m.item("Open", "mod+o", |s| s.open()))`.
+    /// Native on macOS and Windows, and in the global menu on KDE and other desktops that have
+    /// one; elsewhere the shortcuts and the command palette (`mod+k`) still work. Each item is
+    /// `item(label, shortcut, action)` with `""` for no shortcut. See [`quit`](crate::quit).
+    pub fn menu(
+        mut self,
+        title: &str,
+        build: impl FnOnce(crate::MenuBuilder<S>) -> crate::MenuBuilder<S>,
+    ) -> Self {
+        self.desktop.menu(title, build);
+        self
+    }
+
+    /// Put an icon in the system tray (menu bar on macOS) with a context menu:
+    /// `.tray("My app", |t| t.click(|s| s.show()).item("Quit", |_| quit()))`.
+    pub fn tray(
+        mut self,
+        tooltip: &str,
+        build: impl FnOnce(crate::TrayBuilder<S>) -> crate::TrayBuilder<S>,
+    ) -> Self {
+        self.desktop.tray(tooltip, build);
+        self
+    }
+
+    /// Run `f` when `keys` is pressed anywhere on the desktop, even while another app has the
+    /// focus: `.global_hotkey("ctrl+alt+space", |s| s.toggle())`. Works on Windows, macOS and
+    /// X11; on Wayland the desktop offers no way to do it, so it is logged and skipped.
+    pub fn global_hotkey(mut self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.desktop.global_hotkey(keys, f);
         self
     }
 
@@ -426,6 +467,7 @@ where
         save: None,
         keys: Vec::new(),
         undo: None,
+        desktop: crate::Desktop::default(),
     }
 }
 
@@ -458,7 +500,12 @@ where
                     None => h,
                 }
             })
+            .chain(self.desktop.hotkeys())
             .collect()
+    }
+
+    fn desktop(&self) -> crate::DesktopSpec {
+        self.desktop.spec()
     }
 
     fn snapshot(&self) -> Option<Snap> {

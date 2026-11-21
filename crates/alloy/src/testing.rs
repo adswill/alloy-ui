@@ -255,6 +255,28 @@ impl<A: App> Harness<A> {
         self.rt.handle_event(&Event::KeyPressed(key, sc.mods));
         self
     }
+    /// Do what the OS does when the user picks a menu item, the tray icon or a global hotkey:
+    /// `h.desktop("mod+o")` (an item with a shortcut), `h.desktop("cmd:About")` (an item
+    /// without one), `h.desktop("tray:Show")`, `h.desktop("tray:click")` or
+    /// `h.desktop("global:ctrl+alt+space")`.
+    pub fn desktop(&mut self, id: &str) -> &mut Self {
+        // Like the real shell: names are queued for the page's shortcut layer, and an item
+        // identified by its shortcut is replayed as that key press.
+        if ["cmd:", "tray:", "global:"]
+            .iter()
+            .any(|p| id.starts_with(p))
+        {
+            crate::keys::invoke(id.to_string());
+            self.rt.handle_event(&Event::Tick(self.now));
+            self
+        } else {
+            self.chord(id)
+        }
+    }
+    /// The menus, tray icon and global hotkeys the app currently asks the OS for.
+    pub fn desktop_spec(&self) -> crate::DesktopSpec {
+        crate::keys::current_desktop()
+    }
     /// Let `ms` milliseconds pass: animations and toasts progress.
     pub fn advance(&mut self, ms: u64) -> &mut Self {
         self.now += ms;

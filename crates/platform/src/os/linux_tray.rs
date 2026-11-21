@@ -27,20 +27,24 @@ pub(crate) fn rgba_to_argb(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-const MENU_PATH: &str = "/MenuBar";
+pub(super) const MENU_PATH: &str = "/MenuBar";
 const MENU_IFACE: &str = "com.canonical.dbusmenu";
 
 /// One node of the exported menu tree. Id 0 is the invisible root.
-struct Node {
-    id: i32,
-    label: String,
-    enabled: bool,
-    separator: bool,
-    children: Vec<Node>,
+pub(super) struct Node {
+    pub(super) id: i32,
+    pub(super) label: String,
+    pub(super) enabled: bool,
+    pub(super) separator: bool,
+    pub(super) children: Vec<Node>,
 }
 
 /// Build the dbusmenu tree, numbering nodes from 1 and recording action ids.
-fn build_tree(items: &[MenuItem], next: &mut i32, actions: &mut Vec<(i32, String)>) -> Vec<Node> {
+pub(super) fn build_tree(
+    items: &[MenuItem],
+    next: &mut i32,
+    actions: &mut Vec<(i32, String)>,
+) -> Vec<Node> {
     items
         .iter()
         .map(|item| {
@@ -189,12 +193,15 @@ const INTROSPECT: &str = r#"<node><interface name="org.kde.StatusNotifierItem">
 <method name="SecondaryActivate"><arg type="i" direction="in"/><arg type="i" direction="in"/></method>
 </interface></node>"#;
 
-fn handle_menu(
+/// Answer a `com.canonical.dbusmenu` call for the tree `root` whose clickable nodes map to
+/// `actions`. Shared by the tray menu and the global menu bar.
+pub(super) fn handle_menu(
     conn: &mut Connection,
-    item: &Item,
+    root: Option<&Node>,
+    actions: &[(i32, String)],
     m: &Message,
 ) -> Result<(), super::dbus::DbusError> {
-    let Some(root) = &item.menu else {
+    let Some(root) = root else {
         return conn.reply_error(m, "org.freedesktop.DBus.Error.UnknownObject", MENU_PATH);
     };
     let member = m.member.as_deref().unwrap_or("");
@@ -220,7 +227,7 @@ fn handle_menu(
             let id = r.i32()?;
             let kind = r.string()?;
             if kind == "clicked" {
-                if let Some((_, a)) = item.actions.iter().find(|(i, _)| *i == id) {
+                if let Some((_, a)) = actions.iter().find(|(i, _)| *i == id) {
                     super::push_pending(PlatformEvent::MenuAction(a.clone()));
                 }
             }
@@ -250,7 +257,7 @@ fn handle_menu(
     }
 }
 
-fn find(n: &Node, id: i32) -> Option<&Node> {
+pub(super) fn find(n: &Node, id: i32) -> Option<&Node> {
     if n.id == id {
         return Some(n);
     }
@@ -262,7 +269,7 @@ fn handle(conn: &mut Connection, item: &Item, m: &Message) -> Result<(), super::
         return Ok(());
     }
     if m.path.as_deref() == Some(MENU_PATH) {
-        return handle_menu(conn, item, m);
+        return handle_menu(conn, item.menu.as_ref(), &item.actions, m);
     }
     if m.path.as_deref() != Some(ITEM_PATH) {
         return Ok(());
@@ -420,6 +427,9 @@ mod tests {
                     .submenu(Menu::new("More").action("deep", "Deep", None)),
             ),
         };
+        let _guard = super::super::BUS_TEST
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         start(&t, false).expect("start");
         let name = format!("org.kde.StatusNotifierItem-{}-1", std::process::id());
         let get = |prop: &str| {
