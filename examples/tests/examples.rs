@@ -1,7 +1,7 @@
 //! Each example is driven through the real runtime with real input, checked by
 //! its on-screen text, and compared with a committed golden image.
 //!
-//! Text is shaped and rasterised with the bundled IBM Plex fonts, so layout is the same
+//! Text is shaped and rasterised with the bundled Alloy Sans and Mono fonts, so layout is the same
 //! on every OS; only glyph anti-aliasing may differ slightly, hence the tolerance (loose
 //! enough for that, tight enough to catch any moved or recoloured widget). Regenerate with
 //! `UPDATE_GOLDEN=1 cargo test -p alloy-ui-examples`.

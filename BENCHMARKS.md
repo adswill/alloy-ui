@@ -90,7 +90,7 @@ All numbers: Linux x86_64 cloud container, software Vulkan (Mesa llvmpipe), not 
 
 Reading: on the CPU side a whole frame is about 0.2 ms; what remains is fragment work on the software adapter, which a real GPU does not pay. The wgpu offscreen path therefore bounds text_editor near 100 fps and the dashboard near 60 fps on llvmpipe. The reported 4 fps for text_editor under pointer movement could not be reproduced: in this Xvfb session `xdotool` input never reached the window (no redraws), so the window path was timed only for its first two frames (26 ms, then 3.4 ms including present). Not render or layout CPU; the shaping cost it could have hit is now cached.
 
-Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled Plex fonts are 1.15 MB of the binary.
+Binary: dropping the wgpu `gles` feature saves 0.38 MB (7.49 to 7.12 MB). Not applied: it removes the OpenGL fallback for machines without Vulkan. Six bundled bundled fonts are 1.15 MB of the binary.
 
 ## Large views (Linux, headless, CPU only)
 
@@ -112,7 +112,7 @@ Two real problems showed up and were fixed:
 
 A 10 000-row view therefore goes from about 0.5 frames per second to over 100 on the CPU side. The cost that remains is the cold first pass (about 150 us per distinct string to shape) and rebuilding and laying out every row on each event; real virtualisation (build only visible rows) is the next step and is not done. Draw output still contains commands for off-screen rows (26 673 commands for 10 000 rows); culling them without dropping their tab-order registration needs a widget-contract change, so it was left alone.
 
-Smaller changes: the six bundled Plex fonts are borrowed from the binary instead of copied to the heap at startup (1.15 MB less heap; `TextSystem::new` is about 4 ms with 117 system faces, measured by `--bin startup`).
+Smaller changes: the six bundled fonts are borrowed from the binary instead of copied to the heap at startup (1.15 MB less heap; `TextSystem::new` is about 4 ms with 117 system faces, measured by `--bin startup`).
 
 Tried and not kept: removing winit's `wayland-csd-adwaita` feature changed the counter binary by under 0.1 MB (7.17 MB), so Wayland window decorations stay as they were. Binary size is otherwise unchanged from the figures above; the biggest remaining items are wgpu and the bundled fonts.
 
@@ -420,7 +420,7 @@ All Linux x86_64 in the cloud container, Xvfb with Mesa llvmpipe software Vulkan
 
 | Build | Bytes | MB |
 |---|---|---|
-| Before this pass (wgpu + gles, six full Plex fonts, unwind tables) | 7,576,304 | 7.58 |
+| Before this pass (wgpu + gles, six full bundled fonts, unwind tables) | 7,576,304 | 7.58 |
 | Default build now (wgpu, Vulkan only on Linux, CPU fallback, subset fonts) | 6,414,912 | 6.41 |
 | Default + `gles` feature (OpenGL backend for machines with no Vulkan) | 6,789,872 | 6.79 |
 | **Slim build**: `--no-default-features --features soft-window` (no wgpu, no naga) | **4,406,976** | **4.41** |
@@ -430,7 +430,7 @@ What each step bought, measured one at a time on the counter:
 | Change | Saved |
 |---|---|
 | Drop wgpu `gles` from the defaults (opt-in feature `gles`; machines with no Vulkan use the CPU window path instead) | ~0.3 MB |
-| Subset the six bundled Plex fonts to Latin plus the symbols Alloy draws (1.15 MB to 0.28 MB; Greek, Cyrillic and the rest come from system fonts) | 0.87 MB |
+| Subset the six bundled fonts to Latin plus the symbols Alloy draws (1.15 MB to 0.28 MB; Greek, Cyrillic and the rest come from system fonts) | 0.87 MB |
 | `-C force-unwind-tables=no` (workspace `.cargo/config.toml`; nothing unwinds under `panic = "abort"`) | 0.37 MB |
 | Slim build: no wgpu, naga, wgpu-hal (naga alone was 642 KiB of `.text`) | 2.0 MB |
 
