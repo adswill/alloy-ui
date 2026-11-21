@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mobile: Android and iOS · Alloy</title>
+<meta name="description" content="Mobile: Android and iOS in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced or egui</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html" aria-current="page">Mobile: Android and iOS</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Mobile: Android and iOS</h1>
+<p>The same app code runs on phones and tablets. This chapter is a prototype: the code paths are written and cross-compiled, but nothing has run on a device yet. <a href="#what-is-verified">What is verified</a> says exactly what was and was not tried.</p>
+<h2>Make an app mobile-ready</h2>
+<p>Three small changes to a normal Alloy crate (<code>mobile/counter</code> is a working example):</p>
+<div class="hl"><pre><span></span><code><span class="k">[lib]</span>
+<span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"my_app"</span>
+<span class="n">crate-type</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"cdylib"</span><span class="p">,</span><span class="w"> </span><span class="s2">"staticlib"</span><span class="p">,</span><span class="w"> </span><span class="s2">"rlib"</span><span class="p">]</span><span class="w">   </span><span class="c1"># Android loads the cdylib, iOS links the staticlib</span>
+
+<span class="k">[package.metadata.alloy]</span>
+<span class="n">identifier</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"com.example.myapp"</span>
+
+<span class="k">[package.metadata.alloy.mobile]</span>
+<span class="n">orientation</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"portrait"</span><span class="w">         </span><span class="c1"># portrait | landscape | any (default)</span>
+<span class="n">android-min-sdk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">26</span>
+<span class="n">android-target-sdk</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">35</span>
+<span class="n">ios-deployment-target</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">"15.0"</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">pub</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">run</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="n">n</span><span class="p">.</span><span class="n">to_string</span><span class="p">()).</span><span class="n">display</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Add one"</span><span class="p">).</span><span class="n">primary</span><span class="p">().</span><span class="n">fill_w</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad_safe</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span><span class="w">          </span><span class="c1">// padding plus the notch and system bars</span>
+<span class="w">        </span><span class="p">.</span><span class="n">fill</span><span class="p">()</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"My app"</span><span class="p">);</span>
+<span class="p">}</span>
+
+<span class="c1">// Android's `android_main` and iOS's `alloy_ios_main`; nothing on the desktop.</span>
+<span class="n">alloy_ui</span><span class="p">::</span><span class="n">mobile_entry</span><span class="o">!</span><span class="p">(</span><span class="n">run</span><span class="p">);</span>
+</code></pre></div>
+
+<p>The same crate still builds and runs on the desktop (<code>cargo run</code>), which is the fast way to iterate on layout.</p>
+<h2>Build</h2>
+<div class="hl"><pre><span></span><code>alloy<span class="w"> </span>bundle<span class="w"> </span>--target<span class="w"> </span>android<span class="w">     </span><span class="c1"># aarch64-linux-android, writes a Gradle project</span>
+alloy<span class="w"> </span>bundle<span class="w"> </span>--target<span class="w"> </span>ios<span class="w">         </span><span class="c1"># aarch64-apple-ios, writes an XcodeGen project</span>
+alloy<span class="w"> </span>bundle<span class="w"> </span>--target<span class="w"> </span>ios-sim<span class="w">     </span><span class="c1"># simulator build (Apple silicon)</span>
+alloy<span class="w"> </span>build<span class="w">  </span>--target<span class="w"> </span>android<span class="w">     </span><span class="c1"># just the library</span>
+</code></pre></div>
+
+<p><code>--target</code> also takes a full triple (<code>x86_64-linux-android</code> for the emulator). The output lands in <code>target/alloy-bundle/&lt;triple&gt;/android</code> or <code>/ios</code>, each with a README listing the next command.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>needs</th>
+<th>produces</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Android</td>
+<td>the Android NDK (<code>ANDROID_NDK_HOME</code>, or <code>$ANDROID_HOME/ndk/*</code>); <code>rustup target add aarch64-linux-android</code>; for the APK, the Android SDK and Gradle</td>
+<td><code>liby.so</code> in <code>jniLibs/&lt;abi&gt;/</code>, <code>AndroidManifest.xml</code> (the system <code>NativeActivity</code>, no Java or Kotlin), Gradle files</td>
+</tr>
+<tr>
+<td>iOS</td>
+<td><code>rustup target add aarch64-apple-ios</code>; for the app, a Mac with Xcode and <a href="https://github.com/yonaskolb/XcodeGen">XcodeGen</a></td>
+<td><code>libx.a</code>, <code>project.yml</code>, <code>main.m</code>, an asset catalog when a 1024 px icon is configured</td>
+</tr>
+</tbody>
+</table>
+<p>The library is built with <code>cargo rustc --crate-type cdylib</code> (Android) or <code>staticlib</code> (iOS), so the iOS build never tries to link a dynamic library. The staticlib can be built on Linux; only turning it into an <code>.app</code> needs Xcode.</p>
+<h2>Touch</h2>
+<p>The shell turns the first finger into the mouse, so every widget works by touch with no extra code:</p>
+<table>
+<thead>
+<tr>
+<th>Finger</th>
+<th>Becomes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>tap</td>
+<td>left click at that point</td>
+</tr>
+<tr>
+<td>drag (past 10 px)</td>
+<td>scrolling; the content follows the finger, and a flick keeps going and slows down</td>
+</tr>
+<tr>
+<td>hold (0.5 s)</td>
+<td>right click, for context menus</td>
+</tr>
+<tr>
+<td>second finger</td>
+<td>cancels the click; the pair is reported as a pinch</td>
+</tr>
+</tbody>
+</table>
+<p>A drag never ends as a click: the pointer leaves before the button is released. Apps that want more listen for <code>PlatformEvent::Gesture</code> (<code>Tap</code>, <code>DoubleTap</code>, <code>LongPress</code>, <code>Pan</code>, <code>PanEnd</code> with the release velocity, <code>Pinch</code> with a scale and a centre) and the raw <code>PlatformEvent::Touch</code>. The recognizer is plain Rust with unit tests, so it also drives touch screens on laptops.</p>
+<h2>Safe areas, rotation and the keyboard</h2>
+<ul>
+<li><code>safe_area()</code> returns the margins that system chrome may cover, in logical pixels (zero on desktop). <code>pad_safe(p)</code> adds them to a padding. The view is rebuilt when they change.</li>
+<li>On Android the margins come from the window's content rectangle; the generated manifest uses <code>adjustResize</code>, so that rectangle also excludes the soft keyboard and content stays above it. Display cutouts are only covered to the extent Android reports them there.</li>
+<li>On iOS they come from <code>UIView.safeAreaInsets</code>. Keyboard avoidance is <strong>not</strong> done yet on iOS (the keyboard overlaps the content).</li>
+<li>Rotation arrives as a resize; the manifest and <code>Info.plist</code> list the orientations you allowed.</li>
+<li>Phones get the <code>Spacious</code> spacing preset automatically, for larger touch targets.</li>
+</ul>
+<p>Text fields show the soft keyboard through the same call as desktop IME (<code>ShellContext::set_ime_allowed</code>, also available as <code>set_soft_keyboard</code>). Typed characters and Backspace arrive as normal key events. Composition (predictive text, CJK input) is limited by what the underlying window library exposes on mobile; treat it as unfinished.</p>
+<h2>Lifecycle</h2>
+<p>Android destroys the native window whenever the app goes to the background and gives a new one on return. The shell reports <code>PlatformEvent::Suspended</code> (drop GPU surfaces) and <code>PlatformEvent::Resumed</code> (rebuild); the facade does both for you, so an app only notices a short redraw. iOS windows survive backgrounding and nothing is sent. Settings saved with <code>.persist()</code> go to the app's private storage on Android.</p>
+<h2>Not there yet</h2>
+<ul>
+<li>Menus, tray icons, native file pickers and message boxes report an error on mobile (use in-window UI). The Android clipboard is in-process only; the iOS clipboard uses <code>UIPasteboard</code>.</li>
+<li>Screen readers (TalkBack, VoiceOver) are not connected: the tree is built, the bridges are not.</li>
+<li>Haptics, share sheets, permissions prompts, push notifications and store signing.</li>
+</ul>
+<h2>What is verified</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Touch recognizer, pointer emulation, safe-area maths, scaffold generation, manifest and project text</td>
+<td>unit-tested, run on Linux</td>
+</tr>
+<tr>
+<td>Whole stack (<code>alloy-ui</code>, wgpu, text) type-checks and passes clippy <code>-D warnings</code> for <code>aarch64-linux-android</code> and <code>aarch64-apple-ios</code></td>
+<td>run on Linux</td>
+</tr>
+<tr>
+<td><code>aarch64-apple-ios</code> static library of the counter (<code>alloy bundle --target ios</code>)</td>
+<td>built on Linux, 374 objects; never linked into an app</td>
+</tr>
+<tr>
+<td><code>aarch64-linux-android</code> shared library of the counter</td>
+<td><strong>linked</strong> with <code>rust-lld</code> against empty stub libraries, because the NDK could not be downloaded in the sandbox; exports <code>android_main</code>. It is not loadable on a device (the NDK's unwinder is missing), so it proves the code and the link, not a run</td>
+</tr>
+<tr>
+<td>Android APK, <code>gradle assembleDebug</code>, emulator or phone</td>
+<td>not run</td>
+</tr>
+<tr>
+<td>Xcode project, iOS simulator or device</td>
+<td>not run</td>
+</tr>
+<tr>
+<td>Real touch input, safe areas, rotation, keyboard, suspend and resume</td>
+<td>not run</td>
+</tr>
+</tbody>
+</table>
+<p>Next step for whoever has the tools: install the NDK and <code>alloy bundle --target android</code>, then <code>gradle assembleDebug</code> in the output folder and run it on an emulator; on a Mac, <code>alloy bundle --target ios-sim</code>, <code>xcodegen generate</code>, run in the simulator. Please report what breaks.</p>
+<nav class="pager"><a href="20-visual-widgets.html">&larr; Visual widgets</a><span></span></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

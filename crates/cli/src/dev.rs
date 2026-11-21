@@ -125,6 +125,11 @@ fn executable(stream: &str) -> Option<PathBuf> {
 fn launch(p: &Project, a: &Args, exe: &Path) -> Result<Child> {
     let mut cmd = Command::new(exe);
     cmd.env("ALLOY_DEV", "1").env("ALLOY_INSPECT", "1");
+    // Reopen the window where it was, so a restart does not move it.
+    cmd.env(
+        "ALLOY_DEV_WINDOW",
+        std::env::temp_dir().join(format!("alloy-dev-window-{}", p.bin_name)),
+    );
     if let Some(path) = &p.capabilities_path {
         cmd.env(CAPABILITIES_ENV, path);
     }

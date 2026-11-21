@@ -53,6 +53,33 @@ impl Editor {
         }
         s + ",\n);"
     }
+
+    /// The same look as a `theme` line for a live `.alloy` view (see `live!`): the preset is
+    /// carried by its accent colour, since the markup has no preset names.
+    fn live_line(&self) -> String {
+        let appearance = if self.dark {
+            Appearance::Dark
+        } else {
+            Appearance::Light
+        };
+        let accent = self
+            .custom
+            .unwrap_or_else(|| Preset::ALL[self.preset].brand(appearance));
+        let mut s = format!(
+            "theme {} accent=#{:06X}",
+            if self.dark { "dark" } else { "light" },
+            hex(accent)
+        );
+        match DENSITIES[self.density] {
+            Density::Compact => s += " density=compact",
+            Density::Spacious => s += " density=spacious",
+            _ => {}
+        }
+        if self.contrast {
+            s += " contrast=high";
+        }
+        s
+    }
 }
 
 fn hex(c: Color) -> u32 {
@@ -229,7 +256,20 @@ fn preview(s: &Editor) -> impl View<Act<Editor>> {
             ),
             section(
                 "Code",
-                markdown(format!("```rust\n{}\n```", s.code())).width(300.0)
+                col![
+                    markdown(format!("```rust\n{}\n```", s.code())).width(300.0),
+                    row![
+                        button("Copy Rust").act(|s: &mut Editor| {
+                            alloy_ui::clipboard::copy(s.code());
+                        }),
+                        button("Copy .alloy line").ghost().act(|s: &mut Editor| {
+                            alloy_ui::clipboard::copy(s.live_line());
+                        }),
+                    ]
+                    .gap(8.0),
+                    caption(s.live_line()).dim(),
+                ]
+                .gap(8.0)
             )
             .w(330.0),
         ]
@@ -265,4 +305,23 @@ fn main() {
         ..Editor::default()
     };
     sketch(s, view).run_sized("Alloy theme editor", 1120.0, 820.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn live_line_follows_the_controls() {
+        let mut e = Editor::default();
+        assert!(e.live_line().starts_with("theme light accent=#"));
+        e.dark = true;
+        e.custom = Some(Color::hex(0x6D4AFF));
+        e.density = 0;
+        e.contrast = true;
+        assert_eq!(
+            e.live_line(),
+            "theme dark accent=#6D4AFF density=compact contrast=high"
+        );
+    }
 }

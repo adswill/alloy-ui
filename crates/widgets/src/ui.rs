@@ -118,6 +118,9 @@ impl Clipboard for MemoryClipboard {
     }
 }
 
+/// Pixels per notch of a mouse wheel, matching the platform layer's line height.
+const WHEEL_LINE: f32 = 40.0;
+
 /// Spring that carries scroll offsets: critically damped, so it never overshoots.
 const SCROLL_SPRING: Spring = Spring {
     stiffness: 620.0,
@@ -730,7 +733,18 @@ impl Ui {
     pub fn scroll_wheel(&self, id: u64, dy: f32, max: f32) -> bool {
         let before = self.scroll_offset(id).clamp(0.0, max.max(0.0));
         let next = (before - dy).clamp(0.0, max.max(0.0));
-        self.set_scroll_offset(id, next);
+        // A notched mouse wheel reports whole lines (multiples of the platform line height),
+        // which glide on the spring. Trackpads and touch report arbitrary pixel deltas that the
+        // OS has already smoothed and given momentum, so they track 1:1; gliding on top of that
+        // would only add lag.
+        let precise = dy.abs() > 0.0
+            && (dy.abs() % WHEEL_LINE) > 0.01
+            && (WHEEL_LINE - dy.abs() % WHEEL_LINE) > 0.01;
+        if precise {
+            self.scroll_jump(id, next, max);
+        } else {
+            self.set_scroll_offset(id, next);
+        }
         next != before
     }
     /// Glide to `offset` (clamped to `0..=max`).

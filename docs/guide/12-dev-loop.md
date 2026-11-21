@@ -49,9 +49,39 @@ fn main() {
 
 Under `alloy dev` the file is re-read on every save (a 250 ms check that only exists in dev) and the window changes in place: the counter, focus, scroll positions and open page are untouched, because nothing restarted. Try it: `cargo run -p alloy-ui --example live`, then edit `crates/alloy/ui/counter.alloy`. In a release build the file is compiled into the binary and never read from disk, so there is no file to ship and no cost.
 
-A mistake does not close the window. The last good screen stays and a red line names the problem, for example `home.alloy: line 4: unknown element `bttn``. Elements are `col`, `row` (`gap=`, `pad=`, `w=`, `h=`; flags `page`, `fill`, `center`), `text`, `heading`, `caption` (flags `dim`, `danger`, `success`, `accent`), `button` (`primary`, `ghost`, `fill`), `rule`, `space`, `vspace` and `gap`. Text goes in `"quotes"` and may contain `{var}`; `@name` binds a button to `.on("name", ..)`; a `button` with no matching `.on` is disabled so a typo is visible. A first `theme` line sets `dark`, `accent=#rrggbb`, `density=compact|spacious` and `contrast=high`.
+A mistake does not close the window. The last good screen stays and a red line names the problem, for example `home.alloy: line 4: unknown element `bttn``. Elements:
 
-Live views are deliberately not a second UI language: no loops, conditions or expressions. Anything dynamic (a list from state, a widget that needs a handler with data) stays in Rust, next to live parts: `col![live!("ui/header.alloy").var(..), my_table(s)]`.
+| Element | Settings and flags |
+|---|---|
+| `col`, `row` | `gap=`, `pad=`, `w=`, `h=`, `round=`; flags `page`, `fill`, `center`, `card`, `surface`, `outline`, `elevated` |
+| `scroll` | a scrolling column (`gap=`, `pad=`) that keeps its offset across reloads |
+| `text`, `heading`, `caption` | `dim`, `danger`, `success`, `accent` |
+| `button` | `primary`, `ghost`, `fill`; `@name` wires it to `.on("name", ..)` |
+| `badge "Live"` | `success`, `warning`, `danger`, `accent`, `auto`, `dot`, `outline` |
+| `avatar "Ada Lovelace"` | initials on a colour taken from the name |
+| `progress` | `value=`, `min=`, `max=`; any of them may be `{var}` |
+| `if name` / `unless name` | show the children when the yes/no value `name` is true / false |
+| `rule`, `space`, `vspace`, `gap` | dividers and spacing (`gap` takes `w=`, `h=`) |
+
+Text goes in `"quotes"` and may contain `{var}`. A `button` with no matching `.on` is disabled so a typo is visible. Pass yes/no values with `.when("signed_in", s.user.is_some())`. A first `theme` line sets `dark`, `accent=#rrggbb`, `density=compact|spacious` and `contrast=high`; the theme editor example prints that line for you under "Copy .alloy line".
+
+```text
+col page gap=14
+  row gap=10 center
+    avatar "{name}"
+    heading "{name}"
+    badge "Pro" accent
+    space
+  if busy
+    progress value={done} max=100
+  col card gap=6
+    caption "Storage" dim
+    progress value=62
+  scroll gap=4
+    text "Changelog"
+```
+
+`alloy dev` also reopens the window where it was (position and size), so a restart after a Rust change looks like a reload. Combine it with `.persist("my-app")` and the state comes back too.
 
 ## Why not hot-patch Rust?
 
