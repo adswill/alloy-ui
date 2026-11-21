@@ -27,6 +27,24 @@ impl<M> Cmd<M> {
     pub fn perform(fut: impl Future<Output = M> + Send + 'static) -> Self {
         Cmd(Command::perform(fut))
     }
+    /// Like [`perform`](Self::perform), but under a `key`: starting another future with the
+    /// same key cancels the one still running, so only the latest result arrives. Use it for
+    /// search-as-you-type and refresh buttons. The key is anything hashable; a `&str` works.
+    ///
+    /// ```ignore
+    /// Msg::Query(q) => Cmd::perform_keyed("search", async move { Msg::Found(search(q).await) }),
+    /// ```
+    pub fn perform_keyed(
+        key: impl std::hash::Hash,
+        fut: impl Future<Output = M> + Send + 'static,
+    ) -> Self {
+        Cmd(Command::perform_keyed(key_hash(key), fut))
+    }
+    /// Cancel the future started with [`perform_keyed`](Self::perform_keyed) under `key`.
+    /// Its message never arrives, and the future is dropped at its next wake-up.
+    pub fn cancel(key: impl std::hash::Hash) -> Self {
+        Cmd(Command::Cancel(key_hash(key)))
+    }
     /// Close every window and exit.
     pub fn exit() -> Self {
         Cmd(Command::Exit)
@@ -44,6 +62,12 @@ impl<M> Cmd<M> {
     pub fn close_window(id: u64) -> Self {
         Cmd(Command::CloseWindow(alloy_ui_core::WindowId(id)))
     }
+}
+
+fn key_hash(key: impl std::hash::Hash) -> u64 {
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    key.hash(&mut h);
+    h.finish()
 }
 
 /// A message source that lives as long as the app asks for it.
@@ -388,7 +412,11 @@ impl<A: App> Application for Shell<A> {
         match event {
             HostEvent::FilesDropped(f) => self.app.on_drop(f),
             HostEvent::FilesHovering(b) => self.app.on_drag_over(b),
-            HostEvent::OpenUrl(u) => self.app.on_open_url(u),
+            HostEvent::OpenUrl(u) => {
+                // Routers made with `Router::links` take their deep links first.
+                crate::router::deliver_link(&u);
+                self.app.on_open_url(u)
+            }
             HostEvent::OpenFiles(f) => self.app.on_open_files(f),
         }
     }

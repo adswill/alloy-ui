@@ -15,10 +15,12 @@ pub mod compile;
 pub mod dev;
 pub mod error;
 pub mod icon;
+pub mod lsp;
 pub mod mobile;
 pub mod pe;
 pub mod project;
 pub mod scaffold;
+pub mod testcmd;
 
 pub use error::{Error, Result};
 
@@ -65,6 +67,12 @@ pub fn run(argv: &[String]) -> Result<()> {
             Ok(())
         }
         Command::Dev => dev::run_dev(&a),
+        Command::Test => testcmd::run_test(&a),
+        Command::Lsp => {
+            let code = lsp::serve(std::io::stdin().lock(), std::io::stdout().lock())
+                .map_err(error::io("language server"))?;
+            std::process::exit(code)
+        }
         Command::Keygen => {
             let path = a.out.clone().unwrap_or_else(|| "alloy-update.key".into());
             let public = bundle::release::keygen(&path)?;

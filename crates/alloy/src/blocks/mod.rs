@@ -41,6 +41,10 @@ impl<T> Clone for Local<T> {
 impl<T> Copy for Local<T> {}
 
 impl<T: Send + 'static> Local<T> {
+    /// The slot's identity, for registries keyed by it.
+    pub(crate) fn id(self) -> u64 {
+        self.0
+    }
     /// Replace the value.
     pub fn set(self, v: T) {
         self.with(|x| *x = v);
@@ -72,6 +76,14 @@ impl<T: Clone + Send + std::ops::Not<Output = T> + 'static> Local<T> {
 pub fn local<T: Send + 'static>(init: T) -> Local<T> {
     let id = auto_id(20);
     cx::slot(id, || init);
+    Local(id, std::marker::PhantomData)
+}
+
+/// Like [`local`], but `init` runs only the first time (it may be costly, like reading a file).
+#[track_caller]
+pub(crate) fn local_lazy<T: Send + 'static>(init: impl FnOnce() -> T) -> Local<T> {
+    let id = auto_id(20);
+    cx::slot(id, init);
     Local(id, std::marker::PhantomData)
 }
 

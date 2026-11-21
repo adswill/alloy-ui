@@ -46,6 +46,9 @@ pub struct Harness<A: App> {
     size: (f32, f32),
     now: u64,
     ticking: bool,
+    tasks: alloy_ui_ipc::TaskRunner<A::Msg>,
+    running: Vec<alloy_ui_ipc::TaskHandle>,
+    keyed: std::collections::HashMap<u64, alloy_ui_ipc::TaskHandle>,
 }
 
 impl<A: App> Harness<A> {
@@ -69,6 +72,30 @@ impl<A: App> Harness<A> {
             size: (width, height),
             now: 1000,
             ticking: false,
+            tasks: alloy_ui_ipc::TaskRunner::new(|| {}),
+            running: Vec::new(),
+            keyed: Default::default(),
+        }
+    }
+    /// Start the futures `update` asked for (`Cmd::perform`, `perform_keyed`, `cancel`).
+    fn start_tasks(&mut self) {
+        use alloy_ui_core::TaskRequest::*;
+        for req in self.rt.take_tasks() {
+            match req {
+                Spawn(f) => self.running.push(self.tasks.spawn(f)),
+                Keyed(k, f) => {
+                    let h = self.tasks.spawn(f);
+                    if let Some(old) = self.keyed.insert(k, h.clone()) {
+                        old.cancel();
+                    }
+                    self.running.push(h);
+                }
+                Cancel(k) => {
+                    if let Some(old) = self.keyed.remove(&k) {
+                        old.cancel();
+                    }
+                }
+            }
         }
     }
     fn placed(&self) -> Vec<(Point, String)> {
@@ -339,13 +366,26 @@ impl<A: App> Harness<A> {
         self.rt.set_inspector(on);
         self
     }
-    /// Wait (up to 5 s) for background [`resource`](crate::resource)s to finish and show their data.
+    /// Wait (up to 5 s) for background work to finish and show its result: both
+    /// [`resource`](crate::resource)s and futures started with [`Cmd::perform`](crate::Cmd).
+    /// Cancelled futures deliver nothing.
     pub fn settle(&mut self) -> &mut Self {
         for _ in 0..200 {
             crate::resource::pump();
-            self.rt.dispatch_all(Vec::new());
-            if crate::resource::idle() {
-                break;
+            self.start_tasks();
+            let msgs = self.tasks.drain();
+            self.rt.dispatch_all(msgs);
+            self.start_tasks();
+            self.running.retain(|h| !h.is_finished());
+            if crate::resource::idle() && self.running.is_empty() {
+                // A task may have finished just after the drain above.
+                let late = self.tasks.drain();
+                if late.is_empty() {
+                    break;
+                }
+                self.rt.dispatch_all(late);
+                self.start_tasks();
+                continue;
             }
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
