@@ -144,11 +144,11 @@ pub use dsl::{
     options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll, section,
     slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
 };
-pub use icons::{icon, set_icon_pack, Ico, Icon, IconPack};
 pub use editors::{
     code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
     GridRows, Lang, Mark, Marks, RichText, RichView, Run, Selection,
 };
+pub use icons::{icon, set_icon_pack, Ico, Icon, IconPack};
 pub use inputs::{number, stepper, Count, Stepper};
 pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
 pub use live::{live_file, Live};
@@ -184,14 +184,15 @@ pub mod prelude {
     pub use crate::{
         animated, app, attempt, badge, bar_chart, bars, browse, browse_of, button, caption, check,
         choose, color_picker, context_menu, crud, crud_app, custom, editor, every, fade, field,
-        field_after, filter_by, gap, heading, icon, input, line_chart, list, local, markdown, menu_item,
-        menu_rule, nav, number, options, palette, pick, popover, progress, radio, radio_list,
-        radio_list_with, radios, records, records_in, resource, resource_for, reveal, router, rule,
-        scroll, secs, section, series, set_accent, set_dark, set_icon_pack, set_look, shell, sketch, sleep,
-        slider, space, sparkline, split, spring, stat, stats, stepper, store, store_as, swatch,
-        tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree, vlist, vspace,
-        wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack, Item, Live, Local, Look, Node,
-        Place, Record, Records, Resource, Router, Stamp, TextCell, TreeItem, View, Wizard,
+        field_after, filter_by, gap, heading, icon, input, line_chart, list, local, markdown,
+        menu_item, menu_rule, nav, number, options, palette, pick, popover, progress, radio,
+        radio_list, radio_list_with, radios, records, records_in, resource, resource_for, reveal,
+        router, rule, scroll, secs, section, series, set_accent, set_dark, set_icon_pack, set_look,
+        shell, sketch, sleep, slider, space, sparkline, split, spring, stat, stats, stepper, store,
+        store_as, swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree,
+        vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack,
+        Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router, Stamp, TextCell,
+        TreeItem, View, Wizard,
     };
     pub use crate::{
         at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,

@@ -14,9 +14,9 @@ mod linux_appmenu;
 #[cfg(target_os = "linux")]
 pub(crate) mod linux_atspi;
 #[cfg(target_os = "linux")]
-mod linux_notify;
-#[cfg(target_os = "linux")]
 mod linux_ext;
+#[cfg(target_os = "linux")]
+mod linux_notify;
 #[cfg(target_os = "linux")]
 mod linux_tray;
 #[cfg(target_os = "macos")]

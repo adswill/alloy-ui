@@ -827,7 +827,10 @@ const NOTE: &str = "# Launch notes\n\nThe **beta** ships on *Friday*. Read the [
 
 #[test]
 fn rich_goldens() {
-    for (name, theme) in [("richedit_light", Theme::light()), ("richedit_dark", Theme::dark())] {
+    for (name, theme) in [
+        ("richedit_light", Theme::light()),
+        ("richedit_dark", Theme::dark()),
+    ] {
         let bg = theme.palette.background;
         let mut a = App::new(
             theme,
