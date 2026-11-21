@@ -67,6 +67,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "alloy-ui-callout"
+version = "0.0.1"
+dependencies = [
+ "alloy-ui",
+]
+
+[[package]]
 name = "alloy-ui-cli"
 version = "0.0.1"
 dependencies = [

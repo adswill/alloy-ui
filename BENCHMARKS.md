@@ -467,3 +467,49 @@ Slim build, all examples, first paint and idle: counter 25 ms, todo 32, settings
 ### Plugins
 
 `docs/PLUGINS.md`, `alloy_ui::plugin` (`Plugin`, `install`, `installed`) and `alloy_ui::ext` (focus, press, state, a11y, colour helpers). Worked example: `examples/plugin-rating` (238 lines for a keyboard-, mouse- and screen-reader-aware star rating plus its translations; 5 tests and a doc-test, all passing headless).
+
+## Roadmap 46 to 50: virtualisation, size, start-up, mobile, plugins
+
+**46, variable row heights.** `VirtualList::variable(&HeightIndex)` (and `vlist(..).variable(..)`)
+takes rows of different heights. `HeightIndex` keeps one running total per row (8 bytes each),
+finds the row at a scroll offset with a binary search, and the offsets stay `f64`. Test
+`virtual_list_variable_heights_million_rows`: 1 000 000 rows of three heights, scrolled to the
+end, at most 20 rows built, a click lands on the row the index predicts. Building the index for a
+million rows is one pass over a closure; call it again when the data changes.
+
+**47, binary size: not met, measured honestly.** Linux x86_64 counter, stripped release:
+6 856 976 bytes (6.86 MB, 6.54 MiB). Where it goes (`cargo bloat`, `.text` 4.2 MB): naga 625 KiB,
+std 491 KiB, wgpu-core 354 KiB, winit 326 KiB, skrifa 248 KiB, swash 185 KiB, alloy platform
+180 KiB, tiny-skia 175 KiB; `.rodata` 1.2 MB (fonts are 0.5 MB of it); `.eh_frame` 0.64 MB;
+`.rela.dyn` 0.36 MB (PIE). Tried: `opt-level = "s"` instead of `"z"` is **larger** (7.43 MB), so
+`"z"` stays. Removing `.eh_frame` and `.eh_frame_hdr` after linking gives 6.13 MB and the binary
+still runs (the release profile aborts on panic), but it breaks `catch_unwind` and backtraces,
+so it is not applied. The remaining big pieces (naga, wgpu-core, std) are not removable without
+dropping the GPU renderer or building std from source on nightly. The CPU-only build
+(`--no-default-features --features soft-window`) stays at about 4.4 MB and is the way under
+5 MB today. `.cargo/config.toml` now sets `force-unwind-tables=no` for non-Windows targets only,
+because x86_64 Windows requires unwind tables and rustc rejects the flag there. Windows and
+macOS sizes are recorded by the `footprint` job in `.github/workflows/mobile.yml`.
+
+**48, cold start.** The GPU chain that needs no window (load the Vulkan/Metal/D3D runtime, pick
+an adapter, open the device, compile the shader, build the pipeline for `Bgra8Unorm`) now runs on
+a background thread started before the window is created (`render::prewarm`). The window uses it
+if its surface is supported by that adapter and wants that format, and otherwise rebuilds.
+Measured on Linux, Xvfb, Mesa llvmpipe (software), 12 runs each: median first paint 81.8 ms before
+and 83.2 ms after, which is no change within noise. The first frame itself got cheaper (44 ms to
+about 21 ms, the pipeline is already built) but the chain on the helper thread (instance 29 ms,
+device 15 ms, pipeline 15 ms) is now the long pole, and llvmpipe is not a GPU. Whether this helps
+on Metal, D3D12 and a real Vulkan driver, where window creation takes longer, is what the
+`footprint` job measures on the three runners; those numbers are in the job summaries, not here.
+The 50 ms target is **not shown to be met**.
+
+**49, mobile.** `.github/workflows/mobile.yml` builds the counter's Gradle project and APK from
+`alloy bundle --target x86_64-linux-android`, boots an API 30 emulator and launches it, then
+checks the process is alive, the log has no crash and the screenshot is not blank. The iOS job
+builds with XcodeGen and `xcodebuild` for the simulator, boots an iPhone simulator, launches and
+screenshots. Results of the first real runs are in the PR description.
+
+**50, plugins.** Second example plugin `alloy-ui-callout` (examples/plugin-callout): a container
+widget, which the first example (a leaf) does not cover. New helpers: `ext::preferred` and
+`ext::arrange_widget` (containers outside the framework had no way to measure or arrange),
+`Plugin::description`, `plugin::install_all`, `plugin::is_installed`. `docs/PLUGINS.md` updated.

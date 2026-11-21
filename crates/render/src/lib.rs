@@ -83,19 +83,20 @@ use std::thread::JoinHandle;
 
 static TEXT: Mutex<Option<JoinHandle<TextSystem>>> = Mutex::new(None);
 #[cfg(feature = "gpu")]
-static INSTANCE: Mutex<Option<JoinHandle<wgpu::Instance>>> = Mutex::new(None);
+static WARM: Mutex<Option<JoinHandle<Option<gpu::Warm>>>> = Mutex::new(None);
 
 /// Start the slow parts of renderer set-up that need no window, on background threads, so they
-/// overlap with the platform creating the window: loading the Vulkan/Metal/D3D runtime
-/// (about 20 ms) and scanning system fonts (about 6 ms). The next [`WindowRenderer::new`] picks
-/// the results up. Harmless to skip or to call twice.
+/// overlap with the platform creating the window: scanning system fonts, and the whole GPU
+/// chain that does not need a surface (load the Vulkan/Metal/D3D runtime, pick an adapter,
+/// open the device, compile the shader and build the render pipeline). The next
+/// [`WindowRenderer::new`] picks the results up and only falls back to doing the work itself
+/// if the window's surface cannot be presented to by the prewarmed adapter or format.
+/// Harmless to skip or to call twice.
 pub fn prewarm() {
     spawn_once(&TEXT, TextSystem::new);
     #[cfg(feature = "gpu")]
     if std::env::var("ALLOY_RENDERER").as_deref() != Ok("cpu") {
-        spawn_once(&INSTANCE, || {
-            wgpu::Instance::new(&wgpu::InstanceDescriptor::default())
-        });
+        spawn_once(&WARM, gpu::Warm::build);
     }
 }
 
@@ -119,8 +120,8 @@ pub(crate) fn take_text_system() -> TextSystem {
     take(&TEXT).unwrap_or_default()
 }
 
-/// The prewarmed wgpu instance if there is one, else a fresh one.
+/// The prewarmed GPU chain, if prewarming ran and found a usable adapter.
 #[cfg(feature = "gpu")]
-pub(crate) fn take_instance() -> wgpu::Instance {
-    take(&INSTANCE).unwrap_or_else(|| wgpu::Instance::new(&wgpu::InstanceDescriptor::default()))
+pub(crate) fn take_warm() -> Option<gpu::Warm> {
+    take(&WARM).flatten()
 }

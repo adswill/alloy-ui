@@ -143,7 +143,7 @@ pub use tree::{Tree, TreeItem};
 pub use ui::{ApproxMetrics, Clipboard, MemoryClipboard, Root, TextMetrics, Ui};
 pub use util::arrange_widget;
 pub use viewport3d::{Mesh, Object, Orbit, Viewport3d};
-pub use virtual_list::VirtualList;
+pub use virtual_list::{HeightIndex, VirtualList};
 pub use xform::{transform, Xf};
 
 /// Lay out a view tree at window size `size`: the `Layouter` the runtime needs.

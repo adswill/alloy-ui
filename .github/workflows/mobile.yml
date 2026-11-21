@@ -1,0 +1,123 @@
+name: Mobile and footprint
+# Runs the mobile starter on a real Android emulator and the iOS simulator, and records
+# binary size and cold start on all three desktop OSes. Screenshots and logs are uploaded as artifacts.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: mobile-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+      - name: Build the library and the Gradle project (NDK from the runner image)
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_NDK_LATEST_HOME:-$ANDROID_NDK_HOME}"
+          cargo run -p alloy-ui-cli -- bundle --manifest-path mobile/counter/Cargo.toml --target x86_64-linux-android
+          ls -R target/alloy-bundle/x86_64-linux-android/android | head -40
+      - name: Build the APK
+        working-directory: target/alloy-bundle/x86_64-linux-android/android
+        run: gradle --no-daemon assembleDebug
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Boot an emulator and run the app
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: tools/ci/android-smoke.sh target/alloy-bundle/x86_64-linux-android/android/app/build/outputs/apk/debug/app-debug.apk dev.alloyui.counter smoke-out
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-smoke
+          path: smoke-out
+  ios:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the simulator library and Xcode project
+        run: |
+          cargo run -p alloy-ui-cli -- bundle --manifest-path mobile/counter/Cargo.toml --target ios-sim
+          brew install xcodegen
+          cd target/alloy-bundle/aarch64-apple-ios-sim/ios
+          xcodegen generate
+          ls
+      - name: Build the app for the simulator
+        working-directory: target/alloy-bundle/aarch64-apple-ios-sim/ios
+        run: |
+          xcodebuild -project *.xcodeproj -scheme "$(basename *.xcodeproj .xcodeproj)" -sdk iphonesimulator \
+            -configuration Debug -derivedDataPath build ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+      - name: Boot a simulator, launch, screenshot
+        run: |
+          mkdir -p smoke-out
+          dev=$(xcrun simctl list devices available | grep -m1 -E 'iPhone' | grep -oE '[0-9A-F-]{36}')
+          xcrun simctl boot "$dev"
+          xcrun simctl bootstatus "$dev" -b
+          app=$(ls -d target/alloy-bundle/aarch64-apple-ios-sim/ios/build/Build/Products/Debug-iphonesimulator/*.app | head -1)
+          xcrun simctl install "$dev" "$app"
+          xcrun simctl launch --console-pty "$dev" dev.alloyui.counter > smoke-out/launch.txt 2>&1 &
+          sleep 15
+          xcrun simctl io "$dev" screenshot smoke-out/ios.png
+          xcrun simctl spawn "$dev" launchctl list | grep -i alloyui | tee smoke-out/alive.txt
+          size=$(stat -f %z smoke-out/ios.png)
+          {
+            echo "### iOS simulator smoke test"
+            echo "- process listed by launchd: $([ -s smoke-out/alive.txt ] && echo yes || echo NO)"
+            echo "- screenshot bytes: $size"
+            echo '```'; tail -20 smoke-out/launch.txt; echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          [ -s smoke-out/alive.txt ] || { echo "app is not running"; exit 1; }
+          [ "$size" -gt 12000 ] || { echo "screenshot looks blank"; exit 1; }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-smoke
+          path: smoke-out
+  footprint:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Linux deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev mesa-vulkan-drivers libvulkan1 xvfb
+      - run: cargo build --release -p alloy-ui-examples --bin counter
+      - name: Size and cold start (default GPU build)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a tools/ci/footprint.sh target/release/counter 10
+          else tools/ci/footprint.sh "target/release/counter$([ "$RUNNER_OS" = Windows ] && echo .exe)" 10; fi
+      - name: Size and cold start (ALLOY_RENDERER=cpu)
+        shell: bash
+        run: |
+          export ALLOY_RENDERER=cpu
+          if [ "$RUNNER_OS" = Linux ]; then xvfb-run -a tools/ci/footprint.sh target/release/counter 10
+          else tools/ci/footprint.sh "target/release/counter$([ "$RUNNER_OS" = Windows ] && echo .exe)" 10; fi

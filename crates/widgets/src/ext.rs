@@ -71,6 +71,20 @@ pub fn over(base: Color, top: Color) -> Color {
     util::over(base, top)
 }
 
+/// Lay a container widget out inside exactly `bounds`: the body of its `Widget::arrange`.
+pub fn arrange_widget<M>(
+    w: &dyn alloy_ui_core::Widget<M>,
+    bounds: Rectangle,
+) -> alloy_ui_core::Layout {
+    util::arrange_widget(w, bounds)
+}
+
+/// The size a container widget wants, from its `style()` and children: the body of its
+/// `Widget::measure`.
+pub fn preferred<M>(w: &dyn alloy_ui_core::Widget<M>) -> alloy_ui_core::Size {
+    util::preferred(w)
+}
+
 /// Draw `children` (given their `layout`) into `out`, for container widgets.
 pub fn draw_children<M>(children: &[Element<M>], layout: &Layout, out: &mut DrawList) {
     util::draw_children(children, layout, out);
