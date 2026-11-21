@@ -22,5 +22,6 @@ Read in order, or jump to what you need. Every code block here is compiled as a 
 18. [Desktop integration](18-desktop-integration.md): menu bar, tray, notifications, file dialogs, global hotkeys
 19. [System integration](19-system-integration.md): drag and drop, deep links, window effects, rich clipboard, OS settings
 20. [Visual widgets](20-visual-widgets.md): canvas, charts, calendar, kanban, node graph, 3D, media
+21. [Mobile](21-mobile.md): Android and iOS builds, touch, safe areas (prototype)
 
 Design background: [ARCHITECTURE.md](../../ARCHITECTURE.md), [DECISIONS.md](../../DECISIONS.md), [DESIGN.md](../../DESIGN.md). API reference: `cargo doc --open -p alloy-ui`.

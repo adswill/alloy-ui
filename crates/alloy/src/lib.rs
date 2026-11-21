@@ -69,6 +69,8 @@ mod guide {
     struct G18;
     #[doc = include_str!("../../../docs/guide/20-visual-widgets.md")]
     struct G19;
+    #[doc = include_str!("../../../docs/guide/21-mobile.md")]
+    struct G20;
 }
 
 /// The cookbook in `docs/cookbook` is compiled and run as doc-tests too.
@@ -125,6 +127,7 @@ pub mod view;
 mod viz;
 
 pub use alloy_ui_macros::{at, state};
+pub use alloy_ui_platform::safe_area::Insets;
 pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
@@ -136,7 +139,9 @@ pub use collections::{
     browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
     Prop, TextCell,
 };
-pub use cx::{files_hovering, palette, set_accent, set_dark, set_look, system, theme, ui, Look};
+pub use cx::{
+    files_hovering, palette, safe_area, set_accent, set_dark, set_look, system, theme, ui, Look,
+};
 pub use declare::{clock, money};
 
 /// Open the command palette (what `mod+k` does), for a button that advertises it.
@@ -560,6 +565,7 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
     fn started(&mut self, ctx: &mut ShellContext) {
         let (build, _, layouter) = self.pending.take().expect("started once");
         let size = ctx.logical_size();
+        cx::set_safe_area(ctx.safe_area());
         let (w, h) = ctx.physical_size();
         match WindowRenderer::new(ctx.window().clone(), w, h) {
             Ok(r) => {
@@ -576,6 +582,9 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         } else {
             theme::Theme::light()
         };
+        // Phones and tablets get the roomy spacing preset: bigger touch targets.
+        #[cfg(any(target_os = "android", target_os = "ios"))]
+        let theme = theme.density(theme::Density::Spacious);
         let ui = widgets::Ui::new(theme);
         if let Some(r) = self.renderers.get(&WindowId::MAIN) {
             ui.set_metrics(std::rc::Rc::new(MeasurerMetrics(r.text_measurer())));
@@ -701,6 +710,21 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     _ => Key::Named(sc.key.clone()),
                 };
                 rt.handle_window_event(win, &Event::KeyPressed(key, sc.mods))
+            }
+            PlatformEvent::SafeAreaChanged(i) => {
+                // Rebuild the view (a resize does that) so `safe_area()` readers update.
+                cx::set_safe_area(i);
+                rt.handle_window_event(win, &Event::Resized(ctx.logical_size()))
+            }
+            PlatformEvent::Suspended => {
+                // Android destroyed the native window: the surfaces are dead.
+                self.renderers.clear();
+                return;
+            }
+            PlatformEvent::Resumed => {
+                // `redraw` rebuilds each window's renderer on its first paint.
+                ctx.request_redraw();
+                return;
             }
             PlatformEvent::ScaleFactorChanged(_) => Outcome {
                 redraw: true,
@@ -880,4 +904,36 @@ fn apply_access<A: Application>(
             Outcome::default()
         }
     }
+}
+
+/// Entry points for a phone or tablet build, from one function that runs the app.
+///
+/// Put this in the `lib` of a crate with `crate-type = ["cdylib", "staticlib", "rlib"]`:
+///
+/// ```ignore
+/// alloy_ui::mobile_entry!(run);
+/// fn run() { counter().run("Counter") }
+/// ```
+///
+/// On Android it defines `android_main` (the `NativeActivity` entry point) and
+/// hands the activity to Alloy first. On iOS it defines `alloy_ios_main`, which
+/// the generated `main.m` calls. Elsewhere it expands to nothing, so the same
+/// crate still builds for the desktop.
+#[macro_export]
+macro_rules! mobile_entry {
+    ($run:path) => {
+        #[cfg(target_os = "android")]
+        #[allow(missing_docs)]
+        #[no_mangle]
+        pub fn android_main(app: $crate::platform::android::AndroidApp) {
+            $crate::platform::android::init(app);
+            $run();
+        }
+        #[cfg(target_os = "ios")]
+        #[allow(missing_docs)]
+        #[no_mangle]
+        pub extern "C" fn alloy_ios_main() {
+            $run();
+        }
+    };
 }

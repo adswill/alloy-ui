@@ -84,6 +84,19 @@ impl<M: 'static> Boxed<M> {
         self.pad = Padding::symmetric(x, y);
         self
     }
+    /// Padding of `p` on all sides plus the [`safe_area`](crate::safe_area),
+    /// so content clears the notch and system bars while a background set
+    /// with `bg` still runs under them.
+    pub fn pad_safe(mut self, p: f32) -> Self {
+        let i = crate::cx::safe_area();
+        self.pad = Padding {
+            top: p + i.top,
+            right: p + i.right,
+            bottom: p + i.bottom,
+            left: p + i.left,
+        };
+        self
+    }
     /// Fixed width.
     pub fn w(mut self, w: f32) -> Self {
         self.w = Length::Fixed(w);
@@ -188,6 +201,10 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     /// Horizontal and vertical padding.
     fn pad_xy(self, x: f32, y: f32) -> Boxed<M> {
         self.boxed().pad_xy(x, y)
+    }
+    /// Padding on all sides plus the [`safe_area`](crate::safe_area).
+    fn pad_safe(self, p: f32) -> Boxed<M> {
+        self.boxed().pad_safe(p)
     }
     /// Fixed width.
     fn w(self, w: f32) -> Boxed<M> {

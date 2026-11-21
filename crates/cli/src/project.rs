@@ -68,6 +68,29 @@ struct RawMeta {
     flatpak_runtime_version: Option<String>,
     flatpak_finish_args: Option<Vec<String>>,
     msix_publisher: Option<String>,
+    mobile: Option<RawMobile>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "kebab-case", deny_unknown_fields)]
+struct RawMobile {
+    orientation: Option<String>,
+    android_min_sdk: Option<u32>,
+    android_target_sdk: Option<u32>,
+    ios_deployment_target: Option<String>,
+}
+
+/// `[package.metadata.alloy.mobile]`, with defaults filled in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MobileMeta {
+    /// `portrait`, `landscape` or `any`.
+    pub orientation: String,
+    /// Android `minSdk`.
+    pub android_min_sdk: u32,
+    /// Android `targetSdk` and `compileSdk`.
+    pub android_target_sdk: u32,
+    /// Minimum iOS version.
+    pub ios_deployment_target: String,
 }
 
 /// Validated app metadata plus package facts from Cargo.
@@ -109,6 +132,11 @@ pub struct Project {
     pub url_schemes: Vec<String>,
     /// Minimum macOS version.
     pub min_macos: String,
+    /// Name of the `cdylib`/`staticlib` library target, if the package has one
+    /// (what Android and iOS load; see `mobile.rs`).
+    pub lib_name: Option<String>,
+    /// Mobile settings.
+    pub mobile: MobileMeta,
     /// Debian `Depends` entries.
     pub deb_depends: Vec<String>,
     /// RPM `Requires` entries (Fedora-style package names by default).
@@ -230,6 +258,30 @@ impl Project {
                     .collect()
             })
             .unwrap_or_default();
+        let lib_name = pkg["targets"].as_array().and_then(|t| {
+            t.iter()
+                .find(|t| {
+                    t["kind"]
+                        .as_array()
+                        .is_some_and(|k| k.iter().any(|k| k == "cdylib" || k == "staticlib"))
+                })
+                .and_then(|t| t["name"].as_str().map(str::to_string))
+        });
+        let mobile = {
+            let m = raw.mobile.unwrap_or_default();
+            let orientation = m.orientation.unwrap_or_else(|| "any".into());
+            if !["portrait", "landscape", "any"].contains(&orientation.as_str()) {
+                return Err(Error::Config(format!(
+                    "mobile orientation `{orientation}` must be portrait, landscape or any"
+                )));
+            }
+            MobileMeta {
+                orientation,
+                android_min_sdk: m.android_min_sdk.unwrap_or(26),
+                android_target_sdk: m.android_target_sdk.unwrap_or(35),
+                ios_deployment_target: m.ios_deployment_target.unwrap_or_else(|| "15.0".into()),
+            }
+        };
         let bin_name = match &sel.bin {
             Some(b) if bins.contains(&b.as_str()) => b.clone(),
             Some(b) => {
@@ -239,11 +291,15 @@ impl Project {
                 )))
             }
             None => match bins.as_slice() {
-                [] => {
-                    return Err(Error::Config(format!(
-                        "package `{name}` has no binary target"
-                    )))
-                }
+                [] => match &lib_name {
+                    // A mobile-only crate has just the library.
+                    Some(l) => l.clone(),
+                    None => {
+                        return Err(Error::Config(format!(
+                            "package `{name}` has no binary target"
+                        )))
+                    }
+                },
                 [one] => one.to_string(),
                 many => {
                     if many.contains(&name.as_str()) {
@@ -310,6 +366,8 @@ impl Project {
             capabilities_path: raw.capabilities.map(|c| base.join(c)),
             url_schemes: raw.url_schemes,
             min_macos: raw.min_macos.unwrap_or_else(|| "11.0".into()),
+            lib_name,
+            mobile,
             deb_depends: raw.deb_depends.unwrap_or_else(|| {
                 ["libc6", "libxkbcommon0", "libvulkan1 | libgl1"]
                     .map(String::from)

@@ -15,6 +15,7 @@ pub mod compile;
 pub mod dev;
 pub mod error;
 pub mod icon;
+pub mod mobile;
 pub mod pe;
 pub mod project;
 pub mod scaffold;
@@ -128,7 +129,32 @@ pub fn run(argv: &[String]) -> Result<()> {
         Command::Build | Command::Bundle => {
             let p = Project::load(&a.selector)?;
             let host = compile::host_triple()?;
-            let triple = a.target.clone().unwrap_or(host);
+            let triple = a
+                .target
+                .as_deref()
+                .map(mobile::expand_target)
+                .unwrap_or(host);
+            if let Some(os) = mobile::os_of(&triple) {
+                // Phones and tablets: build the library, then wrap it in a native project.
+                if a.command == Command::Build {
+                    let lib = mobile::build_lib(&p, os, &triple, &a.cargo_args)?;
+                    println!("{}", lib.display());
+                    return Ok(());
+                }
+                let prebuilt = match (&a.binary, a.skip_build) {
+                    (Some(b), _) => Some(b.clone()),
+                    (None, true) => Some(mobile::lib_path(&p, os, &triple)?),
+                    (None, false) => None,
+                };
+                let icons = IconSet::load_or_default(&p.icons)?;
+                let out_dir = a
+                    .out
+                    .clone()
+                    .unwrap_or_else(|| p.target_dir.join("alloy-bundle").join(&triple));
+                let dir = mobile::bundle(&p, &icons, &triple, &out_dir, prebuilt, &a.cargo_args)?;
+                println!("{}", dir.display());
+                return Ok(());
+            }
             let explicit = a.target.is_some();
             let binary = if let Some(b) = &a.binary {
                 b.clone()

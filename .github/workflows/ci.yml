@@ -31,6 +31,23 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+  mobile:
+    # Cross-compile checks only: nothing runs on a device. Catches breakage of the
+    # Android and iOS code paths on every PR (Ubuntu is enough for both targets).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: aarch64-linux-android, aarch64-apple-ios
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --target aarch64-linux-android -p alloy-ui-platform -p alloy-ui-mobile-counter -- -D warnings
+      - run: cargo clippy --target aarch64-apple-ios -p alloy-ui-platform -p alloy-ui-mobile-counter -- -D warnings
+      - name: iOS static library and Xcode project scaffold
+        run: |
+          cargo run -p alloy-ui-cli -- bundle --manifest-path mobile/counter/Cargo.toml --target ios
+          test -f target/alloy-bundle/aarch64-apple-ios/ios/project.yml
   text-conformance:
     # Text input / IME conformance, driven through the real Runtime on every OS.
     # Known-bug tests are #[ignore]d; the second step lists them without blocking.
