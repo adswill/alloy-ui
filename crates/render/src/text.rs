@@ -233,17 +233,17 @@ impl Default for TextMeasurer {
     }
 }
 
-/// IBM Plex Sans and Mono (SIL OFL 1.1), bundled for identical text on every OS.
+/// Alloy Sans and Alloy Mono (renamed IBM Plex subsets, SIL OFL 1.1, see fonts/OFL.txt), bundled for identical text on every OS.
 const BUNDLED_FONTS: [&[u8]; 11] = [
-    include_bytes!("../fonts/IBMPlexSans-Regular.ttf"),
-    include_bytes!("../fonts/IBMPlexSans-Medium.ttf"),
-    include_bytes!("../fonts/IBMPlexSans-SemiBold.ttf"),
-    include_bytes!("../fonts/IBMPlexSans-Bold.ttf"),
-    include_bytes!("../fonts/IBMPlexMono-Regular.ttf"),
-    include_bytes!("../fonts/IBMPlexMono-Medium.ttf"),
-    include_bytes!("../fonts/IBMPlexSans-Italic.ttf"),
-    include_bytes!("../fonts/IBMPlexSans-SemiBoldItalic.ttf"),
-    include_bytes!("../fonts/IBMPlexMono-Italic.ttf"),
+    include_bytes!("../fonts/AlloySans-Regular.ttf"),
+    include_bytes!("../fonts/AlloySans-Medium.ttf"),
+    include_bytes!("../fonts/AlloySans-SemiBold.ttf"),
+    include_bytes!("../fonts/AlloySans-Bold.ttf"),
+    include_bytes!("../fonts/AlloyMono-Regular.ttf"),
+    include_bytes!("../fonts/AlloyMono-Medium.ttf"),
+    include_bytes!("../fonts/AlloySans-Italic.ttf"),
+    include_bytes!("../fonts/AlloySans-SemiBoldItalic.ttf"),
+    include_bytes!("../fonts/AlloyMono-Italic.ttf"),
     include_bytes!("../fonts/Lucide-subset.ttf"),
     include_bytes!("../fonts/Phosphor-subset.ttf"),
 ];
@@ -264,9 +264,9 @@ impl TextSystem {
                 .db_mut()
                 .load_font_source(cosmic_text::fontdb::Source::Binary(Arc::new(data)));
         }
-        // Plex leads; system fonts remain available as per-glyph fallback.
-        fonts.db_mut().set_sans_serif_family("IBM Plex Sans");
-        fonts.db_mut().set_monospace_family("IBM Plex Mono");
+        // Alloy Sans leads; system fonts remain available as per-glyph fallback.
+        fonts.db_mut().set_sans_serif_family("Alloy Sans");
+        fonts.db_mut().set_monospace_family("Alloy Mono");
         Self::from_font_system(fonts)
     }
 

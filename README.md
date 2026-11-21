@@ -210,7 +210,7 @@ Linux needs the usual GPU and windowing libraries (Vulkan or GL, X11 or Wayland)
 | `alloy-ui` | the facade: prelude, concise app API, shell wiring (start here) |
 | `alloy-ui-core` | geometry, `Widget`/`Element`, events, draw commands, runtime loop, multi-window |
 | `alloy-ui-layout` | flexbox-style layout engine (Fill/Shrink/Fixed, padding, spacing, alignment) |
-| `alloy-ui-render` | wgpu renderer, CPU reference rasteriser, text (bundled IBM Plex), golden-image harness |
+| `alloy-ui-render` | wgpu renderer, CPU reference rasteriser, text (bundled Alloy Sans and Mono), golden-image harness |
 | `alloy-ui-theme` | light/dark palettes, type scale, spacing, motion (WCAG AA tested) |
 | `alloy-ui-widgets` | text, button, inputs, editor, table, list, charts, overlays, focus, accessibility tree |
 | `alloy-ui-platform` | windows, menus, tray, dialogs, clipboard, drag and drop, system theme, IME, screen readers |

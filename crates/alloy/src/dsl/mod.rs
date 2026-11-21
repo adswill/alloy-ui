@@ -99,7 +99,7 @@ impl Txt {
         self.role = w::TextRole::Caption;
         self
     }
-    /// True italic (IBM Plex Sans Italic).
+    /// True italic (Alloy Sans Italic).
     pub fn italic(mut self) -> Self {
         self.italic = true;
         self
