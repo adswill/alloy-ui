@@ -23,6 +23,11 @@ jobs:
       - run: cargo build --release -p alloy-ui --example scope
       - name: Waterfall render test
         run: cargo test -p alloy-ui --test scope
+      - name: GPU frame cost (offscreen)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then RUN="xvfb-run -a"; else RUN=""; fi
+          $RUN cargo run --release -p alloy-ui-render --example scope_bench 2>&1 | tee scope-bench.txt
       - name: Measure (GPU, default renderer)
         shell: bash
         env:
@@ -42,4 +47,4 @@ jobs:
       - name: Summary
         shell: bash
         run: |
-          { echo "### ${{ matrix.os }}"; echo '```'; grep -h "SCOPE\|adapter\|renderer" scope-gpu.txt scope-cpu.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          { echo "### ${{ matrix.os }}"; echo '```'; grep -h "SCOPE\|BENCH" scope-bench.txt scope-gpu.txt scope-cpu.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

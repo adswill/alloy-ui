@@ -66,6 +66,15 @@ static FRAMES: Mutex<Vec<f64>> = Mutex::new(Vec::new());
 /// Counts paints; with `ALLOY_SCOPE_SECS` set, reports and exits after that long.
 fn frame_probe() {
     let now = Instant::now();
+    // One frame can run the paint closure more than once; count a frame per 2 ms at most.
+    static LAST: Mutex<Option<Instant>> = Mutex::new(None);
+    {
+        let mut last = LAST.lock().unwrap();
+        if last.is_some_and(|l| now.duration_since(l) < Duration::from_millis(2)) {
+            return;
+        }
+        *last = Some(now);
+    }
     let mut start = START.lock().unwrap();
     let s = *start.get_or_insert(now);
     let t = now.duration_since(s).as_secs_f64();
