@@ -65,6 +65,7 @@ mod bind;
 mod blocks;
 mod chart;
 mod chrome;
+pub mod clipboard;
 mod collections;
 mod cx;
 mod declare;
@@ -98,7 +99,7 @@ pub use collections::{
     browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
     Prop, TextCell,
 };
-pub use cx::{palette, set_accent, set_dark, set_look, theme, ui, Look};
+pub use cx::{files_hovering, palette, set_accent, set_dark, set_look, system, theme, ui, Look};
 pub use declare::{clock, money};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
@@ -141,7 +142,8 @@ pub mod prelude {
         Resource, Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clock, col, money, redo, row, state, t, toast, undo, vals, Hotkey, Shortcuts,
+        at, choices, clipboard, clock, col, files_hovering, money, redo, row, state, system, t, toast,
+        undo, vals, Hotkey, Shortcuts, WindowEffect,
     };
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::Density;
@@ -217,6 +219,8 @@ where
             subs: HashMap::new(),
             sub_rx,
             sub_tx,
+            effect: WindowEffect::None,
+            system_accent: false,
         }
     })
 }
@@ -269,9 +273,69 @@ struct Host<A: Application> {
     subs: HashMap<u64, Arc<AtomicBool>>,
     sub_rx: mpsc::Receiver<A::Message>,
     sub_tx: mpsc::Sender<A::Message>,
+    /// The window effect applied to the main window, and what the OS made of it.
+    effect: WindowEffect,
+    system_accent: bool,
 }
 
 impl<A: Application + 'static> Host<A> {
+    /// Make the host-level wishes of the app (window effect, accent) true.
+    /// Cheap when nothing changed, so it runs after every outcome.
+    fn apply_config(&mut self, ctx: &mut ShellContext) {
+        let Some(rt) = self.runtime.as_ref() else {
+            return;
+        };
+        let cfg = rt.app().host_config();
+        if cfg.system_accent != self.system_accent {
+            self.system_accent = cfg.system_accent;
+            if let (true, Some([r, g, b])) = (cfg.system_accent, cx::system().accent) {
+                cx::apply_accent_everywhere(Color::hex(
+                    (u32::from(r) << 16) | (u32::from(g) << 8) | u32::from(b),
+                ));
+            }
+        }
+        if cfg.effect == self.effect {
+            return;
+        }
+        self.effect = cfg.effect;
+        self.refresh_effect(ctx);
+    }
+
+    /// (Re)apply `self.effect` to the main window and pick the matching page opacity.
+    fn refresh_effect(&mut self, ctx: &mut ShellContext) {
+        let effect = self.effect;
+        let outcome = ctx.set_effect(effect);
+        let see_through = effect != WindowEffect::None && outcome != platform::EffectOutcome::Unsupported;
+        let ok = match self.renderers.get_mut(&WindowId::MAIN) {
+            Some(r) => {
+                let ok = r.set_transparent(see_through);
+                r.set_background(if see_through && ok {
+                    Color::hex(0).with_alpha(0.0)
+                } else {
+                    Color::hex(0xFFFFFF)
+                });
+                ok
+            }
+            None => false,
+        };
+        let alpha = match (see_through && ok, outcome) {
+            (false, _) => 1.0,
+            (true, platform::EffectOutcome::Applied) => effect.page_alpha(),
+            (true, _) => effect.fallback_alpha(),
+        };
+        if !ok && effect != WindowEffect::None {
+            // The surface cannot be composited: undo the OS side too.
+            ctx.set_effect(WindowEffect::None);
+        }
+        cx::set_page_alpha(alpha);
+        if let Some(rt) = self.runtime.as_mut() {
+            let o = rt.dispatch_all(Vec::new());
+            if o.redraw {
+                ctx.request_redraw();
+            }
+        }
+    }
+
     fn pump(&mut self, ctx: &mut ShellContext, outcome: Outcome) {
         if outcome.exit {
             ctx.exit();
@@ -387,10 +451,28 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
         }
         self.runtime = Some(rt);
         self.sync_subscriptions();
+        self.apply_config(ctx);
         ctx.request_redraw();
     }
 
     fn event(&mut self, ctx: &mut ShellContext, event: PlatformEvent) {
+        if let PlatformEvent::SettingsChanged(s) = event {
+            cx::set_system(s);
+            // An explicit ALLOY_REDUCE_MOTION (0 or 1) beats the OS.
+            let forced = std::env::var("ALLOY_REDUCE_MOTION").ok().map(|v| v != "0");
+            cx::set_reduced_motion_everywhere(forced.unwrap_or(s.reduced_motion));
+            self.system_accent = false; // re-read the app's wish below
+            // Mica and friends follow light/dark: tell the OS again.
+            if self.effect != WindowEffect::None {
+                self.refresh_effect(ctx);
+            }
+            self.apply_config(ctx);
+            if let Some(rt) = self.runtime.as_mut() {
+                let o = rt.dispatch_all(Vec::new());
+                self.pump(ctx, o);
+            }
+            return;
+        }
         let Some(rt) = self.runtime.as_mut() else {
             return;
         };
@@ -460,9 +542,43 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                 redraw: true,
                 ..Outcome::default()
             },
+            PlatformEvent::FileHovered(_) | PlatformEvent::FileHoverCancelled => {
+                let over = matches!(event, PlatformEvent::FileHovered(_));
+                // winit reports one `FileHovered` per file: act on the first only.
+                if !cx::set_files_hovering(over) {
+                    return;
+                }
+                let msg = rt.app().host_event(HostEvent::FilesHovering(over));
+                rt.dispatch_all(msg.into_iter().collect())
+            }
+            PlatformEvent::FilesDropped(files) => {
+                cx::set_files_hovering(false);
+                let msgs = [
+                    HostEvent::FilesHovering(false),
+                    HostEvent::FilesDropped(files),
+                ]
+                .into_iter()
+                .filter_map(|e| rt.app().host_event(e))
+                .collect();
+                rt.dispatch_all(msgs)
+            }
+            PlatformEvent::Open(args) => {
+                let opened = platform::deeplink::classify(&args);
+                // A second launch asked for this window: bring it forward.
+                ctx.focus_window();
+                let msgs = opened
+                    .urls
+                    .into_iter()
+                    .map(HostEvent::OpenUrl)
+                    .chain((!opened.files.is_empty()).then(|| HostEvent::OpenFiles(opened.files)))
+                    .filter_map(|e| rt.app().host_event(e))
+                    .collect();
+                rt.dispatch_all(msgs)
+            }
             _ => return,
         };
         self.pump(ctx, outcome);
+        self.apply_config(ctx);
     }
 
     fn redraw(&mut self, ctx: &mut ShellContext) {

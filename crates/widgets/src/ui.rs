@@ -142,6 +142,7 @@ struct Inner {
     slots: HashMap<u64, i64>,
     a11y: Vec<A11yNode>,
     viewport: Rectangle,
+    drag: Option<crate::dnd::DragState>,
 }
 
 /// One value (up to four components) moving toward a target, by timed tween
@@ -245,6 +246,7 @@ impl Ui {
                 Point::new(0.0, 0.0),
                 Size::new(f32::INFINITY, f32::INFINITY),
             ),
+            drag: None,
         })))
     }
 
@@ -507,6 +509,15 @@ impl Ui {
         }
     }
 
+    pub(crate) fn drag_state<R>(&self, f: impl FnOnce(&mut Option<crate::dnd::DragState>) -> R) -> R {
+        f(&mut self.0.borrow_mut().drag)
+    }
+    /// True while a drag started by [`Draggable`](crate::Draggable) is in progress
+    /// (the pointer has moved past the start threshold and the button is still down).
+    pub fn dragging(&self) -> bool {
+        self.0.borrow().drag.as_ref().is_some_and(|d| d.active)
+    }
+
     /// The window area of the last drawn frame, so popups can stay on screen.
     /// Unbounded until the first frame.
     pub fn viewport(&self) -> Rectangle {
@@ -648,7 +659,11 @@ impl<M: 'static> Widget<M> for Root<M> {
         }
         let consumed = util::dispatch(&mut self.child, event, layout, cursor, out);
         match event {
-            Event::MouseReleased(_) => self.ui.set_pressed(None),
+            Event::MouseReleased(_) => {
+                self.ui.set_pressed(None);
+                // Every drop target has now seen the release: the drag is over.
+                self.ui.drag_state(|d| *d = None);
+            }
             Event::KeyPressed(Key::Tab, m) if !consumed => {
                 if m.shift {
                     self.ui.focus_prev();

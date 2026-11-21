@@ -316,7 +316,7 @@ impl ShellContext {
     fn main_window(&self) -> &Window {
         self.windows.get(&WindowKey::MAIN).unwrap_or(&self.window)
     }
-    /// Give the current window a see-through look (Mica, acrylic, blur,
+    /// Give the main window a see-through look (Mica, acrylic, blur,
     /// plain transparency) or take it away with [`alloy_ui_core::WindowEffect::None`].
     /// The answer says what the OS really did; the app then picks a page
     /// background opacity to match.
@@ -324,9 +324,9 @@ impl ShellContext {
     /// On X11 the window must have been created see-through: call
     /// [`request_window_effect`] before [`run`].
     pub fn set_effect(&mut self, effect: alloy_ui_core::WindowEffect) -> crate::EffectOutcome {
-        self.window
-            .set_transparent(effect != alloy_ui_core::WindowEffect::None);
-        crate::os::set_effect(&self.window, effect)
+        let w = self.main_window();
+        w.set_transparent(effect != alloy_ui_core::WindowEffect::None);
+        crate::os::set_effect(w, effect)
     }
     /// Current OS theme as reported by the window system, if known.
     pub fn is_dark(&self) -> Option<bool> {
