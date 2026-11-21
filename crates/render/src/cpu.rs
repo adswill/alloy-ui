@@ -434,8 +434,24 @@ impl CpuRenderer {
                             let edge = if (flags >> i) & 1 == 1 {
                                 cover(d)
                             } else {
-                                let tie = n[0] > 0.0 || (n[0] == 0.0 && n[1] > 0.0);
-                                if d < 0.0 || (d == 0.0 && tie) {
+                                // Evaluate from the lexicographically smaller endpoint so the
+                                // neighbour sharing this edge gets bit-identical arithmetic, and
+                                // let the side with a positive orientation claim exact ties.
+                                let (lo, hi) = if (p0[0], p0[1]) <= (p1[0], p1[1]) {
+                                    (p0, p1)
+                                } else {
+                                    (p1, p0)
+                                };
+                                let third = [c, a, b][i];
+                                let c0 = (hi[0] - lo[0]) * (pt.1 - lo[1])
+                                    - (hi[1] - lo[1]) * (pt.0 - lo[0]);
+                                let side = (hi[0] - lo[0]) * (third[1] - lo[1])
+                                    - (hi[1] - lo[1]) * (third[0] - lo[0]);
+                                let _ = d;
+                                if (c0 > 0.0 && side > 0.0)
+                                    || (c0 < 0.0 && side < 0.0)
+                                    || (c0 == 0.0 && side > 0.0)
+                                {
                                     1.0
                                 } else {
                                     0.0

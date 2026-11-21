@@ -352,3 +352,124 @@ fn mesh_counts() {
     assert_eq!(Mesh::cube(1.0).triangle_count(), 12);
     assert!(Mesh::sphere(1.0, 16).triangle_count() > 100);
 }
+
+fn pixel(img: &alloy_ui_render::Image, x: u32, y: u32) -> [u8; 4] {
+    let i = ((y * img.width + x) * 4) as usize;
+    [img.rgba[i], img.rgba[i + 1], img.rgba[i + 2], img.rgba[i + 3]]
+}
+
+/// A five-point star under both fill rules, frames with holes, caps and joins, a dashed
+/// curve and a gradient-filled shape.
+#[test]
+fn canvas_fill_rules_strokes_and_gradients() {
+    let img = render(Theme::light(), |ui| {
+        pad(Canvas::<()>::new(
+            ui,
+            12,
+            alloy_ui_layout::Length::Fill(1),
+            alloy_ui_layout::Length::Fill(1),
+            |f| {
+                let p = f.palette();
+                let star = |cx: f32, cy: f32, r: f32| {
+                    let mut path = Path::new();
+                    for i in 0..5 {
+                        let a = (i as f32 * 144.0 - 90.0).to_radians();
+                        let (x, y) = (cx + r * a.cos(), cy + r * a.sin());
+                        path = if i == 0 { path.move_to(x, y) } else { path.line_to(x, y) };
+                    }
+                    path.close()
+                };
+                f.fill_with(&star(60.0, 52.0, 46.0), FillRule::NonZero, p.accent);
+                f.fill_with(&star(170.0, 52.0, 46.0), FillRule::EvenOdd, p.accent);
+                // A square with a square hole: opposite winding under non-zero, and the
+                // same winding under even-odd.
+                let frame = |x: f32, rev: bool| {
+                    let outer = Path::new()
+                        .move_to(x, 110.0)
+                        .line_to(x + 80.0, 110.0)
+                        .line_to(x + 80.0, 190.0)
+                        .line_to(x, 190.0)
+                        .close();
+                    let (a, b) = (x + 20.0, x + 60.0);
+                    if rev {
+                        outer
+                            .move_to(a, 130.0)
+                            .line_to(a, 170.0)
+                            .line_to(b, 170.0)
+                            .line_to(b, 130.0)
+                            .close()
+                    } else {
+                        outer
+                            .move_to(a, 130.0)
+                            .line_to(b, 130.0)
+                            .line_to(b, 170.0)
+                            .line_to(a, 170.0)
+                            .close()
+                    }
+                };
+                f.fill_with(&frame(10.0, true), FillRule::NonZero, p.success);
+                f.fill_with(&frame(120.0, false), FillRule::EvenOdd, p.warning);
+                // The same zigzag with each cap and join.
+                for (i, (cap, join)) in [
+                    (LineCap::Butt, LineJoin::Miter),
+                    (LineCap::Round, LineJoin::Round),
+                    (LineCap::Square, LineJoin::Bevel),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let y = i as f32 * 44.0;
+                    let zig = Path::polyline([
+                        Point::new(290.0, 40.0 + y),
+                        Point::new(330.0, 8.0 + y),
+                        Point::new(370.0, 40.0 + y),
+                        Point::new(410.0, 8.0 + y),
+                    ]);
+                    f.stroke_with(&zig, &Stroke::new(10.0).cap(cap).join(join), p.text);
+                }
+                // A dashed cubic and a gradient-filled rounded shape.
+                let curve = Path::new()
+                    .move_to(10.0, 250.0)
+                    .cubic_to(100.0, 210.0, 190.0, 280.0, 270.0, 236.0);
+                f.stroke_with(
+                    &curve,
+                    &Stroke::new(4.0).cap(LineCap::Round).dashed(&[10.0, 8.0], 0.0),
+                    p.accent,
+                );
+                f.fill_with(
+                    &Path::rounded_rect(
+                        Rectangle::new(Point::new(300.0, 150.0), Size::new(170.0, 110.0)),
+                        18.0,
+                    ),
+                    FillRule::NonZero,
+                    LinearGradient::new(Point::new(300.0, 150.0), Point::new(470.0, 260.0))
+                        .stop(0.0, p.accent)
+                        .stop(1.0, p.success),
+                );
+            },
+        )
+        .into_element())
+    });
+    // At scale 2 with 16 px of padding in the container and the same again from the
+    // widget, canvas pixel (x, y) is at ((x + 32) * 2, (y + 32) * 2).
+    let at = |x: f32, y: f32| pixel(&img, ((x + 32.0) * 2.0) as u32, ((y + 32.0) * 2.0) as u32);
+    let bg = at(3.0, 3.0);
+    assert_ne!(at(60.0, 52.0), bg, "non-zero fills the star's centre");
+    assert_eq!(at(170.0, 52.0), bg, "even-odd leaves the star's centre empty");
+    assert_ne!(at(170.0, 22.0), bg, "even-odd still fills a tip");
+    assert_eq!(at(50.0, 150.0), bg, "opposite winding cuts a hole under non-zero");
+    assert_ne!(at(20.0, 150.0), bg, "the frame around the hole is filled");
+    assert_eq!(at(160.0, 150.0), bg, "even-odd cuts a hole whatever the winding");
+    assert_ne!(at(310.0, 170.0), at(460.0, 250.0), "the gradient changes along its axis");
+    // No pinholes: every pixel inside the solid frame is the fill colour.
+    let fill = at(20.0, 150.0);
+    for y in 112..188 {
+        for x in 12..88 {
+            if (28.0..72.0).contains(&(x as f32)) && (128.0..172.0).contains(&(y as f32)) {
+                continue; // the hole
+            }
+            assert_eq!(at(x as f32, y as f32), fill, "pinhole at {x},{y}");
+        }
+    }
+    check("viz_canvas_rules_light", &img);
+}

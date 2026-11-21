@@ -13,6 +13,7 @@
 
 mod cpu;
 mod error;
+mod fill;
 #[cfg(feature = "gpu")]
 mod gpu;
 mod image;

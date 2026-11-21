@@ -180,6 +180,27 @@ pub fn transform(cmd: DrawCommand, xf: &Xf) -> DrawCommand {
             points: points.into_iter().map(|p| xf.p(p)).collect(),
             fill: xf.c(fill),
         },
+        DrawCommand::PolygonPath {
+            contours,
+            rule,
+            paint,
+        } => DrawCommand::PolygonPath {
+            contours: contours
+                .into_iter()
+                .map(|c| c.into_iter().map(|p| xf.p(p)).collect())
+                .collect(),
+            rule,
+            paint: match paint {
+                alloy_ui_core::PathPaint::Solid(c) => alloy_ui_core::PathPaint::Solid(xf.c(c)),
+                alloy_ui_core::PathPaint::Linear { from, to, stops } => {
+                    alloy_ui_core::PathPaint::Linear {
+                        from: xf.p(from),
+                        to: xf.p(to),
+                        stops: stops.into_iter().map(|(o, c)| (o, xf.c(c))).collect(),
+                    }
+                }
+            },
+        },
         DrawCommand::Text {
             origin,
             content,
