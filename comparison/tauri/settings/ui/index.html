@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Preferences</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <nav class="sidebar" id="nav" aria-label="Sections">
+    <button data-page="appearance" aria-current="page">Appearance</button>
+    <button data-page="notifications">Notifications</button>
+    <button data-page="privacy">Privacy</button>
+    <button data-page="about">About</button>
+  </nav>
+
+  <main>
+    <section id="appearance" class="page">
+      <h1>Appearance</h1>
+      <div class="card">
+        <div class="row">
+          <div class="row-label">Theme</div>
+          <div class="segmented" id="theme" role="group" aria-label="Theme">
+            <button data-theme="light" aria-pressed="true">Light</button>
+            <button data-theme="dark" aria-pressed="false">Dark</button>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-label">Accent colour</div>
+          <div class="swatches" id="accent" role="radiogroup" aria-label="Accent colour">
+            <button class="swatch" role="radio" aria-checked="true" aria-label="Indigo" data-light="#4f6bed" data-dark="#7189f2"></button>
+            <button class="swatch" role="radio" aria-checked="false" aria-label="Teal" data-light="#1f9a8a" data-dark="#45bfae"></button>
+            <button class="swatch" role="radio" aria-checked="false" aria-label="Rose" data-light="#d6457a" data-dark="#ef7099"></button>
+            <button class="swatch" role="radio" aria-checked="false" aria-label="Amber" data-light="#c98a12" data-dark="#e6aa3a"></button>
+          </div>
+        </div>
+        <div class="row stack">
+          <div class="row-line">
+            <label class="row-label" for="size">Text size</label>
+            <span class="caption" id="size-value">14 px</span>
+          </div>
+          <input type="range" id="size" min="12" max="20" step="1" value="14">
+          <p id="preview" class="preview">The quick brown fox jumps over the lazy dog.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="notifications" class="page" hidden>
+      <h1>Notifications</h1>
+      <div class="card">
+        <label class="row"><span class="row-label">Desktop notifications</span><input type="checkbox" class="toggle" checked></label>
+        <label class="row"><span class="row-label">Sound effects</span><input type="checkbox" class="toggle"></label>
+        <label class="row"><span class="row-label">Mentions only</span><input type="checkbox" class="toggle" checked></label>
+        <div class="row stack">
+          <div class="row-line">
+            <label class="row-label" for="volume">Volume</label>
+            <span class="caption" id="volume-value">60%</span>
+          </div>
+          <input type="range" id="volume" min="0" max="100" value="60">
+        </div>
+        <div class="row">
+          <label class="row-label" for="delivery">Delivery</label>
+          <select id="delivery">
+            <option>Instantly</option>
+            <option>Hourly digest</option>
+            <option>Daily digest</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section id="privacy" class="page" hidden>
+      <h1>Privacy</h1>
+      <div class="card">
+        <label class="row"><span class="row-label">Share usage analytics</span><input type="checkbox" class="toggle"></label>
+        <label class="row"><span class="row-label">Remember recent searches</span><input type="checkbox" class="toggle" checked></label>
+        <div class="row">
+          <div>
+            <div class="row-label">Clear history</div>
+            <div class="caption" id="clear-status">Removes recent searches and activity from this device.</div>
+          </div>
+          <button class="btn" id="clear">Clear history</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="about" class="page" hidden>
+      <h1>About</h1>
+      <div class="card about">
+        <div class="app-name">Preferences</div>
+        <div class="caption">Version 1.0.0</div>
+        <p>A small settings panel used to compare desktop UI toolkits.</p>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="confirm">
+    <form method="dialog">
+      <h2>Clear history?</h2>
+      <p>This removes recent searches and activity from this device. It cannot be undone.</p>
+      <div class="dialog-actions">
+        <button class="btn" value="cancel">Cancel</button>
+        <button class="btn danger-fill" value="clear">Clear</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="app.js"></script>
+</body>
+</html>

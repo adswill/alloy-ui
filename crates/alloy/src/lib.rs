@@ -86,7 +86,7 @@ pub use collections::{
     browse, browse_of, filter_by, stat, stats, tally, Browse, Cell, ChoiceCell, FlagCell, Item,
     Prop, TextCell,
 };
-pub use cx::{palette, set_dark, theme, ui};
+pub use cx::{palette, set_accent, set_dark, theme, ui};
 pub use declare::{clock, money};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
@@ -110,7 +110,7 @@ pub mod prelude {
         app, attempt, bars, browse, browse_of, button, caption, check, choose, crud, crud_app,
         custom, editor, every, field, field_after, filter_by, gap, heading, input, list, local,
         nav, number, options, palette, pick, progress, radio, radio_list, radio_list_with, radios,
-        records, records_in, resource, rule, scroll, secs, section, series, set_dark, shell,
+        records, records_in, resource, rule, scroll, secs, section, series, set_accent, set_dark, shell,
         sketch, sleep, slider, space, stat, stats, stepper, store, store_as, table, table_of, tabs,
         tally, text, theme_switch, toggle, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd,
         FlagCell, Item, Local, Node, Place, Record, Records, Resource, Stamp, TextCell, View,
