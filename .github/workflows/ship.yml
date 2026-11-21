@@ -33,9 +33,10 @@ jobs:
         run: ci/e2e-update.sh
 
   linux-packages:
-    # Item 8: AppImage and Flatpak. Ubuntu 22.04 so the binary runs on the
-    # Flatpak runtime's glibc.
-    runs-on: ubuntu-22.04
+    # Item 8: AppImage and Flatpak. Ubuntu 24.04: its flatpak-builder 1.4 uses
+    # `appstreamcli compose` (22.04 has 1.2, which needs a binary 24.08 lacks); glibc 2.39 runs on the
+    # 24.08 runtime (glibc 2.40).
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -43,7 +44,7 @@ jobs:
       - name: Install packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1 libfuse2 file
+          sudo apt-get install -y flatpak flatpak-builder libx11-dev libxkbcommon-dev libwayland-dev mesa-vulkan-drivers libvulkan1 libfuse2t64 file
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
           curl -fsSL -o appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
