@@ -157,22 +157,20 @@ jobs:
           unset DISPLAY
           WINIT_UNIX_BACKEND=wayland ./target/release/counter > wl/counter.log 2>&1 &
           pid=$!
-          sleep 8
-          kill -0 $pid || { echo "counter exited early"; cat wl/counter.log; exit 1; }
-          swaymsg -t get_tree > wl/tree.json
-          grim wl/counter_wayland.png
+          # Wait for the window to map (software Vulkan start-up is slow).
+          for i in $(seq 40); do
+            kill -0 $pid 2>/dev/null || { echo "counter exited early"; cat wl/counter.log; exit 1; }
+            swaymsg -t get_tree > wl/tree.json
+            python3 -c "import json,sys; t=json.load(open('wl/tree.json')); s=json.dumps(t); sys.exit(0 if '\"shell\": \"xdg_shell\"' in s else 1)" && break
+            sleep 1
+          done
+          sleep 2
+          grim wl/counter_wayland.png || true
+          echo "--- counter.log"; tail -30 wl/counter.log
+          echo "--- sway.log"; tail -20 wl/sway.log
+          python3 -c "import json; print(json.dumps(json.load(open('wl/tree.json')), indent=1))" | grep -E '"(shell|app_id|name|type|pid)"' | head -40
           # The window must be a native Wayland surface (xdg_shell), not XWayland.
-          python3 - <<'PY'
-          import json, sys
-          t = json.load(open("wl/tree.json"))
-          found = []
-          def walk(n):
-              if n.get("pid") and n.get("type") == "con": found.append((n.get("shell"), n.get("app_id"), n.get("name")))
-              for c in n.get("nodes", []) + n.get("floating_nodes", []): walk(c)
-          walk(t)
-          print("windows:", found)
-          assert any(s == "xdg_shell" for s, *_ in found), "no native Wayland window"
-          PY
+          grep -q '"shell": "xdg_shell"' wl/tree.json || { echo "no native Wayland window"; exit 1; }
           kill $pid || true
       - uses: actions/upload-artifact@v4
         if: always()
