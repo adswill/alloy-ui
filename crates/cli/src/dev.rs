@@ -119,7 +119,7 @@ fn executable(stream: &str) -> Option<PathBuf> {
         .lines()
         .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
         .filter_map(|v| v.get("executable")?.as_str().map(PathBuf::from))
-        .last()
+        .next_back()
 }
 
 fn launch(p: &Project, a: &Args, exe: &Path) -> Result<Child> {
