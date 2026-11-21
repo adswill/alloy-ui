@@ -91,7 +91,6 @@ impl ShellHandler for Smoke {
                 testing::menu_outline().len() == 2,
                 "second set_menu replaced the first",
             );
-            self.check(testing::activate_menu_item("file:new"), "click File > New");
         } else {
             // No global-menu panel on a bare Xvfb: the call must say so rather than hang or crash.
             println!("  info set_menu without a global-menu panel -> {r:?}");
@@ -131,6 +130,11 @@ impl ShellHandler for Smoke {
         println!("file dialogs:");
         dialogs(self);
 
+        if NATIVE_MENU_AND_TRAY {
+            // Last on purpose: a modal dialog above runs its own message loop, which would
+            // swallow a click posted before it (the shell's message hook never sees it).
+            self.check(testing::activate_menu_item("file:new"), "click File > New");
+        }
         if !NATIVE_MENU_AND_TRAY {
             self.phase = Phase::Done;
             ctx.exit();
