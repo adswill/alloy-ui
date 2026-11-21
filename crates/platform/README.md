@@ -12,7 +12,7 @@ Window/event shell and OS services. `unsafe` is denied crate-wide and allowed on
 - Idle: `ControlFlow::Wait`, redraw only on request; background threads wake the loop via `ShellProxy`.
 
 ## Mobile (prototype)
-winit's NativeActivity (Android) and UIKit (iOS) backends supply the window. This crate adds `touch.rs` (gesture recognizer, pointer emulation, momentum), `safe_area.rs` (insets), `os/mobile.rs` (no dialogs, menu or tray), `os/android.rs` (the `AndroidApp` handle, content rect) and `os/ios.rs` (UIPasteboard, `safeAreaInsets`). `PlatformEvent` gains `Touch`, `Gesture`, `Suspended`, `Resumed` and `SafeAreaChanged`. Verified by unit tests, clippy on both targets and a built iOS static library and linked Android library; never run on a device. See `docs/guide/14-mobile.md`.
+winit's NativeActivity (Android) and UIKit (iOS) backends supply the window. This crate adds `touch.rs` (gesture recognizer, pointer emulation, momentum), `safe_area.rs` (insets), `os/mobile.rs` (no dialogs, menu or tray), `os/android.rs` (the `AndroidApp` handle, content rect) and `os/ios.rs` (UIPasteboard, `safeAreaInsets`). `PlatformEvent` gains `Touch`, `Gesture`, `Suspended`, `Resumed` and `SafeAreaChanged`. Verified by unit tests, clippy on both targets and a built iOS static library and linked Android library; never run on a device. See `docs/guide/21-mobile.md`.
 
 ## Accessibility
 
