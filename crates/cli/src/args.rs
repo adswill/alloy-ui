@@ -16,7 +16,7 @@ COMMANDS:
     build     Build the release binary
     bundle    Build, then package (default formats depend on the host OS)
     new       Create a starter app: alloy new <name>
-    dev       Run the app (debug build) with its capability config
+    dev       Run the app, rebuild and restart on every save (F12 = inspector)
     check     Validate [package.metadata.alloy], icons and the capability config
     help      Show this text
     version   Show the version
@@ -32,6 +32,7 @@ OPTIONS:
     --identifier <ID>        (new) reverse-DNS app identifier
     --alloy-path <DIR>       (new) depend on a local Alloy checkout instead of git
     --release                (dev) run the release build
+    --once                   (dev) run once, do not watch for changes
     --skip-build             Bundle the existing release binary without building
 
 FORMATS:
@@ -89,6 +90,8 @@ pub struct Args {
     pub alloy_path: Option<PathBuf>,
     /// `--release` (dev).
     pub release: bool,
+    /// `--once` (dev): run once instead of rebuilding when files change.
+    pub once: bool,
     /// Arguments after `--`: forwarded to cargo (`build`, `bundle`) or to the
     /// app itself (`dev`).
     pub cargo_args: Vec<String>,
@@ -123,6 +126,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
         identifier: None,
         alloy_path: None,
         release: false,
+        once: false,
         cargo_args: vec![],
     };
     let value = |it: &mut std::slice::Iter<String>, flag: &str| -> Result<String> {
@@ -140,6 +144,7 @@ pub fn parse(args: &[String]) -> Result<Args> {
             "--binary" => a.binary = Some(value(&mut it, arg)?.into()),
             "--skip-build" => a.skip_build = true,
             "--release" => a.release = true,
+            "--once" => a.once = true,
             "--identifier" => a.identifier = Some(value(&mut it, arg)?),
             "--alloy-path" => a.alloy_path = Some(value(&mut it, arg)?.into()),
             "--format" => {

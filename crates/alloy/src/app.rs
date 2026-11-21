@@ -157,10 +157,14 @@ pub trait App: Sized + 'static {
                     "--click" => drop(h.click(&pair[1])),
                     "--chord" => drop(h.chord(&pair[1])),
                     "--type" => drop(h.type_text(&pair[1])),
+                    "--hover" => drop(h.hover(&pair[1])),
                     _ => {}
                 }
             }
             h.settle();
+            if args.iter().any(|a| a == "--inspect") {
+                h.inspect(true);
+            }
             let out = args.get(at + 1).filter(|a| !a.starts_with("--"));
             let path = out
                 .cloned()
