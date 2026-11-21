@@ -113,6 +113,7 @@ Linux needs the usual GPU and windowing libraries (Vulkan or GL, X11 or Wayland)
 
 ## Docs
 
+* [Cookbook](docs/cookbook/README.md): 30 short recipes, each compiled as a doc-test. The [website](website/README.md) and the [VS Code extension](editors/vscode/README.md) (snippets and `.alloy` syntax) live in this repository too.
 * [Guide](docs/guide/README.md): getting started, state and bindings, layout, widgets, forms, async, multi-window, shortcuts and undo, theming, bundling, capabilities. Every snippet is compiled as a doc-test.
 * [ARCHITECTURE.md](ARCHITECTURE.md) (design, and what we learned from iced and Tauri), [DECISIONS.md](DECISIONS.md) (every design choice with reasons), [DESIGN.md](DESIGN.md) (visual rules), [BENCHMARKS.md](BENCHMARKS.md) (measured numbers), [docs/WHY_ALLOY.md](docs/WHY_ALLOY.md).
 
