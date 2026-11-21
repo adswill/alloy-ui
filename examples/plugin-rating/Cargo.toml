@@ -1,0 +1,17 @@
+[package]
+name = "alloy-ui-rating"
+description = "A star rating widget for Alloy: the worked example of an Alloy plugin crate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# A plugin depends on the facade crate only, never on alloy-ui-widgets or -core directly.
+# `default-features = false` keeps the app's choice of renderer (gpu or soft-window) intact.
+[dependencies]
+alloy-ui = { path = "../../crates/alloy", default-features = false }
