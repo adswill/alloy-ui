@@ -1,0 +1,16 @@
+{
+  "comments": { "lineComment": "#" },
+  "autoClosingPairs": [
+    { "open": "\"", "close": "\"", "notIn": ["comment"] },
+    { "open": "{", "close": "}", "notIn": ["comment"] }
+  ],
+  "surroundingPairs": [["\"", "\""], ["{", "}"]],
+  "indentationRules": {
+    "increaseIndentPattern": "^\\s*(col|row)\\b[^#]*$",
+    "decreaseIndentPattern": "^\\s*$"
+  },
+  "onEnterRules": [
+    { "beforeText": "^\\s*(col|row)\\b.*$", "action": { "indent": "indent" } }
+  ],
+  "wordPattern": "[A-Za-z_@][\\w-]*"
+}

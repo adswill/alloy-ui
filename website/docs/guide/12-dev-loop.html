@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The dev loop: alloy dev and the inspector · Alloy</title>
+<meta name="description" content="The dev loop: alloy dev and the inspector in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html" aria-current="page">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>The dev loop: <code>alloy dev</code> and the inspector</h1>
+<h2>Rebuild and restart on save</h2>
+<div class="hl"><pre><span></span><code>alloy<span class="w"> </span>dev
+</code></pre></div>
+
+<p>builds the app, runs it, and watches <code>src/</code>, <code>assets/</code>, <code>Cargo.toml</code> and the capability file. Every save rebuilds and restarts the window. A compile error prints cargo's own message and the old window closes only when a new build succeeds, so you fix the error and save again. Closing the window ends the command. <code>alloy dev --once</code> runs once without watching, and <code>alloy dev -- --flag</code> passes <code>--flag</code> to your app.</p>
+<p>Alloy does not patch code into a running process. It restarts, which is fast for a debug build and always correct. To make a restart feel like a reload, persist the state:</p>
+<div class="hl"><pre><span></span><code><span class="n">sketch</span><span class="p">(</span><span class="n">State</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="n">view</span><span class="p">).</span><span class="n">persist</span><span class="p">(</span><span class="s">"my-app"</span><span class="p">)</span>
+</code></pre></div>
+
+<p>The counter, the open page and every <code>store</code> come back as they were, so only the window flickers. Keep transient things (a search box) in <code>local</code> so they reset.</p>
+<h2>The inspector (F12)</h2>
+<p>Press <strong>F12</strong> in any debug build, or in a release build started with <code>ALLOY_INSPECT=1</code> (<code>alloy dev</code> sets it). Every widget gets an outline coloured by depth. The widget under the cursor is highlighted and labelled with its type, size and position, and the bottom bar shows its path from the root, for example <code>Root &gt; Column &gt; Row &gt; Button</code>.</p>
+<p>Widgets need no code to appear: the inspector reads the same tree and layout the renderer uses. Custom widgets get their type name for free.</p>
+<p>For a screenshot in docs or a bug report, use the headless flags:</p>
+<div class="hl"><pre><span></span><code>cargo<span class="w"> </span>run<span class="w"> </span>--example<span class="w"> </span>notes<span class="w"> </span>--<span class="w"> </span>--headless<span class="w"> </span>inspect.png<span class="w"> </span>--hover<span class="w"> </span>Notes<span class="w"> </span>--inspect
+</code></pre></div>
+
+<p>In tests, <code>Harness::hover(text)</code> and <code>Harness::inspect(true)</code> do the same.</p>
+<nav class="pager"><a href="11-capabilities-and-ipc.html">&larr; Capabilities and IPC</a><a href="13-localization.html">Localization &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

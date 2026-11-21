@@ -1,0 +1,67 @@
+{
+  "name": "alloy-ui",
+  "displayName": "Alloy",
+  "description": "Snippets for Alloy apps in Rust and syntax highlighting for .alloy live views.",
+  "version": "0.1.0",
+  "publisher": "alloy-ui",
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/adswill/alloy-ui",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Snippets",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "alloy",
+    "rust",
+    "gui",
+    "ui",
+    "snippets"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "alloy",
+        "aliases": [
+          "Alloy view",
+          "alloy"
+        ],
+        "extensions": [
+          ".alloy"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "alloy",
+        "scopeName": "source.alloy",
+        "path": "./syntaxes/alloy.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "rust",
+        "path": "./snippets/rust.code-snippets"
+      },
+      {
+        "language": "alloy",
+        "path": "./snippets/alloy.code-snippets"
+      }
+    ]
+  },
+  "scripts": {
+    "test": "node test/grammar.test.js && python3 test/check_snippets.py"
+  },
+  "devDependencies": {
+    "vscode-textmate": "^9.0.0",
+    "vscode-oniguruma": "^2.0.1"
+  }
+}
