@@ -32,7 +32,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo build --workspace --all-targets
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      - run: cargo test --workspace --no-fail-fast
   text-conformance:
     # Text input / IME conformance, driven through the real Runtime on every OS.
     # Known-bug tests are #[ignore]d; the second step lists them without blocking.
