@@ -50,6 +50,7 @@ pub struct Boxed<M> {
     child: Element<M>,
     pad: Padding,
     bg: Option<Color>,
+    hover_bg: Option<Color>,
     grad: Option<(Color, Color, f32)>,
     shadow: Option<alloy_ui_core::Shadow>,
     border: Option<(Color, f32)>,
@@ -69,6 +70,7 @@ impl<M: 'static> Boxed<M> {
             child,
             pad: Padding::ZERO,
             bg: None,
+            hover_bg: None,
             grad: None,
             shadow: None,
             border: None,
@@ -132,6 +134,12 @@ impl<M: 'static> Boxed<M> {
     /// Background colour.
     pub fn bg(mut self, c: Color) -> Self {
         self.bg = Some(c);
+        self
+    }
+    /// Background colour while the pointer is over the box, eased in and out. On a box with no
+    /// `bg` the colour fades in over what is behind it: `row![..].pad(10.0).hover_bg(tint)`.
+    pub fn hover_bg(mut self, c: Color) -> Self {
+        self.hover_bg = Some(c);
         self
     }
     /// A linear gradient background; `angle_deg` 0 runs top to bottom, 90
@@ -260,6 +268,9 @@ impl<M: 'static> From<Boxed<M>> for Node<M> {
         ) {
             c = c.background(bg);
         }
+        if let Some(h) = b.hover_bg {
+            c = c.hover_background(&cx::ui(), h);
+        }
         let mut fx = b.fx;
         if let Some((from, to, a)) = b.grad {
             let mut a = a;
@@ -333,6 +344,10 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     /// Background colour.
     fn bg(self, c: Color) -> Boxed<M> {
         self.boxed().bg(c)
+    }
+    /// Hover background (see [`Boxed::hover_bg`]).
+    fn hover_bg(self, c: Color) -> Boxed<M> {
+        self.boxed().hover_bg(c)
     }
     /// Gradient background (see [`Boxed::gradient`]).
     fn gradient(self, from: Color, to: Color, angle_deg: f32) -> Boxed<M> {

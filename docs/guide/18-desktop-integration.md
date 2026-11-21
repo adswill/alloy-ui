@@ -165,3 +165,7 @@ simulates the change.
 `button("Play").tint(green)` fills the button with your colour. It lightens on hover and
 darkens while pressed by itself, and the label picks white or near-black for contrast. Give
 `.hover(colour)` to choose the hover colour yourself.
+
+Any box takes a hover colour too, so a row or card can react without being a button:
+`row![avatar("Ada"), text("Ada Lovelace")].pad(10.0).hover_bg(accent.with_alpha(0.12))`. On a box
+with no `.bg(..)` the colour fades in over what is behind it.
