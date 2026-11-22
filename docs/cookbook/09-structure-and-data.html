@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Structure and data at scale · Alloy</title>
+<meta name="description" content="Structure and data at scale in the Alloy cookbook">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html">Guide</a>
+<a href="../../docs/cookbook/index.html" aria-current="page">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="../guide/index.html">Overview</a><a href="../guide/01-getting-started.html">Getting started</a><a href="../guide/02-state-and-bindings.html">State and bindings</a><a href="../guide/03-layout.html">Layout</a><a href="../guide/04-widgets.html">Widgets</a><a href="../guide/05-records-and-forms.html">Records and forms</a><a href="../guide/06-async-resources.html">Async resources</a><a href="../guide/07-multi-window.html">Multi-window</a><a href="../guide/08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="../guide/09-theming.html">Theming</a><a href="../guide/10-bundling.html">Bundling</a><a href="../guide/11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="../guide/12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="../guide/13-localization.html">Localization</a><a href="../guide/14-navigation.html">Navigation: routes, back and forward</a><a href="../guide/15-testing.html">Testing your app</a><a href="../guide/16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="../guide/17-shipping.html">Shipping</a><a href="../guide/18-desktop-integration.html">Desktop integration</a><a href="../guide/19-system-integration.html">System integration</a><a href="../guide/20-visual-widgets.html">Visual widgets</a><a href="../guide/21-mobile.html">Mobile: Android and iOS</a><a href="../guide/22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="index.html">Overview</a><a href="01-state-and-input.html">State and input</a><a href="02-layout.html">Layout</a><a href="03-data.html">Data</a><a href="04-app-polish.html">Finished-app details</a><a href="05-look-and-language.html">Look and language</a><a href="06-shell-and-testing.html">Shell and testing</a><a href="07-interaction.html">Interaction patterns</a><a href="08-motion-and-loading.html">Motion and loading</a><a href="09-structure-and-data.html" aria-current="page">Structure and data at scale</a><a href="10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Structure and data at scale</h1>
+<p class="tests">5 recipes, each compiled as a doc-test</p>
+<h2>41. List, detail, and Back</h2>
+<p><code>router</code> keeps a stack of screens. <code>push</code> drills in, <code>back_button</code> and <code>alt+←</code> come back.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">List</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Item</span><span class="p">(</span><span class="kt">u32</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">())</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">nav</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">router</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">List</span><span class="p">);</span>
+<span class="w">    </span><span class="n">nav</span><span class="p">.</span><span class="n">show</span><span class="p">(</span><span class="o">|</span><span class="n">r</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">List</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="s">"Orders"</span><span class="p">),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Open order 7"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">nav</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Item</span><span class="p">(</span><span class="mi">7</span><span class="p">))),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Item</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">nav</span><span class="p">.</span><span class="n">back_button</span><span class="p">(),</span><span class="w"> </span><span class="n">heading</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Order {id}"</span><span class="p">))].</span><span class="n">gap</span><span class="p">(</span><span class="mf">10.0</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">((),</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">200.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Open order 7"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Order 7"</span><span class="p">).</span><span class="n">chord</span><span class="p">(</span><span class="s">"alt+ArrowLeft"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Orders"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>42. Show a hundred thousand rows</h2>
+<p><code>vlist(count, row)</code> builds only the rows on screen, so a huge list costs the same as a small one. The row closure gets an index and returns the row's view.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">row_of</span><span class="p">(</span><span class="n">i</span><span class="p">:</span><span class="w"> </span><span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="nb">Into</span><span class="o">&lt;</span><span class="n">Node</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">usize</span><span class="o">&gt;&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">caption</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"#{i}"</span><span class="p">)).</span><span class="n">dim</span><span class="p">().</span><span class="n">w</span><span class="p">(</span><span class="mf">70.0</span><span class="p">),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Event {i}"</span><span class="p">)).</span><span class="n">fill_w</span><span class="p">()]</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">picked</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">usize</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">caption</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Selected row {picked}"</span><span class="p">)).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">vlist</span><span class="p">(</span><span class="mi">100_000</span><span class="p">,</span><span class="w"> </span><span class="n">row_of</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">ruled</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="n">row_height</span><span class="p">(</span><span class="mf">32.0</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">selected</span><span class="p">(</span><span class="nb">Some</span><span class="p">(</span><span class="o">*</span><span class="n">picked</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">p</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">16.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">usize</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">420.0</span><span class="p">,</span><span class="w"> </span><span class="mf">320.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Event 2"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Selected row 2"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>43. Edit a table in place</h2>
+<p><code>data_grid</code> sorts by header click, resizes columns and edits cells. Describe each column with <code>.col(name, |row| value)</code>; editable ones report the new text to <code>.edit(..)</code>.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+<span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">sync</span><span class="p">::</span><span class="n">Arc</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">team</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="o">'</span><span class="nb">static</span><span class="w"> </span><span class="kt">str</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">People</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">rows</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Person</span><span class="o">&gt;&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">People</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">People</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">data_grid</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">rows</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="s">"Name"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">p</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Person</span><span class="o">|</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">name</span><span class="p">.</span><span class="n">clone</span><span class="p">())</span>
+<span class="w">        </span><span class="p">.</span><span class="n">editable</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">flex</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="s">"Team"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">p</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Person</span><span class="o">|</span><span class="w"> </span><span class="n">p</span><span class="p">.</span><span class="n">team</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">width</span><span class="p">(</span><span class="mf">120.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">edit</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">People</span><span class="p">,</span><span class="w"> </span><span class="n">row</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="o">|</span><span class="w"> </span><span class="n">Arc</span><span class="p">::</span><span class="n">make_mut</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">rows</span><span class="p">)[</span><span class="n">row</span><span class="p">].</span><span class="n">name</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">text</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">rows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[</span><span class="n">Person</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Ada"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="n">team</span><span class="p">:</span><span class="w"> </span><span class="s">"Core"</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">Person</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Grace"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="n">team</span><span class="p">:</span><span class="w"> </span><span class="s">"Tools"</span><span class="w"> </span><span class="p">}];</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="n">People</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">rows</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">view</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>44. A board you drag cards across</h2>
+<p><code>kanban</code> takes lanes of cards and reports each move. <code>mv.apply(..)</code> updates your lanes, so the board is just data.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">card</span><span class="p">,</span><span class="w"> </span><span class="n">lane</span><span class="p">,</span><span class="w"> </span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">Lane</span><span class="p">};</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Board</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">lanes</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Lane</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Board</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Board</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">kanban</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">lanes</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Board</span><span class="p">,</span><span class="w"> </span><span class="n">mv</span><span class="o">|</span><span class="w"> </span><span class="n">mv</span><span class="p">.</span><span class="n">apply</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">lanes</span><span class="p">))</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">lanes</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">lane</span><span class="p">(</span><span class="s">"To do"</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="n">card</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="s">"Write docs"</span><span class="p">),</span><span class="w"> </span><span class="n">card</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="s">"Fix sync"</span><span class="p">)]),</span>
+<span class="w">        </span><span class="n">lane</span><span class="p">(</span><span class="s">"Doing"</span><span class="p">,</span><span class="w"> </span><span class="p">[</span><span class="n">card</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="s">"Ship offline mode"</span><span class="p">)]),</span>
+<span class="w">        </span><span class="n">lane</span><span class="p">(</span><span class="s">"Done"</span><span class="p">,</span><span class="w"> </span><span class="p">[]),</span>
+<span class="w">    </span><span class="p">];</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="n">Board</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">lanes</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">view</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>45. A file tree</h2>
+<p><code>tree</code> shows nested items with expand and collapse. Give every item a unique <code>u64</code> id; selection reports the id.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Files</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">open</span><span class="p">:</span><span class="w"> </span><span class="nb">Option</span><span class="o">&lt;</span><span class="kt">u64</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Files</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Files</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">items</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">TreeItem</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="s">"src"</span><span class="p">).</span><span class="n">children</span><span class="p">([</span><span class="n">TreeItem</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="s">"main.rs"</span><span class="p">),</span><span class="w"> </span><span class="n">TreeItem</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="s">"lib.rs"</span><span class="p">)]),</span>
+<span class="w">        </span><span class="n">TreeItem</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span><span class="w"> </span><span class="s">"Cargo.toml"</span><span class="p">),</span>
+<span class="w">    </span><span class="p">];</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">tree</span><span class="p">(</span><span class="n">items</span><span class="p">).</span><span class="n">open</span><span class="p">([</span><span class="mi">1</span><span class="p">]).</span><span class="n">selected</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">open</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Files</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">id</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">caption</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">open</span><span class="p">.</span><span class="n">map_or</span><span class="p">(</span><span class="s">"Nothing selected"</span><span class="p">.</span><span class="n">to_string</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">id</span><span class="o">|</span><span class="w"> </span><span class="fm">format!</span><span class="p">(</span><span class="s">"Selected {id}"</span><span class="p">))).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">16.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<nav class="pager"><a href="08-motion-and-loading.html">&larr; Motion and loading</a><a href="10-editors-and-media.html">Editors, charts and icons &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

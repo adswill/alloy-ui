@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coming from iced, egui or Slint · Alloy</title>
+<meta name="description" content="Coming from iced, egui or Slint in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html" aria-current="page">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Coming from iced, egui or Slint</h1>
+<p>Alloy keeps iced's architecture (state, messages, view, native GPU drawing) and drops most of its ceremony. If you know egui, the biggest change is that the view is a value you return, not a series of calls on a <code>Ui</code>. If you know Slint, the biggest change is that there is no second language: the markup is Rust. This page maps what you already know, with the same app written side by side. It is a guide to getting started, not a claim that the others are wrong: iced, egui and Slint are excellent and have things Alloy does not (see "What you give up").</p>
+<p>Jump to: <a href="#from-iced">iced</a> · <a href="#from-egui">egui</a> · <a href="#from-slint">Slint</a> · <a href="#what-you-give-up">what you give up</a> · <a href="#a-porting-checklist">a porting checklist</a></p>
+<h2>One page of vocabulary</h2>
+<table>
+<thead>
+<tr>
+<th>Idea</th>
+<th>iced</th>
+<th>egui</th>
+<th>Slint</th>
+<th>Alloy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>App state</td>
+<td>struct + <code>Message</code></td>
+<td>your struct, mutated in <code>update</code></td>
+<td><code>property &lt;T&gt;</code> in markup, plus Rust structs</td>
+<td>your struct (or <code>sketch(state, view)</code>)</td>
+</tr>
+<tr>
+<td>Change state</td>
+<td><code>update(msg)</code></td>
+<td>assign inside <code>if ui.button().clicked()</code></td>
+<td><code>callback</code> + handler <code>=&gt; { .. }</code></td>
+<td><code>.act(\|s\| ..)</code>, or <code>App::update(msg)</code></td>
+</tr>
+<tr>
+<td>Describe the UI</td>
+<td><code>view() -&gt; Element</code></td>
+<td>calls on <code>ui</code> every frame</td>
+<td><code>.slint</code> component tree</td>
+<td><code>view() -&gt; impl View</code></td>
+</tr>
+<tr>
+<td>Layout</td>
+<td><code>column![]</code>, <code>row![]</code></td>
+<td><code>ui.horizontal</code>, <code>ui.vertical</code></td>
+<td><code>VerticalLayout</code>, <code>HorizontalLayout</code></td>
+<td><code>col![]</code>, <code>row![]</code></td>
+</tr>
+<tr>
+<td>Two-way field</td>
+<td><code>on_input</code> + message</td>
+<td><code>&amp;mut String</code></td>
+<td><code>&lt;=&gt;</code> binding</td>
+<td><code>at!(s.field)</code></td>
+</tr>
+<tr>
+<td>Lists</td>
+<td><code>column(iter)</code></td>
+<td><code>for</code> loop</td>
+<td><code>for x in model :</code></td>
+<td><code>col(iter)</code>, <code>vlist</code>, <code>table</code></td>
+</tr>
+<tr>
+<td>Background work</td>
+<td><code>Task::perform</code></td>
+<td>your own thread + channel</td>
+<td><code>slint::spawn_local</code>, <code>invoke_from_event_loop</code></td>
+<td><code>Cmd::perform</code>, <code>resource</code></td>
+</tr>
+<tr>
+<td>Cancel stale work</td>
+<td><code>Task::abortable</code></td>
+<td>drop your channel</td>
+<td>drop the task handle</td>
+<td><code>Cmd::perform_keyed</code> / <code>Cmd::cancel</code>, <code>resource_for</code></td>
+</tr>
+<tr>
+<td>Navigation</td>
+<td>none built in</td>
+<td>none built in</td>
+<td><code>if page == ..</code></td>
+<td><code>router</code></td>
+</tr>
+<tr>
+<td>UI tests</td>
+<td><code>iced_test</code></td>
+<td><code>egui_kittest</code></td>
+<td><code>i-slint-backend-testing</code></td>
+<td><code>Harness</code></td>
+</tr>
+</tbody>
+</table>
+<h2>From iced</h2>
+<p>The same counter in both. Alloy has two styles; the first is closest to what you know.</p>
+<div class="hl"><pre><span></span><code><span class="c1">// iced</span>
+<span class="k">use</span><span class="w"> </span><span class="n">iced</span><span class="p">::</span><span class="n">widget</span><span class="p">::{</span><span class="n">button</span><span class="p">,</span><span class="w"> </span><span class="n">column</span><span class="p">,</span><span class="w"> </span><span class="n">row</span><span class="p">,</span><span class="w"> </span><span class="n">text</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Counter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">value</span><span class="p">:</span><span class="w"> </span><span class="kt">i64</span><span class="w"> </span><span class="p">}</span>
+
+<span class="cp">#[derive(Debug, Clone, Copy)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Message</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Inc</span><span class="p">,</span><span class="w"> </span><span class="n">Dec</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Counter</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">:</span><span class="w"> </span><span class="nc">Message</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">match</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Message</span><span class="p">::</span><span class="n">Inc</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">value</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">Message</span><span class="p">::</span><span class="n">Dec</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">value</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">c</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Counter</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">iced</span><span class="p">::</span><span class="n">Element</span><span class="o">&lt;'</span><span class="nb">_</span><span class="p">,</span><span class="w"> </span><span class="n">Message</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="fm">column!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} so far"</span><span class="p">,</span><span class="w"> </span><span class="n">c</span><span class="p">.</span><span class="n">value</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">on_press</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">Dec</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">on_press</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">Inc</span><span class="p">)].</span><span class="n">spacing</span><span class="p">(</span><span class="mi">8</span><span class="p">),</span>
+<span class="w">    </span><span class="p">].</span><span class="n">spacing</span><span class="p">(</span><span class="mi">14</span><span class="p">).</span><span class="n">padding</span><span class="p">(</span><span class="mi">24</span><span class="p">).</span><span class="n">into</span><span class="p">()</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">iced</span><span class="p">::</span><span class="nb">Result</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">iced</span><span class="p">::</span><span class="n">application</span><span class="p">(</span><span class="n">Counter</span><span class="p">::</span><span class="n">default</span><span class="p">,</span><span class="w"> </span><span class="n">update</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">).</span><span class="n">run</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy, same shape (the App trait)</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Counter</span><span class="p">(</span><span class="kt">i64</span><span class="p">);</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Msg</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Inc</span><span class="p">,</span><span class="w"> </span><span class="n">Dec</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">App</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">Counter</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">type</span><span class="w"> </span><span class="nc">Msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">:</span><span class="w"> </span><span class="nc">Msg</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">match</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Msg</span><span class="p">::</span><span class="n">Inc</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="mi">0</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">Msg</span><span class="p">::</span><span class="n">Dec</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="mi">0</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} so far"</span><span class="p">,</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="mi">0</span><span class="p">)),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">Msg</span><span class="p">::</span><span class="n">Dec</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">Msg</span><span class="p">::</span><span class="n">Inc</span><span class="p">)],</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy, closure style: no message enum, no update function</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n} so far"</span><span class="p">)),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)],</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>iced</th>
+<th>Alloy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Message</code> enum + <code>update</code></td>
+<td><code>sketch</code> closures (<code>.act(\|s\| ..)</code>), or the <code>App</code> trait when you want a message log</td>
+</tr>
+<tr>
+<td><code>column![]</code>, <code>row![]</code>, <code>.spacing(8)</code>, <code>.padding(24)</code></td>
+<td><code>col![]</code>, <code>row![]</code>, <code>.gap(8.0)</code>, <code>.pad(24.0)</code></td>
+</tr>
+<tr>
+<td><code>button(..).on_press(m)</code></td>
+<td><code>button(..).on(m)</code> or <code>.act(\|s\| ..)</code>; <code>.primary()</code>, <code>.ghost()</code> for styles</td>
+</tr>
+<tr>
+<td><code>text_input(placeholder, &amp;value).on_input(Msg::Edit)</code></td>
+<td><code>input(at!(s.field)).hint(..)</code>: two-way, no message</td>
+</tr>
+<tr>
+<td><code>checkbox</code>, <code>slider</code>, <code>pick_list</code></td>
+<td><code>check(label, at!(..))</code>, <code>slider</code>, <code>pick</code>/<code>choose</code></td>
+</tr>
+<tr>
+<td><code>Length::Fill</code>, <code>Fill</code></td>
+<td><code>.fill()</code>, <code>.fill_w()</code>, <code>.fill_h()</code></td>
+</tr>
+<tr>
+<td><code>Task::perform(fut, Msg::Done)</code></td>
+<td><code>Cmd::perform(async { Msg::Done(..) })</code> from <code>update_cmd</code>, or <code>resource(fetch)</code> for data a view shows</td>
+</tr>
+<tr>
+<td><code>Subscription::run</code>, <code>time::every</code></td>
+<td><code>subscriptions()</code> with <code>every(period, \|\| msg)</code>, or <code>.tick(..)</code> in <code>sketch</code></td>
+</tr>
+<tr>
+<td><code>iced::window::open</code></td>
+<td><code>Cmd::open_window(id, title, w, h)</code> and <code>view_window(id)</code></td>
+</tr>
+<tr>
+<td>custom <code>Theme</code> / <code>Palette</code> / <code>Catalog</code> styling</td>
+<td><code>set_look(Look::dark().accent(..).density(..))</code>; the accent is nudged until it passes WCAG AA</td>
+</tr>
+<tr>
+<td>local widget state in your struct</td>
+<td><code>local(value)</code> in the view, <code>store(..)</code> if it should be saved</td>
+</tr>
+<tr>
+<td>no built-in router</td>
+<td><code>router(home)</code> (<a href="14-navigation.html">navigation</a>)</td>
+</tr>
+<tr>
+<td><code>iced_test</code> / simulator</td>
+<td><code>Harness</code> (<a href="15-testing.html">testing</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>Things that behave differently:</p>
+<ul>
+<li><strong>View-local state.</strong> In iced a search box, a sort order or an open panel is a field in your state plus a message. In Alloy <code>let q = local(String::new())</code> in the view keeps it with the widget tree.</li>
+<li><strong>Widget identity.</strong> Focus, scroll and caret state follow the call site, so you rarely write <code>.id(..)</code>. Inside loops, widgets are keyed by position; use <code>.id(n)</code> when rows can reorder.</li>
+<li><strong>Layout is built in.</strong> Forms (<code>field</code>), tables (<code>table</code>), CRUD pages (<code>crud</code>) and wizards are ready-made blocks. An admin screen that is a few hundred lines in iced is tens of lines here; see BENCHMARKS.md for honest, measured line counts (everyday apps are about 3x shorter, apps made of the ready-made blocks 9 to 14x).</li>
+<li><strong>Lifetimes.</strong> <code>view</code> returns an owned <code>impl View&lt;Msg&gt;</code>; there is no <code>Element&lt;'a, Message&gt;</code> to thread through helper functions. A helper is a plain <code>fn x(s: &amp;State) -&gt; impl View&lt;Act&lt;State&gt;&gt;</code>.</li>
+</ul>
+<h3>A list with a filter: the todo app</h3>
+<p>The thing that surprises people most is how much of an iced todo app is plumbing: one message per edit, a <code>Vec</code> you map by hand, a <code>text_input</code> that needs <code>on_input</code> and <code>on_submit</code>. In Alloy the field is bound, the checkboxes edit the tasks in place, and "Clear done" is a one-liner.</p>
+<div class="hl"><pre><span></span><code><span class="c1">// iced: ~65 lines of state, messages, update and view for the same screen</span>
+<span class="cp">#[derive(Debug, Clone)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Message</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Draft</span><span class="p">(</span><span class="nb">String</span><span class="p">),</span>
+<span class="w">    </span><span class="n">Add</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Toggle</span><span class="p">(</span><span class="kt">usize</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">),</span>
+<span class="w">    </span><span class="n">Filter</span><span class="p">(</span><span class="n">Filter</span><span class="p">),</span>
+<span class="w">    </span><span class="n">ClearDone</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Todo</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">:</span><span class="w"> </span><span class="nc">Message</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">match</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Message</span><span class="p">::</span><span class="n">Draft</span><span class="p">(</span><span class="n">d</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">d</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Message</span><span class="p">::</span><span class="n">Add</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="kd">let</span><span class="w"> </span><span class="n">title</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="p">.</span><span class="n">trim</span><span class="p">().</span><span class="n">to_string</span><span class="p">();</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="o">!</span><span class="n">title</span><span class="p">.</span><span class="n">is_empty</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">push</span><span class="p">((</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">));</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span><span class="w"> </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="n">Message</span><span class="p">::</span><span class="n">Toggle</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">on</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="mi">1</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">on</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Message</span><span class="p">::</span><span class="n">Filter</span><span class="p">(</span><span class="n">f</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">f</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Message</span><span class="p">::</span><span class="n">ClearDone</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">retain</span><span class="p">(</span><span class="o">|</span><span class="n">t</span><span class="o">|</span><span class="w"> </span><span class="o">!</span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">),</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Todo</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">Element</span><span class="o">&lt;'</span><span class="nb">_</span><span class="p">,</span><span class="w"> </span><span class="n">Message</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">filter</span><span class="p">(</span><span class="o">|</span><span class="n">t</span><span class="o">|</span><span class="w"> </span><span class="o">!</span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">).</span><span class="n">count</span><span class="p">();</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">list</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">column</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">enumerate</span><span class="p">().</span><span class="n">filter</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="p">.</span><span class="n">keeps</span><span class="p">(</span><span class="n">t</span><span class="p">)).</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">checkbox</span><span class="p">(</span><span class="o">&amp;</span><span class="n">t</span><span class="p">.</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">).</span><span class="n">on_toggle</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">on</span><span class="o">|</span><span class="w"> </span><span class="n">Message</span><span class="p">::</span><span class="n">Toggle</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">on</span><span class="p">)).</span><span class="n">into</span><span class="p">()</span>
+<span class="w">    </span><span class="p">}));</span>
+<span class="w">    </span><span class="fm">column!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="s">"Tasks"</span><span class="p">).</span><span class="n">size</span><span class="p">(</span><span class="mi">28</span><span class="p">),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{open} open"</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text_input</span><span class="p">(</span><span class="s">"What needs doing?"</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="p">).</span><span class="n">on_input</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">Draft</span><span class="p">).</span><span class="n">on_submit</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">Add</span><span class="p">),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Add task"</span><span class="p">).</span><span class="n">on_press</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">Add</span><span class="p">),</span>
+<span class="w">        </span><span class="p">].</span><span class="n">spacing</span><span class="p">(</span><span class="mi">8</span><span class="p">),</span>
+<span class="w">        </span><span class="n">scrollable</span><span class="p">(</span><span class="n">list</span><span class="p">),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">pick_list</span><span class="p">(</span><span class="n">Filter</span><span class="p">::</span><span class="n">ALL</span><span class="p">,</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="p">),</span><span class="w"> </span><span class="n">Message</span><span class="p">::</span><span class="n">Filter</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Clear done"</span><span class="p">).</span><span class="n">on_press</span><span class="p">(</span><span class="n">Message</span><span class="p">::</span><span class="n">ClearDone</span><span class="p">)],</span>
+<span class="w">    </span><span class="p">].</span><span class="n">spacing</span><span class="p">(</span><span class="mi">18</span><span class="p">).</span><span class="n">padding</span><span class="p">(</span><span class="mi">24</span><span class="p">).</span><span class="n">into</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy: the whole screen</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="n">alloy_ui</span><span class="p">::</span><span class="n">choices</span><span class="o">!</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">Filter</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">All</span><span class="p">,</span><span class="w"> </span><span class="n">Open</span><span class="p">,</span><span class="w"> </span><span class="n">Done</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Todo</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">tasks</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="p">(</span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">draft</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">filter</span><span class="p">:</span><span class="w"> </span><span class="nc">Filter</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">Todo</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">title</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">draft</span><span class="p">.</span><span class="n">trim</span><span class="p">().</span><span class="n">to_string</span><span class="p">();</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="o">!</span><span class="n">title</span><span class="p">.</span><span class="n">is_empty</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="bp">self</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">push</span><span class="p">((</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">));</span>
+<span class="w">            </span><span class="bp">self</span><span class="p">.</span><span class="n">draft</span><span class="p">.</span><span class="n">clear</span><span class="p">();</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Todo</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Todo</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">open</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">filter</span><span class="p">(</span><span class="o">|</span><span class="n">t</span><span class="o">|</span><span class="w"> </span><span class="o">!</span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">).</span><span class="n">count</span><span class="p">();</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">shown</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">enumerate</span><span class="p">().</span><span class="n">filter</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Filter</span><span class="p">::</span><span class="n">All</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Filter</span><span class="p">::</span><span class="n">Open</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="o">!</span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">,</span>
+<span class="w">        </span><span class="n">Filter</span><span class="p">::</span><span class="n">Done</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">,</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">heading</span><span class="p">(</span><span class="s">"Tasks"</span><span class="p">),</span><span class="w"> </span><span class="n">caption</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{open} open"</span><span class="p">)).</span><span class="n">dim</span><span class="p">()].</span><span class="n">gap</span><span class="p">(</span><span class="mf">2.0</span><span class="p">),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="p">)).</span><span class="n">hint</span><span class="p">(</span><span class="s">"What needs doing?"</span><span class="p">).</span><span class="n">submit</span><span class="p">(</span><span class="n">Todo</span><span class="p">::</span><span class="n">add</span><span class="p">).</span><span class="n">fill_w</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Add task"</span><span class="p">).</span><span class="n">primary</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="n">Todo</span><span class="p">::</span><span class="n">add</span><span class="p">),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">align_center</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">fill_w</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">scroll</span><span class="p">(</span><span class="n">col</span><span class="p">(</span><span class="n">shown</span><span class="p">.</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="n">check</span><span class="p">(</span><span class="o">&amp;</span><span class="n">t</span><span class="p">.</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="mi">1</span><span class="p">))))),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">options</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="p">).</span><span class="n">bind</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Todo</span><span class="o">|</span><span class="w"> </span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">filter</span><span class="p">),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Clear done"</span><span class="p">).</span><span class="n">ghost</span><span class="p">().</span><span class="n">keep</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">),</span><span class="w"> </span><span class="o">|</span><span class="n">t</span><span class="o">|</span><span class="w"> </span><span class="o">!</span><span class="n">t</span><span class="p">.</span><span class="mi">1</span><span class="p">),</span>
+<span class="w">        </span><span class="p">],</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">18.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">fill</span><span class="p">()</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="n">Todo</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">tasks</span><span class="p">:</span><span class="w"> </span><span class="nc">vec</span><span class="o">!</span><span class="p">[(</span><span class="s">"Write release notes"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="kc">false</span><span class="p">)],</span><span class="w"> </span><span class="n">draft</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">::</span><span class="n">new</span><span class="p">(),</span><span class="w"> </span><span class="n">filter</span><span class="p">:</span><span class="w"> </span><span class="nc">Filter</span><span class="p">::</span><span class="n">All</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">view</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run_sized</span><span class="p">(</span><span class="s">"Todo"</span><span class="p">,</span><span class="w"> </span><span class="mf">420.0</span><span class="p">,</span><span class="w"> </span><span class="mf">460.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>at!(s.tasks[i].1)</code> is a binding into the state: the checkbox reads and writes that field, so there is no <code>Toggle</code> message to write. Keep a real message when the event matters beyond "set this field" (an undo log, a network call, analytics).</p>
+<h3>Background work and cancelling it</h3>
+<p>In iced a search-as-you-type box is a <code>Task::perform</code> plus bookkeeping so an old answer cannot overwrite a newer one. Alloy has two ways, depending on whether the result feeds a view or your state.</p>
+<div class="hl"><pre><span></span><code><span class="c1">// iced</span>
+<span class="n">Message</span><span class="p">::</span><span class="n">Query</span><span class="p">(</span><span class="n">q</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="p">(</span><span class="n">task</span><span class="p">,</span><span class="w"> </span><span class="n">handle</span><span class="p">)</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Task</span><span class="p">::</span><span class="n">perform</span><span class="p">(</span><span class="n">search</span><span class="p">(</span><span class="n">q</span><span class="p">),</span><span class="w"> </span><span class="n">Message</span><span class="p">::</span><span class="n">Found</span><span class="p">).</span><span class="n">abortable</span><span class="p">();</span>
+<span class="w">    </span><span class="bp">self</span><span class="p">.</span><span class="n">pending</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">handle</span><span class="p">.</span><span class="n">abort_on_drop</span><span class="p">());</span><span class="w"> </span><span class="c1">// dropping the old handle aborts the old task</span>
+<span class="w">    </span><span class="n">task</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy, result goes to your state: a keyed command. A newer one with the same key cancels</span>
+<span class="c1">// the running one, so only the latest answer ever arrives.</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Search</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">query</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">found</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">}</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Msg</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Query</span><span class="p">(</span><span class="nb">String</span><span class="p">),</span><span class="w"> </span><span class="n">Found</span><span class="p">(</span><span class="nb">String</span><span class="p">),</span><span class="w"> </span><span class="n">Stop</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">async</span><span class="w"> </span><span class="k">fn</span><span class="w"> </span><span class="nf">search</span><span class="p">(</span><span class="n">q</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sleep</span><span class="p">(</span><span class="n">secs</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)).</span><span class="k">await</span><span class="p">;</span><span class="w"> </span><span class="c1">// stands in for a request; the cancelled one stops here</span>
+<span class="w">    </span><span class="fm">format!</span><span class="p">(</span><span class="s">"results for {q}"</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">App</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">Search</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">type</span><span class="w"> </span><span class="nc">Msg</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Msg</span><span class="p">;</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">update_cmd</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">m</span><span class="p">:</span><span class="w"> </span><span class="nc">Msg</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">Cmd</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">match</span><span class="w"> </span><span class="n">m</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Msg</span><span class="p">::</span><span class="n">Query</span><span class="p">(</span><span class="n">q</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="bp">self</span><span class="p">.</span><span class="n">query</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">q</span><span class="p">.</span><span class="n">clone</span><span class="p">();</span>
+<span class="w">                </span><span class="n">Cmd</span><span class="p">::</span><span class="n">perform_keyed</span><span class="p">(</span><span class="s">"search"</span><span class="p">,</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="k">move</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Msg</span><span class="p">::</span><span class="n">Found</span><span class="p">(</span><span class="n">search</span><span class="p">(</span><span class="n">q</span><span class="p">).</span><span class="k">await</span><span class="p">)</span><span class="w"> </span><span class="p">})</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">            </span><span class="n">Msg</span><span class="p">::</span><span class="n">Found</span><span class="p">(</span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">r</span><span class="p">;</span><span class="w"> </span><span class="n">Cmd</span><span class="p">::</span><span class="n">none</span><span class="p">()</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="n">Msg</span><span class="p">::</span><span class="n">Stop</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">Cmd</span><span class="p">::</span><span class="n">cancel</span><span class="p">(</span><span class="s">"search"</span><span class="p">),</span><span class="w"> </span><span class="c1">// its message never arrives</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="o">&amp;</span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Msg</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"rust"</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">Msg</span><span class="p">::</span><span class="n">Query</span><span class="p">(</span><span class="s">"rust"</span><span class="p">.</span><span class="n">into</span><span class="p">())),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"iced"</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">Msg</span><span class="p">::</span><span class="n">Query</span><span class="p">(</span><span class="s">"iced"</span><span class="p">.</span><span class="n">into</span><span class="p">())),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Stop"</span><span class="p">).</span><span class="n">on</span><span class="p">(</span><span class="n">Msg</span><span class="p">::</span><span class="n">Stop</span><span class="p">)],</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="bp">self</span><span class="p">.</span><span class="n">found</span><span class="p">.</span><span class="n">clone</span><span class="p">()),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Search</span><span class="p">::</span><span class="n">default</span><span class="p">().</span><span class="n">run</span><span class="p">(</span><span class="s">"Search"</span><span class="p">)</span><span class="w"> </span><span class="p">}</span>
+</code></pre></div>
+
+<p>When the data is only shown (a list, a detail pane), skip the messages: <code>resource_for(key, fetch)</code> refetches when the key changes and cancels the stale fetch, and <code>resource(fetch)</code> gives loading, error and retry for free (<a href="06-async-resources.html">async resources</a>).</p>
+<h3>Saved, restorable navigation</h3>
+<p>iced leaves routing to you. In Alloy <code>router(home)</code> is a stack of screens, <code>router_saved("my-app", home)</code> reopens where the person left off, and <code>.links(parse)</code> turns a deep link such as <code>myapp://note/3</code> into a screen (<a href="14-navigation.html">navigation</a>).</p>
+<h3>Things that do not map one to one</h3>
+<ul>
+<li>iced's <code>Subscription</code> for window events or keyboard shortcuts: use <code>.shortcut("mod+k", ..)</code> on any node, or <code>every(period, ..)</code> for timers.</li>
+<li>iced's <code>Canvas</code> programs: use the <code>canvas</code> widget with its drawing API (see the widgets guide), or implement <code>Widget</code> for something fully custom.</li>
+<li>iced's per-widget <code>Style</code> closures: pick a <code>Look</code> and <code>.primary()</code>, <code>.ghost()</code>, <code>.danger()</code> variants; override a single node with <code>.bg(..)</code>/<code>.fg(..)</code> only when you must.</li>
+</ul>
+<h2>From egui</h2>
+<p>egui redraws by running your UI code each frame; Alloy builds a tree from your state and keeps widget state for you. There is no <code>ctx</code>, no <code>ui</code> and no <code>.clicked()</code> to poll.</p>
+<div class="hl"><pre><span></span><code><span class="c1">// egui</span>
+<span class="k">impl</span><span class="w"> </span><span class="n">eframe</span><span class="p">::</span><span class="n">App</span><span class="w"> </span><span class="k">for</span><span class="w"> </span><span class="n">MyApp</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">update</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">,</span><span class="w"> </span><span class="n">ctx</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">egui</span><span class="p">::</span><span class="n">Context</span><span class="p">,</span><span class="w"> </span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">eframe</span><span class="p">::</span><span class="n">Frame</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">egui</span><span class="p">::</span><span class="n">CentralPanel</span><span class="p">::</span><span class="n">default</span><span class="p">().</span><span class="n">show</span><span class="p">(</span><span class="n">ctx</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">ui</span><span class="p">.</span><span class="n">heading</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">);</span>
+<span class="w">            </span><span class="n">ui</span><span class="p">.</span><span class="n">label</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} so far"</span><span class="p">,</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">n</span><span class="p">));</span>
+<span class="w">            </span><span class="n">ui</span><span class="p">.</span><span class="n">horizontal</span><span class="p">(</span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">clicked</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">clicked</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="p">}</span>
+<span class="w">            </span><span class="p">});</span>
+<span class="w">            </span><span class="n">ui</span><span class="p">.</span><span class="n">text_edit_singleline</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">name</span><span class="p">);</span>
+<span class="w">        </span><span class="p">});</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">MyApp</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">n</span><span class="p">:</span><span class="w"> </span><span class="kt">i64</span><span class="p">,</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="n">MyApp</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">s</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">),</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{} so far"</span><span class="p">,</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">n</span><span class="p">)),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">MyApp</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">MyApp</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)],</span>
+<span class="w">            </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>egui</th>
+<th>Alloy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>if ui.button("+").clicked() { .. }</code></td>
+<td><code>button("+").act(\|s\| ..)</code>: the handler is attached, not polled</td>
+</tr>
+<tr>
+<td><code>ui.text_edit_singleline(&amp;mut self.name)</code></td>
+<td><code>input(at!(s.name))</code></td>
+</tr>
+<tr>
+<td><code>ui.checkbox(&amp;mut self.on, "label")</code></td>
+<td><code>check("label", at!(s.on))</code></td>
+</tr>
+<tr>
+<td><code>ui.add(egui::Slider::new(&amp;mut v, 0.0..=1.0))</code></td>
+<td><code>slider(0.0..=1.0, at!(s.v))</code></td>
+</tr>
+<tr>
+<td><code>ui.horizontal(\|ui\| ..)</code>, <code>ui.vertical(..)</code></td>
+<td><code>row![..]</code>, <code>col![..]</code></td>
+</tr>
+<tr>
+<td><code>egui::SidePanel</code>, <code>CentralPanel</code></td>
+<td><code>shell</code> / <code>app(..).page(..)</code> (sidebar and pages)</td>
+</tr>
+<tr>
+<td><code>egui::ScrollArea::vertical()</code></td>
+<td><code>scroll(content)</code></td>
+</tr>
+<tr>
+<td><code>ui.collapsing</code>, <code>ComboBox</code></td>
+<td><code>reveal(show, ..)</code>, <code>pick</code>/<code>choose</code></td>
+</tr>
+<tr>
+<td><code>egui::Window</code></td>
+<td><code>Cmd::open_window</code> for an OS window, <code>popover</code>/<code>context_menu</code> for floating panels</td>
+</tr>
+<tr>
+<td><code>ctx.request_repaint()</code></td>
+<td>nothing: Alloy redraws after events, animations and <a href="06-async-resources.html">resources</a>, and is 0% CPU idle</td>
+</tr>
+<tr>
+<td><code>egui_extras::Table</code></td>
+<td><code>table(..)</code> with sorting and selection; <code>vlist</code> for long lists</td>
+</tr>
+<tr>
+<td>plot / persistence crates</td>
+<td><code>bar_chart</code>, <code>line_chart</code>, <code>sparkline</code>; <code>sketch(..).persist("name")</code></td>
+</tr>
+<tr>
+<td>egui's immediate state in <code>ui.memory</code></td>
+<td><code>local(..)</code> / <code>store(..)</code></td>
+</tr>
+</tbody>
+</table>
+<p>Things that behave differently:</p>
+<ul>
+<li><strong>No frame loop in your code.</strong> Your view function runs after an event changes state, not 60 times a second. Do not read a clock inside it; use <code>.tick(period, ..)</code> or <code>animated(..)</code>.</li>
+<li><strong>Retained text input.</strong> Text fields have real selection, undo, IME and right-to-left shaping instead of being redrawn from a <code>&amp;mut String</code> each frame.</li>
+<li><strong>Native look by default.</strong> Alloy draws everything itself like egui does, but with a consistent, themed design (light, dark, high contrast, density) rather than the egui style.</li>
+</ul>
+<h3>A table and saved state</h3>
+<p>egui's <code>Table</code> needs a builder, a row closure and your own sorting; persistence needs the <code>persistence</code> feature and <code>eframe::Storage</code>. In Alloy the table is a call, and saving is <code>.persist("name")</code> on any <code>sketch</code> whose state derives <code>Serialize</code> and <code>Deserialize</code>:</p>
+<div class="hl"><pre><span></span><code><span class="c1">// egui + egui_extras: columns, header, body, rows(...), manual sort, eframe storage</span>
+<span class="n">TableBuilder</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">ui</span><span class="p">).</span><span class="n">column</span><span class="p">(</span><span class="n">Column</span><span class="p">::</span><span class="n">auto</span><span class="p">()).</span><span class="n">column</span><span class="p">(</span><span class="n">Column</span><span class="p">::</span><span class="n">remainder</span><span class="p">())</span>
+<span class="w">    </span><span class="p">.</span><span class="n">header</span><span class="p">(</span><span class="mf">20.0</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="k">mut</span><span class="w"> </span><span class="n">h</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">h</span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">strong</span><span class="p">(</span><span class="s">"Name"</span><span class="p">);</span><span class="w"> </span><span class="p">});</span><span class="w"> </span><span class="n">h</span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">strong</span><span class="p">(</span><span class="s">"Total"</span><span class="p">);</span><span class="w"> </span><span class="p">});</span><span class="w"> </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">body</span><span class="p">(</span><span class="o">|</span><span class="n">body</span><span class="o">|</span><span class="w"> </span><span class="n">body</span><span class="p">.</span><span class="n">rows</span><span class="p">(</span><span class="mf">18.0</span><span class="p">,</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">rows</span><span class="p">.</span><span class="n">len</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="k">mut</span><span class="w"> </span><span class="n">row</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="bp">self</span><span class="p">.</span><span class="n">rows</span><span class="p">[</span><span class="n">row</span><span class="p">.</span><span class="n">index</span><span class="p">()];</span>
+<span class="w">        </span><span class="n">row</span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">label</span><span class="p">(</span><span class="o">&amp;</span><span class="n">r</span><span class="p">.</span><span class="n">name</span><span class="p">);</span><span class="w"> </span><span class="p">});</span>
+<span class="w">        </span><span class="n">row</span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="o">|</span><span class="n">ui</span><span class="o">|</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ui</span><span class="p">.</span><span class="n">label</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{:.2}"</span><span class="p">,</span><span class="w"> </span><span class="n">r</span><span class="p">.</span><span class="n">total</span><span class="p">));</span><span class="w"> </span><span class="p">});</span>
+<span class="w">    </span><span class="p">}));</span>
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy: sortable headers, selection and keyboard navigation come with it</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+<span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">sync</span><span class="p">::</span><span class="n">Arc</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Order</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="n">total</span><span class="p">:</span><span class="w"> </span><span class="kt">f64</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Orders</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">rows</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="n">Order</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">rows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">vec!</span><span class="p">[</span><span class="n">Order</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Ada"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="n">total</span><span class="p">:</span><span class="w"> </span><span class="mf">12.5</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">Order</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="s">"Grace"</span><span class="p">.</span><span class="n">into</span><span class="p">(),</span><span class="w"> </span><span class="n">total</span><span class="p">:</span><span class="w"> </span><span class="mf">99.0</span><span class="w"> </span><span class="p">}];</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="n">Orders</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">rows</span><span class="p">:</span><span class="w"> </span><span class="nc">Arc</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">rows</span><span class="p">)</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Orders</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">data_grid</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">rows</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="s">"Name"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">o</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Order</span><span class="o">|</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">name</span><span class="p">.</span><span class="n">clone</span><span class="p">())</span>
+<span class="w">            </span><span class="p">.</span><span class="n">col</span><span class="p">(</span><span class="s">"Total"</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">o</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Order</span><span class="o">|</span><span class="w"> </span><span class="fm">format!</span><span class="p">(</span><span class="s">"{:.2}"</span><span class="p">,</span><span class="w"> </span><span class="n">o</span><span class="p">.</span><span class="n">total</span><span class="p">)).</span><span class="n">right</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="n">fill</span><span class="p">()</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Orders"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3>Habits to drop</h3>
+<ul>
+<li><strong>Polling for clicks.</strong> <code>if ui.button(..).clicked()</code> has no equivalent; the handler is attached to the button.</li>
+<li><strong><code>ctx.request_repaint()</code> and <code>ctx.request_repaint_after</code>.</strong> A timer is <code>every(period, ..)</code> or <code>.tick(..)</code>; animation is <code>animated(..)</code> and springs.</li>
+<li><strong>Storing UI state in your struct "because egui forgets it".</strong> <code>local(..)</code> in the view keeps scroll, expanded flags and text drafts for you.</li>
+<li><strong>Ids for every widget.</strong> Identity follows the call site; add <code>.id(n)</code> only for reorderable rows.</li>
+</ul>
+<h2>From Slint</h2>
+<p>Slint splits an app in two: a <code>.slint</code> file (or <code>slint!</code> macro) with properties, callbacks and layout, and Rust code that fills the properties and handles the callbacks. Alloy keeps both halves in one Rust file: the property is a field, the callback is a closure, and the layout is the function that returns the view.</p>
+<div class="hl"><pre><span></span><code>// Slint (.slint)
+import { Button, VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component Counter inherits Window {
+    in-out property &lt;int&gt; value: 0;
+    VerticalBox {
+        Text { text: "\(root.value) so far"; }
+        HorizontalBox {
+            Button { text: "-"; clicked =&gt; { root.value -= 1; } }
+            Button { text: "+"; clicked =&gt; { root.value += 1; } }
+        }
+    }
+}
+// Rust: slint::include_modules!(); let ui = Counter::new()?; ui.run()?;
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy: one file, one language</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n} so far"</span><span class="p">)),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">button</span><span class="p">(</span><span class="s">"-"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"+"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)],</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>A form with a list, where Slint needs a <code>ModelRc&lt;VecModel&lt;..&gt;&gt;</code> on the Rust side and a <code>for</code> loop in markup:</p>
+<div class="hl"><pre><span></span><code>// Slint
+export component Tasks inherits Window {
+    in-out property &lt;[{title: string, done: bool}]&gt; tasks;
+    in-out property &lt;string&gt; draft;
+    callback add(string);
+    VerticalLayout {
+        HorizontalLayout {
+            LineEdit { text &lt;=&gt; root.draft; accepted(t) =&gt; { root.add(t); } }
+            Button { text: "Add task"; clicked =&gt; { root.add(root.draft); } }
+        }
+        for t[i] in root.tasks : CheckBox { text: t.title; checked &lt;=&gt; t.done; }
+    }
+}
+// Rust: let model = Rc::new(VecModel::from(vec![..])); ui.set_tasks(model.clone().into());
+//       ui.on_add(move |t| model.push(TaskData { title: t, done: false }));
+</code></pre></div>
+
+<div class="hl"><pre><span></span><code><span class="c1">// Alloy</span>
+<span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Tasks</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">tasks</span><span class="p">:</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;</span><span class="p">(</span><span class="nb">String</span><span class="p">,</span><span class="w"> </span><span class="kt">bool</span><span class="p">)</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">draft</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">}</span>
+
+<span class="k">impl</span><span class="w"> </span><span class="n">Tasks</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">fn</span><span class="w"> </span><span class="nf">add</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="kd">let</span><span class="w"> </span><span class="n">title</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">mem</span><span class="p">::</span><span class="n">take</span><span class="p">(</span><span class="o">&amp;</span><span class="k">mut</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">draft</span><span class="p">);</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="o">!</span><span class="n">title</span><span class="p">.</span><span class="n">trim</span><span class="p">().</span><span class="n">is_empty</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="bp">self</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">push</span><span class="p">((</span><span class="n">title</span><span class="p">,</span><span class="w"> </span><span class="kc">false</span><span class="p">));</span><span class="w"> </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="n">Tasks</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Tasks</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">                </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">draft</span><span class="p">)).</span><span class="n">hint</span><span class="p">(</span><span class="s">"What needs doing?"</span><span class="p">).</span><span class="n">submit</span><span class="p">(</span><span class="n">Tasks</span><span class="p">::</span><span class="n">add</span><span class="p">).</span><span class="n">fill_w</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Add task"</span><span class="p">).</span><span class="n">primary</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="n">Tasks</span><span class="p">::</span><span class="n">add</span><span class="p">),</span>
+<span class="w">            </span><span class="p">],</span>
+<span class="w">            </span><span class="n">scroll</span><span class="p">(</span><span class="n">col</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">enumerate</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">t</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="n">check</span><span class="p">(</span><span class="o">&amp;</span><span class="n">t</span><span class="p">.</span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">tasks</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="mi">1</span><span class="p">))))),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Tasks"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>Slint</th>
+<th>Alloy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>in-out property &lt;T&gt; x</code></td>
+<td>a field on your state; read it in the view</td>
+</tr>
+<tr>
+<td><code>&lt;=&gt;</code> two-way binding</td>
+<td><code>at!(s.x)</code></td>
+</tr>
+<tr>
+<td><code>callback foo()</code> + <code>foo =&gt; { .. }</code></td>
+<td><code>.act(\|s\| ..)</code> or a <code>Msg</code> variant handled in <code>update</code></td>
+</tr>
+<tr>
+<td><code>ModelRc&lt;VecModel&lt;T&gt;&gt;</code>, <code>set_x(model)</code></td>
+<td>a plain <code>Vec&lt;T&gt;</code> (or <code>Arc&lt;Vec&lt;T&gt;&gt;</code> for big tables)</td>
+</tr>
+<tr>
+<td><code>for item[i] in model : Widget</code></td>
+<td><code>col(items.iter().enumerate().map(..))</code>; <code>vlist(..)</code> when it is long</td>
+</tr>
+<tr>
+<td><code>if cond : Widget</code></td>
+<td>a Rust <code>if</code> in the view, or <code>reveal(cond, ..)</code></td>
+</tr>
+<tr>
+<td><code>VerticalLayout</code>, <code>HorizontalLayout</code>, <code>GridLayout</code></td>
+<td><code>col![]</code>, <code>row![]</code>, <code>stack(..)</code>; <code>.gap</code>, <code>.pad</code>, <code>.fill()</code></td>
+</tr>
+<tr>
+<td><code>Text</code>, <code>Button</code>, <code>LineEdit</code>, <code>CheckBox</code>, <code>ComboBox</code></td>
+<td><code>text</code>, <code>button</code>, <code>input</code>, <code>check</code>, <code>pick</code>/<code>choose</code></td>
+</tr>
+<tr>
+<td><code>animate x { duration: 200ms }</code></td>
+<td><code>animated(..)</code>, springs and <code>fade</code>/<code>reveal</code></td>
+</tr>
+<tr>
+<td><code>@tr("..")</code></td>
+<td><code>t!("key")</code> and plain-text catalogs (<a href="13-localization.html">localization</a>)</td>
+</tr>
+<tr>
+<td><code>slint::invoke_from_event_loop</code>, <code>spawn_local</code></td>
+<td><code>Cmd::perform(..)</code> or <code>resource(..)</code>; results arrive as messages on the UI thread</td>
+</tr>
+<tr>
+<td><code>Timer</code></td>
+<td><code>every(period, ..)</code> or <code>.tick(..)</code></td>
+</tr>
+<tr>
+<td><code>slint-viewer</code> live preview</td>
+<td><code>alloy dev</code> rebuilds on save and keeps <code>.persist()</code> state (<a href="12-dev-loop.html">dev loop</a>)</td>
+</tr>
+<tr>
+<td>Material/Fluent/Cupertino styles</td>
+<td><code>Look</code> presets and themes; light, dark, high contrast, density</td>
+</tr>
+<tr>
+<td><code>i-slint-backend-testing</code></td>
+<td><code>Harness</code> finds things by their text (<a href="15-testing.html">testing</a>)</td>
+</tr>
+</tbody>
+</table>
+<p>Things that behave differently:</p>
+<ul>
+<li><strong>No second language, no code generation.</strong> Rust errors point at your view directly, rust-analyzer completes widget methods, and there is no build script. The cost: no separate designer-facing file. If you want one, Alloy's <code>.alloy</code> live views reload a markup-like file while the app runs (see the dev loop guide), and the VS Code extension highlights it.</li>
+<li><strong>State lives in Rust.</strong> Slint properties are the source of truth and Rust pushes values in; in Alloy your struct is the source of truth and the view is recomputed from it.</li>
+<li><strong>Rust only.</strong> Slint also targets C++, JavaScript and Python and runs on embedded devices and the web. Alloy is Rust and desktop (plus a mobile preview).</li>
+<li><strong>Licensing.</strong> Slint is GPL, royalty-free with conditions, or commercial; Alloy is MIT or Apache-2.0.</li>
+</ul>
+<h2>What you give up</h2>
+<ul>
+<li>iced's, egui's and Slint's ecosystems: many third-party widgets, a game-engine or wgpu-callback integration story, (egui, Slint) web/WASM output and (Slint) embedded and MCU targets and other host languages. Alloy is desktop only (macOS, Linux X11 and Wayland, Windows) with a mobile preview, and no webview and no browser target.</li>
+<li>Maturity: iced and egui have years of use. Alloy's cross-platform behaviour is verified locally on Linux and by earlier CI runs on Windows; see the README for what has and has not run on each system.</li>
+<li>Direct <code>wgpu</code> access from a widget: custom widgets implement Alloy's <code>Widget</code> trait and draw with its commands.</li>
+</ul>
+<h2>A porting checklist</h2>
+<ol>
+<li>Start with <code>sketch</code> and move one screen at a time; keep your domain structs unchanged.</li>
+<li>Replace each <code>Message</code> that only sets a field with <code>at!(s.field)</code> bindings; keep messages for real events.</li>
+<li>Move UI-only state (search text, expanded flags) into <code>local</code>.</li>
+<li>Replace hand-rolled forms, tables and pagination with <code>field</code>, <code>table</code> and <code>crud</code>.</li>
+<li>Turn spawned tasks that load data for a view into <code>resource(..)</code>; keep <code>Cmd::perform</code> for one-off actions.</li>
+<li>Re-create tests with <code>Harness</code> and <code>snapshot</code>; run them with <code>alloy test</code> to get side-by-side images when a snapshot fails (<a href="15-testing.html">testing</a>).</li>
+<li>Replace your own "latest search wins" bookkeeping with <code>Cmd::perform_keyed</code> or <code>resource_for</code>.</li>
+<li>If the app has several screens, move them into a <code>router</code> and add <code>router_saved</code> for restore and <code>.links(..)</code> for deep links.</li>
+</ol>
+<p>Stuck on a pattern that is not here? Ask a coding agent: the repo's <code>AGENTS.md</code> teaches it Alloy's API and the common iced, egui and Slint translations.</p>
+<nav class="pager"><a href="15-testing.html">&larr; Testing your app</a><a href="17-shipping.html">Shipping &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

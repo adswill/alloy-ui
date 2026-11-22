@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Editors, charts and icons · Alloy</title>
+<meta name="description" content="Editors, charts and icons in the Alloy cookbook">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html">Guide</a>
+<a href="../../docs/cookbook/index.html" aria-current="page">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="../guide/index.html">Overview</a><a href="../guide/01-getting-started.html">Getting started</a><a href="../guide/02-state-and-bindings.html">State and bindings</a><a href="../guide/03-layout.html">Layout</a><a href="../guide/04-widgets.html">Widgets</a><a href="../guide/05-records-and-forms.html">Records and forms</a><a href="../guide/06-async-resources.html">Async resources</a><a href="../guide/07-multi-window.html">Multi-window</a><a href="../guide/08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="../guide/09-theming.html">Theming</a><a href="../guide/10-bundling.html">Bundling</a><a href="../guide/11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="../guide/12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="../guide/13-localization.html">Localization</a><a href="../guide/14-navigation.html">Navigation: routes, back and forward</a><a href="../guide/15-testing.html">Testing your app</a><a href="../guide/16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="../guide/17-shipping.html">Shipping</a><a href="../guide/18-desktop-integration.html">Desktop integration</a><a href="../guide/19-system-integration.html">System integration</a><a href="../guide/20-visual-widgets.html">Visual widgets</a><a href="../guide/21-mobile.html">Mobile: Android and iOS</a><a href="../guide/22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="index.html">Overview</a><a href="01-state-and-input.html">State and input</a><a href="02-layout.html">Layout</a><a href="03-data.html">Data</a><a href="04-app-polish.html">Finished-app details</a><a href="05-look-and-language.html">Look and language</a><a href="06-shell-and-testing.html">Shell and testing</a><a href="07-interaction.html">Interaction patterns</a><a href="08-motion-and-loading.html">Motion and loading</a><a href="09-structure-and-data.html">Structure and data at scale</a><a href="10-editors-and-media.html" aria-current="page">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Editors, charts and icons</h1>
+<p class="tests">5 recipes, each compiled as a doc-test</p>
+<h2>46. Show Markdown</h2>
+<p><code>markdown(src)</code> renders headings, lists, quotes, code and links with the theme's type. Links come back to your handler instead of opening a browser.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Help</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">last</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Help</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Help</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">scroll</span><span class="p">(</span><span class="n">markdown</span><span class="p">(</span><span class="s">"# Shortcuts</span><span class="se">\n\n</span><span class="s">- **Cmd+K** opens the palette</span><span class="se">\n</span><span class="s">- See [the guide](guide)"</span><span class="p">).</span><span class="n">link</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Help</span><span class="p">,</span><span class="w"> </span><span class="n">url</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">last</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">url</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">fill_h</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">caption</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">last</span><span class="p">.</span><span class="n">clone</span><span class="p">()).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">16.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>47. A code editor</h2>
+<p><code>code_editor</code> brings line numbers, syntax colours, undo and a status bar. Bind it to a <code>String</code> like any input.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Snippet</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">src</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Snippet</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Snippet</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">code_editor</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">src</span><span class="p">)).</span><span class="n">file</span><span class="p">(</span><span class="s">"main.rs"</span><span class="p">).</span><span class="n">lang</span><span class="p">(</span><span class="n">Lang</span><span class="p">::</span><span class="n">Rust</span><span class="p">).</span><span class="n">fill_h</span><span class="p">()</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="n">Snippet</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">src</span><span class="p">:</span><span class="w"> </span><span class="s">"fn main() {</span><span class="se">\n</span><span class="s">    println!(</span><span class="se">\"</span><span class="s">hi</span><span class="se">\"</span><span class="s">);</span><span class="se">\n</span><span class="s">}</span><span class="se">\n</span><span class="s">"</span><span class="p">.</span><span class="n">into</span><span class="p">()</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">view</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>48. A rich text field</h2>
+<p><code>rich_editor</code> edits bold, italic, headings and links, and keeps the document as a value you can save or convert to Markdown.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Note</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">doc</span><span class="p">:</span><span class="w"> </span><span class="nc">RichText</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Note</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Note</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">rich_editor</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">doc</span><span class="p">)).</span><span class="n">placeholder</span><span class="p">(</span><span class="s">"Write something"</span><span class="p">).</span><span class="n">fill_h</span><span class="p">()</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="n">Note</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">doc</span><span class="p">:</span><span class="w"> </span><span class="nc">RichText</span><span class="p">::</span><span class="n">from_markdown</span><span class="p">(</span><span class="s">"# Title</span><span class="se">\n\n</span><span class="s">Some **bold** words."</span><span class="p">)</span><span class="w"> </span><span class="p">},</span><span class="w"> </span><span class="n">view</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>49. Icons beside labels</h2>
+<p><code>icon(Icon::..)</code> draws from the built-in icon fonts, so it takes the text colour and scales with the theme. <code>.accent()</code> and <code>.dim()</code> tint it.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">())</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">icon</span><span class="p">(</span><span class="n">Icon</span><span class="p">::</span><span class="n">File</span><span class="p">).</span><span class="n">dim</span><span class="p">(),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"notes.md"</span><span class="p">)].</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">).</span><span class="n">align_center</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">icon</span><span class="p">(</span><span class="n">Icon</span><span class="p">::</span><span class="n">Info</span><span class="p">).</span><span class="n">accent</span><span class="p">(),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Everything is up to date"</span><span class="p">)].</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">).</span><span class="n">align_center</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>50. Pick a colour</h2>
+<p><code>color_picker</code> binds to a <code>Color</code> and reports each change, so a swatch or a whole theme can follow it live.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">struct</span><span class="w"> </span><span class="nc">Brand</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">color</span><span class="p">:</span><span class="w"> </span><span class="nc">Color</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Brand</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Brand</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">color_picker</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">color</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="s">"Preview"</span><span class="p">).</span><span class="n">pad_xy</span><span class="p">(</span><span class="mf">16.0</span><span class="p">,</span><span class="w"> </span><span class="mf">10.0</span><span class="p">).</span><span class="n">bg</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">color</span><span class="p">).</span><span class="n">round</span><span class="p">(</span><span class="mf">6.0</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<nav class="pager"><a href="09-structure-and-data.html">&larr; Structure and data at scale</a><span></span></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

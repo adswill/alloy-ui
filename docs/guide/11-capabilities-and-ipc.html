@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Capabilities and IPC · Alloy</title>
+<meta name="description" content="Capabilities and IPC in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html" aria-current="page">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Capabilities and IPC</h1>
+<p>Like Tauri, Alloy lets an app declare up front what it may touch. The declaration is a TOML file next to your <code>Cargo.toml</code>; everything not listed is denied.</p>
+<div class="hl"><pre><span></span><code><span class="c1"># alloy.capabilities.toml</span>
+<span class="n">capabilities</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"clipboard"</span><span class="p">,</span><span class="w"> </span><span class="s2">"fs_read"</span><span class="p">,</span><span class="w"> </span><span class="s2">"network"</span><span class="p">]</span>
+
+<span class="k">[fs]</span>
+<span class="n">read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"/home/me/docs"</span><span class="p">]</span>
+
+<span class="k">[network]</span>
+<span class="n">hosts</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s2">"api.example.com"</span><span class="p">,</span><span class="w"> </span><span class="s2">"*.cdn.example.org"</span><span class="p">]</span>
+</code></pre></div>
+
+<p>The capabilities are <code>clipboard</code>, <code>dialogs</code>, <code>fs_read</code>, <code>fs_write</code>, <code>network</code>, <code>notifications</code> and <code>open_external</code>. <code>fs_*</code> and <code>network</code> must come with a scope list (an empty scope, a relative path or one containing <code>..</code> is rejected). <code>alloy dev</code> and <code>alloy check</code> validate the file and print what was granted; <code>alloy dev</code> also passes its path in <code>ALLOY_CAPABILITIES</code>.</p>
+<h2>Checking a capability in code</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">ipc</span><span class="p">::{</span><span class="n">Capability</span><span class="p">,</span><span class="w"> </span><span class="n">CapabilitySet</span><span class="p">};</span>
+<span class="k">use</span><span class="w"> </span><span class="n">std</span><span class="p">::</span><span class="n">path</span><span class="p">::</span><span class="n">Path</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">caps</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CapabilitySet</span><span class="p">::</span><span class="n">from_toml</span><span class="p">(</span><span class="o">&amp;</span><span class="fm">format!</span><span class="p">(</span>
+<span class="w">    </span><span class="s">r#"</span>
+<span class="s">    capabilities = ["fs_read", "network"]</span>
+<span class="s">    [fs]</span>
+<span class="s">    read = ["{home}/docs"]</span>
+<span class="s">    [network]</span>
+<span class="s">    hosts = ["api.example.com"]</span>
+<span class="s">    "#</span>
+<span class="p">))</span>
+<span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">has</span><span class="p">(</span><span class="n">Capability</span><span class="p">::</span><span class="n">FsRead</span><span class="p">));</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">check_fs_read</span><span class="p">(</span><span class="n">Path</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="o">&amp;</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{home}/docs/a.txt"</span><span class="p">))).</span><span class="n">is_ok</span><span class="p">());</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">check_fs_read</span><span class="p">(</span><span class="n">Path</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="s">"/etc/passwd"</span><span class="p">)).</span><span class="n">is_err</span><span class="p">());</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">check_host</span><span class="p">(</span><span class="s">"api.example.com"</span><span class="p">).</span><span class="n">is_ok</span><span class="p">());</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">check_host</span><span class="p">(</span><span class="s">"evil.example.net"</span><span class="p">).</span><span class="n">is_err</span><span class="p">());</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">caps</span><span class="p">.</span><span class="n">check</span><span class="p">(</span><span class="o">&amp;</span><span class="n">Capability</span><span class="p">::</span><span class="n">Clipboard</span><span class="p">).</span><span class="n">is_err</span><span class="p">());</span>
+</code></pre></div>
+
+<h2>Typed commands</h2>
+<p>A <code>CommandRegistry</code> holds named async commands with serde arguments and results, each declaring the capabilities it needs. Invoking one checks the capabilities first, then decodes the arguments.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">ipc</span><span class="p">::{</span><span class="n">Capability</span><span class="p">,</span><span class="w"> </span><span class="n">CapabilitySet</span><span class="p">,</span><span class="w"> </span><span class="n">CommandError</span><span class="p">,</span><span class="w"> </span><span class="n">CommandRegistry</span><span class="p">};</span>
+<span class="k">use</span><span class="w"> </span><span class="n">serde_json</span><span class="p">::</span><span class="n">json</span><span class="p">;</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">commands</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CommandRegistry</span><span class="p">::</span><span class="n">new</span><span class="p">();</span>
+<span class="n">commands</span><span class="p">.</span><span class="n">register</span><span class="p">(</span><span class="s">"read_len"</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="p">[</span><span class="n">Capability</span><span class="p">::</span><span class="n">FsRead</span><span class="p">],</span><span class="w"> </span><span class="o">|</span><span class="n">path</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="o">|</span><span class="w"> </span><span class="k">async</span><span class="w"> </span><span class="k">move</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nb">Ok</span><span class="p">::</span><span class="o">&lt;</span><span class="n">_</span><span class="p">,</span><span class="w"> </span><span class="nb">String</span><span class="o">&gt;</span><span class="p">(</span><span class="n">path</span><span class="p">.</span><span class="n">len</span><span class="p">())</span>
+<span class="p">});</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">granted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">CapabilitySet</span><span class="p">::</span><span class="n">from_toml</span><span class="p">(</span><span class="o">&amp;</span><span class="fm">format!</span><span class="p">(</span>
+<span class="w">    </span><span class="s">"capabilities = [</span><span class="se">\"</span><span class="s">fs_read</span><span class="se">\"</span><span class="s">]</span><span class="se">\n</span><span class="s">[fs]</span><span class="se">\n</span><span class="s">read = [</span><span class="se">\"</span><span class="s">{home}</span><span class="se">\"</span><span class="s">]"</span>
+<span class="p">))</span>
+<span class="p">.</span><span class="n">unwrap</span><span class="p">();</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">path</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="fm">format!</span><span class="p">(</span><span class="s">"{home}/a.txt"</span><span class="p">);</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">fut</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">commands</span><span class="p">.</span><span class="n">invoke</span><span class="p">(</span><span class="s">"read_len"</span><span class="p">,</span><span class="w"> </span><span class="n">json</span><span class="o">!</span><span class="p">(</span><span class="n">path</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">granted</span><span class="p">).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="fm">assert_eq!</span><span class="p">(</span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">block_on</span><span class="p">(</span><span class="n">fut</span><span class="p">).</span><span class="n">unwrap</span><span class="p">(),</span><span class="w"> </span><span class="n">json</span><span class="o">!</span><span class="p">(</span><span class="n">path</span><span class="p">.</span><span class="n">len</span><span class="p">()));</span>
+
+<span class="c1">// Without the grant, the call is refused before the handler runs.</span>
+<span class="kd">let</span><span class="w"> </span><span class="n">denied</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">commands</span><span class="p">.</span><span class="n">invoke</span><span class="p">(</span><span class="s">"read_len"</span><span class="p">,</span><span class="w"> </span><span class="n">json</span><span class="o">!</span><span class="p">(</span><span class="s">"x"</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">CapabilitySet</span><span class="p">::</span><span class="n">none</span><span class="p">());</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="fm">matches!</span><span class="p">(</span><span class="n">denied</span><span class="p">,</span><span class="w"> </span><span class="nb">Err</span><span class="p">(</span><span class="n">CommandError</span><span class="p">::</span><span class="n">Denied</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="o">..</span><span class="w"> </span><span class="p">})));</span>
+</code></pre></div>
+
+<h2>Background tasks</h2>
+<p><code>TaskRunner&lt;M&gt;</code> runs futures or blocking closures off the UI thread and wakes the window when a result is ready; <code>CancelToken</code> lets long work stop early. <code>CommandRegistry::invoke_on</code> runs a command on a runner and maps its result to your message type. In <code>sketch</code> and <code>App</code> apps you rarely need it directly: use <a href="06-async-resources.html"><code>resource</code></a> or <code>Cmd::perform</code>.</p>
+<p><code>alloy_ui::ipc</code> re-exports the whole <code>alloy-ui-ipc</code> crate.</p>
+<nav class="pager"><a href="10-bundling.html">&larr; Bundling</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Testing your app · Alloy</title>
+<meta name="description" content="Testing your app in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html" aria-current="page">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Testing your app</h1>
+<p><code>Harness</code> runs your app through the real runtime with no window and no GPU. You find things by the text on screen, the way a person does, so a test survives a layout change and fails with the screen's contents when it breaks.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Form</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="w"> </span><span class="p">}</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="n">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="n">Form</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Form</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)).</span><span class="n">hint</span><span class="p">(</span><span class="s">"Name"</span><span class="p">),</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Hello {}"</span><span class="p">,</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Clear"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Form</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">.</span><span class="n">clear</span><span class="p">()),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="p">});</span>
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">200.0</span><span class="p">);</span>
+<span class="n">ui</span><span class="p">.</span><span class="n">fill</span><span class="p">(</span><span class="s">"Name"</span><span class="p">,</span><span class="w"> </span><span class="s">"Ada"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Hello Ada"</span><span class="p">);</span>
+<span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Clear"</span><span class="p">).</span><span class="n">expect_no</span><span class="p">(</span><span class="s">"Hello Ada"</span><span class="p">);</span>
+</code></pre></div>
+
+<p>Every step returns <code>&amp;mut Harness</code>, so a flow reads as a chain.</p>
+<table>
+<thead>
+<tr>
+<th>Do</th>
+<th>With</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>click, right-click, hover</td>
+<td><code>click(text)</code>, <code>right_click(text)</code>, <code>hover(text)</code></td>
+</tr>
+<tr>
+<td>type</td>
+<td><code>fill(field, value)</code> (replaces the contents), <code>type_text(s)</code></td>
+</tr>
+<tr>
+<td>keys</td>
+<td><code>key("Enter")</code>, <code>key("ArrowDown")</code>, <code>chord("mod+s")</code>, <code>chord("alt+ArrowLeft")</code></td>
+</tr>
+<tr>
+<td>scroll, resize</td>
+<td><code>scroll(over_text, dy)</code>, <code>resize(w, h)</code></td>
+</tr>
+<tr>
+<td>time</td>
+<td><code>advance(ms)</code> runs animations and toasts</td>
+</tr>
+<tr>
+<td>async data</td>
+<td><code>settle()</code> waits for <a href="06-async-resources.html">resources</a> and <code>Cmd::perform</code> futures (cancelled ones deliver nothing); <code>wait_for(text)</code> waits for the text</td>
+</tr>
+<tr>
+<td>deep links</td>
+<td><code>open_url("myapp://note/3")</code> (<a href="14-navigation.html">navigation</a>)</td>
+</tr>
+<tr>
+<td>assert</td>
+<td><code>expect(text)</code>, <code>expect_containing(part)</code>, <code>expect_no(text)</code>, <code>count(text)</code>, <code>texts()</code></td>
+</tr>
+<tr>
+<td>pictures</td>
+<td><code>snapshot("name")</code> compares with <code>tests/snapshots/name.png</code>; <code>save_png(path)</code></td>
+</tr>
+</tbody>
+</table>
+<p>When an <code>expect</code> fails, the message lists every piece of text that <em>was</em> on screen, which is usually enough to see what went wrong without a debugger.</p>
+<h2>Snapshots</h2>
+<p><code>snapshot("checkout")</code> renders the frame at 2x and compares it with <code>tests/snapshots/checkout.png</code> in your crate, allowing a tiny anti-aliasing difference. Create or update the pictures with <code>UPDATE_GOLDEN=1 cargo test</code>. On a mismatch four files are written and named in the failure message: <code>&lt;name&gt;.expected.png</code>, <code>&lt;name&gt;.actual.png</code>, <code>&lt;name&gt;.diff.png</code> (what changed, in red, over a faded copy of the golden) and <code>&lt;name&gt;.compare.png</code> (the three side by side, the one to open first). The message also gives the bounding box of the changed pixels. Fonts differ between operating systems, so generate and check snapshots on the system your CI uses; use text assertions for anything that must hold everywhere.</p>
+<h2>Testing against fake data</h2>
+<p>Pair <code>Harness</code> with <code>Record::mock(..)</code> (see the <code>status</code> example) for a backend that fails on schedule, then <code>settle()</code> and <code>expect("Could not load")</code> and <code>click("Retry")</code>, or use <code>resource_for</code> with a key you change from a test to check that a stale answer never shows.</p>
+<h2><code>alloy test</code> and <code>cargo alloy test</code></h2>
+<p><code>alloy test</code> is <code>cargo test</code> with the snapshot folder wired up. Failing snapshots are collected in <code>target/alloy-diff</code> (override with <code>--out DIR</code>), the old ones are cleared first, and at the end it lists every <code>*.compare.png</code> so you do not have to hunt through temp directories:</p>
+<div class="hl"><pre><span></span><code>$ alloy test -p my-app
+...
+1 snapshot(s) differ. Expected | actual | diff:
+  /work/my-app/target/alloy-diff/checkout.compare.png
+accept the new look with `alloy test --update`
+</code></pre></div>
+
+<table>
+<thead>
+<tr>
+<th>Command</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alloy test</code></td>
+<td>run the tests of the current package</td>
+</tr>
+<tr>
+<td><code>alloy test -p NAME</code> / <code>--manifest-path P</code></td>
+<td>pick the package</td>
+</tr>
+<tr>
+<td><code>alloy test --update</code></td>
+<td>rewrite the snapshots (sets <code>UPDATE_GOLDEN=1</code>) after you have looked at the diff</td>
+</tr>
+<tr>
+<td><code>alloy test -- --lib counter</code></td>
+<td>everything after <code>--</code> goes to <code>cargo test</code></td>
+</tr>
+</tbody>
+</table>
+<p>The same tool is installed as a cargo subcommand: <code>cargo install --git https://github.com/adswill/alloy-ui alloy-ui-cli</code> gives both <code>alloy</code> and <code>cargo-alloy</code>, so <code>cargo alloy test</code> works. In CI, upload <code>target/alloy-diff</code> as an artifact on failure and reviewers get the pictures with the red build:</p>
+<div class="hl"><pre><span></span><code><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">run</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cargo alloy test</span>
+<span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">if</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">failure()</span>
+<span class="w">  </span><span class="nt">uses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">actions/upload-artifact@v4</span>
+<span class="w">  </span><span class="nt">with</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> name</span><span class="p">:</span><span class="w"> </span><span class="nv">snapshot-diffs</span><span class="p p-Indicator">,</span><span class="nt"> path</span><span class="p">:</span><span class="w"> </span><span class="nv">target/alloy-diff</span><span class="w"> </span><span class="p p-Indicator">}</span>
+</code></pre></div>
+<nav class="pager"><a href="14-navigation.html">&larr; Navigation: routes, back and forward</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

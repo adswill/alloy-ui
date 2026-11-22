@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Getting started · Alloy</title>
+<meta name="description" content="Getting started in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html" aria-current="page">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Getting started</h1>
+<p>Alloy is a native Rust UI framework. You write state and a view function; Alloy opens a window, draws it on the GPU and calls your closures when someone clicks. There is no webview and no HTML or CSS underneath.</p>
+<h2>Install the tool</h2>
+<div class="hl"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>--git<span class="w"> </span>https://github.com/adswill/alloy-ui<span class="w"> </span>alloy-ui-cli
+alloy<span class="w"> </span>new<span class="w"> </span>hello<span class="w"> </span>--identifier<span class="w"> </span>com.example.hello
+<span class="nb">cd</span><span class="w"> </span>hello
+alloy<span class="w"> </span>dev
+</code></pre></div>
+
+<p><code>alloy new</code> writes a <code>Cargo.toml</code> with an <code>[package.metadata.alloy]</code> table, a capability file (<code>alloy.capabilities.toml</code>), icons and a starter <code>src/main.rs</code>. <code>alloy dev</code> validates the capability file, then runs a debug build. <code>alloy check</code> validates the metadata without building.</p>
+<h3>Starter templates</h3>
+<p><code>alloy new</code> writes a counter by default. Pick another starting point with <code>--template</code>:</p>
+<table>
+<thead>
+<tr>
+<th>template</th>
+<th>what you get</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>counter</code></td>
+<td>the smallest complete app (about 20 lines)</td>
+</tr>
+<tr>
+<td><code>dashboard</code></td>
+<td>headline numbers, a live chart and a table of jobs</td>
+</tr>
+<tr>
+<td><code>editor</code></td>
+<td>a text editor that opens and saves files, with Ctrl/Cmd+S</td>
+</tr>
+<tr>
+<td><code>settings</code></td>
+<td>a settings panel: pages, a theme switch, controls bound with <code>at!</code></td>
+</tr>
+<tr>
+<td><code>localized</code></td>
+<td>a translated app (English, French, Arabic) with live language switching and right-to-left layout, see <a href="13-localization.html">Localization</a></td>
+</tr>
+</tbody>
+</table>
+<div class="hl"><pre><span></span><code>alloy<span class="w"> </span>new<span class="w"> </span>inbox<span class="w"> </span>--template<span class="w"> </span>localized
+</code></pre></div>
+
+<p>An unknown name lists the valid ones (and suggests the closest). Every template is compiled and driven headless by this repository's tests, so none of them goes stale.</p>
+<h2>Your first app</h2>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">),</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n} so far"</span><span class="p">)).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">row</span><span class="o">!</span><span class="p">[</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Subtract"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">-=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<span class="w">                </span><span class="n">button</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">primary</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">),</span>
+<span class="w">            </span><span class="p">],</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="w">    </span><span class="p">.</span><span class="n">run</span><span class="p">(</span><span class="s">"Counter"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>sketch(state, view)</code> takes your state (here an <code>i64</code>) and a function from <code>&amp;state</code> to a view. <code>button(..).act(|n| ..)</code> says what happens on click: a closure that gets <code>&amp;mut</code> state. After every handler the view runs again and Alloy draws the difference. There is no message enum and no <code>update</code> function to write.</p>
+<p>The closure parameter <code>n</code> has a different type in each place: in the view it is <code>&amp;i64</code>, in <code>.act</code> it is <code>&amp;mut i64</code>. If inference needs help in a handler, annotate it: <code>.act(|s: &amp;mut State| ..)</code>.</p>
+<h2>Run it without a screen</h2>
+<p>Every Alloy app can render itself to a PNG and click things, which is how the examples are tested. <code>Harness</code> is the same runtime with scripted input:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span>
+<span class="w">    </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">text</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n} so far"</span><span class="p">)),</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">)]</span>
+<span class="w">    </span><span class="p">}),</span>
+<span class="w">    </span><span class="mf">300.0</span><span class="p">,</span>
+<span class="w">    </span><span class="mf">200.0</span><span class="p">,</span>
+<span class="p">);</span>
+<span class="n">app</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Add"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Add"</span><span class="p">);</span>
+<span class="fm">assert!</span><span class="p">(</span><span class="n">app</span><span class="p">.</span><span class="n">has_text</span><span class="p">(</span><span class="s">"2 so far"</span><span class="p">));</span>
+</code></pre></div>
+
+<h2>Two ways to write an app</h2>
+<ul>
+<li><strong><code>sketch</code></strong>: state plus a view function, handlers are closures. Use this by default.</li>
+<li><strong><code>App</code></strong>: the Elm contract (<code>Msg</code> enum, <code>update</code>, <code>view</code>), for apps that want a message log, background <code>Cmd</code>s or <code>subscriptions</code>. See <a href="07-multi-window.html">multi-window</a> for an example.</li>
+</ul>
+<p>Both are fully typed and share the same widgets. Next: <a href="02-state-and-bindings.html">state and bindings</a>.</p>
+<nav class="pager"><span></span><a href="02-state-and-bindings.html">State and bindings &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

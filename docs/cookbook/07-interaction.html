@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Interaction patterns · Alloy</title>
+<meta name="description" content="Interaction patterns in the Alloy cookbook">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html">Guide</a>
+<a href="../../docs/cookbook/index.html" aria-current="page">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="../guide/index.html">Overview</a><a href="../guide/01-getting-started.html">Getting started</a><a href="../guide/02-state-and-bindings.html">State and bindings</a><a href="../guide/03-layout.html">Layout</a><a href="../guide/04-widgets.html">Widgets</a><a href="../guide/05-records-and-forms.html">Records and forms</a><a href="../guide/06-async-resources.html">Async resources</a><a href="../guide/07-multi-window.html">Multi-window</a><a href="../guide/08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="../guide/09-theming.html">Theming</a><a href="../guide/10-bundling.html">Bundling</a><a href="../guide/11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="../guide/12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="../guide/13-localization.html">Localization</a><a href="../guide/14-navigation.html">Navigation: routes, back and forward</a><a href="../guide/15-testing.html">Testing your app</a><a href="../guide/16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="../guide/17-shipping.html">Shipping</a><a href="../guide/18-desktop-integration.html">Desktop integration</a><a href="../guide/19-system-integration.html">System integration</a><a href="../guide/20-visual-widgets.html">Visual widgets</a><a href="../guide/21-mobile.html">Mobile: Android and iOS</a><a href="../guide/22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="index.html">Overview</a><a href="01-state-and-input.html">State and input</a><a href="02-layout.html">Layout</a><a href="03-data.html">Data</a><a href="04-app-polish.html">Finished-app details</a><a href="05-look-and-language.html">Look and language</a><a href="06-shell-and-testing.html">Shell and testing</a><a href="07-interaction.html" aria-current="page">Interaction patterns</a><a href="08-motion-and-loading.html">Motion and loading</a><a href="09-structure-and-data.html">Structure and data at scale</a><a href="10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Interaction patterns</h1>
+<p class="tests">5 recipes, each compiled as a doc-test</p>
+<h2>31. Tabs that switch a screen</h2>
+<p><code>tabs</code> binds a segmented control to an index. Match on the index to pick what shows underneath.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Account</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">page</span><span class="p">:</span><span class="w"> </span><span class="kt">usize</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Account</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Account</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">body</span><span class="p">:</span><span class="w"> </span><span class="nc">Node</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Account</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">page</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="mi">0</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Plan: Team, 12 seats"</span><span class="p">).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="mi">1</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Last sign-in: today"</span><span class="p">).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Two-factor is on"</span><span class="p">).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">};</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">tabs</span><span class="p">([</span><span class="s">"Billing"</span><span class="p">,</span><span class="w"> </span><span class="s">"Activity"</span><span class="p">,</span><span class="w"> </span><span class="s">"Security"</span><span class="p">],</span><span class="w"> </span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">page</span><span class="p">)),</span><span class="w"> </span><span class="n">body</span><span class="p">].</span><span class="n">gap</span><span class="p">(</span><span class="mf">16.0</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="n">Account</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">420.0</span><span class="p">,</span><span class="w"> </span><span class="mf">200.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">expect</span><span class="p">(</span><span class="s">"Plan: Team, 12 seats"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Security"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Two-factor is on"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>32. Ask before a destructive action</h2>
+<p><code>.confirm(..)</code> goes last. The first click swaps the button for "prompt, confirm, Cancel"; only the second click runs the action, and Cancel puts everything back.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">files</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;&amp;'</span><span class="nb">static</span><span class="w"> </span><span class="kt">str</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;&amp;'</span><span class="nb">static</span><span class="w"> </span><span class="kt">str</span><span class="o">&gt;&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">col</span><span class="p">(</span><span class="n">files</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">f</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="o">*</span><span class="n">f</span><span class="p">))),</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Delete all"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">f</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="nb">Vec</span><span class="o">&lt;&amp;'</span><span class="nb">static</span><span class="w"> </span><span class="kt">str</span><span class="o">&gt;|</span><span class="w"> </span><span class="n">f</span><span class="p">.</span><span class="n">clear</span><span class="p">()).</span><span class="n">confirm</span><span class="p">(</span><span class="s">"Delete every file?"</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="fm">vec!</span><span class="p">[</span><span class="s">"a.txt"</span><span class="p">,</span><span class="w"> </span><span class="s">"b.txt"</span><span class="p">],</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">200.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Delete all"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Delete every file?"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Cancel"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"a.txt"</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Delete all"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Delete all"</span><span class="p">).</span><span class="n">expect_no</span><span class="p">(</span><span class="s">"a.txt"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>33. A right-click menu</h2>
+<p><code>context_menu(child, entries)</code> opens at the pointer. Entries are plain builders, and <code>menu_rule()</code> draws a divider.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Files</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">note</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Files</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Files</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">context_menu</span><span class="p">(</span>
+<span class="w">            </span><span class="n">text</span><span class="p">(</span><span class="s">"report.pdf"</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">12.0</span><span class="p">).</span><span class="n">surface</span><span class="p">().</span><span class="n">round</span><span class="p">(</span><span class="mf">6.0</span><span class="p">),</span>
+<span class="w">            </span><span class="p">[</span>
+<span class="w">                </span><span class="n">menu_item</span><span class="p">(</span><span class="s">"Rename"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Files</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">note</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"renaming"</span><span class="p">.</span><span class="n">into</span><span class="p">()),</span>
+<span class="w">                </span><span class="n">menu_rule</span><span class="p">(),</span>
+<span class="w">                </span><span class="n">menu_item</span><span class="p">(</span><span class="s">"Delete"</span><span class="p">).</span><span class="n">danger</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Files</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">note</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"deleted"</span><span class="p">.</span><span class="n">into</span><span class="p">()),</span>
+<span class="w">            </span><span class="p">],</span>
+<span class="w">        </span><span class="p">),</span>
+<span class="w">        </span><span class="n">caption</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">note</span><span class="p">.</span><span class="n">clone</span><span class="p">()).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="n">Files</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">220.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">right_click</span><span class="p">(</span><span class="s">"report.pdf"</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Delete"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"deleted"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>34. A list beside its details</h2>
+<p><code>split</code> gives the user a draggable divider. <code>ratio</code> is where it starts and <code>min</code> stops a side from collapsing.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">picked</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">usize</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">usize</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s">"Ada"</span><span class="p">,</span><span class="w"> </span><span class="s">"Grace"</span><span class="p">,</span><span class="w"> </span><span class="s">"Alan"</span><span class="p">];</span>
+<span class="w">    </span><span class="n">split</span><span class="p">(</span>
+<span class="w">        </span><span class="n">col</span><span class="p">(</span><span class="n">names</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">enumerate</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="p">(</span><span class="n">i</span><span class="p">,</span><span class="w"> </span><span class="n">n</span><span class="p">)</span><span class="o">|</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="o">*</span><span class="n">n</span><span class="p">).</span><span class="n">ghost</span><span class="p">().</span><span class="n">act</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">p</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">usize</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">p</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">i</span><span class="p">))).</span><span class="n">gap</span><span class="p">(</span><span class="mf">4.0</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">12.0</span><span class="p">),</span>
+<span class="w">        </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">heading</span><span class="p">(</span><span class="n">names</span><span class="p">[</span><span class="o">*</span><span class="n">picked</span><span class="p">]),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Selected from the list."</span><span class="p">).</span><span class="n">dim</span><span class="p">()].</span><span class="n">gap</span><span class="p">(</span><span class="mf">6.0</span><span class="p">).</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">),</span>
+<span class="w">    </span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">ratio</span><span class="p">(</span><span class="mf">0.3</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">min</span><span class="p">(</span><span class="mf">120.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">usize</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">560.0</span><span class="p">,</span><span class="w"> </span><span class="mf">260.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Grace"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Selected from the list."</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Grace"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>35. A section that opens and closes</h2>
+<p><code>reveal(show, child)</code> grows and shrinks the child instead of popping it in, and the rows below glide with it.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Form</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">open</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Form</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Form</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">toggle</span><span class="p">(</span><span class="s">"Advanced options"</span><span class="p">,</span><span class="w"> </span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">open</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">reveal</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">open</span><span class="p">,</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">text</span><span class="p">(</span><span class="s">"Retry limit: 3"</span><span class="p">),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Timeout: 30 s"</span><span class="p">)].</span><span class="n">gap</span><span class="p">(</span><span class="mf">4.0</span><span class="p">).</span><span class="n">pad_xy</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span><span class="w"> </span><span class="mf">8.0</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">text</span><span class="p">(</span><span class="s">"Footer"</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="n">Form</span><span class="p">::</span><span class="n">default</span><span class="p">(),</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">220.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Advanced options"</span><span class="p">).</span><span class="n">settle</span><span class="p">().</span><span class="n">expect</span><span class="p">(</span><span class="s">"Timeout: 30 s"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+<nav class="pager"><a href="06-shell-and-testing.html">&larr; Shell and testing</a><a href="08-motion-and-loading.html">Motion and loading &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

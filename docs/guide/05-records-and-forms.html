@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Records and forms · Alloy</title>
+<meta name="description" content="Records and forms in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html" aria-current="page">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Records and forms</h1>
+<h2><code>derive(Record)</code>: a CRUD screen in one call</h2>
+<p>A struct that derives <code>Record</code> knows its fields, their types and how to edit them. <code>crud</code> builds a searchable, sortable table with Add and Delete and a validated edit form for the selected row:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="n">choices</span><span class="o">!</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="k">enum</span><span class="w"> </span><span class="nc">Role</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">Engineer</span><span class="p">,</span><span class="w"> </span><span class="n">Designer</span><span class="p">,</span><span class="w"> </span><span class="n">Manager</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="p">}</span>
+
+<span class="cp">#[derive(Record, Clone, Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Person</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">email</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">role</span><span class="p">:</span><span class="w"> </span><span class="nc">Role</span><span class="p">,</span>
+<span class="w">    </span><span class="cp">#[form(range = (40.0, 200.0), step = 5.0)]</span>
+<span class="w">    </span><span class="n">salary</span><span class="p">:</span><span class="w"> </span><span class="kt">f32</span><span class="p">,</span>
+<span class="w">    </span><span class="n">active</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">app</span><span class="p">(</span><span class="s">"Admin"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">page</span><span class="p">(</span><span class="s">"People"</span><span class="p">,</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">crud</span><span class="p">(</span><span class="o">||</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="n">Records</span><span class="p">::</span><span class="o">&lt;</span><span class="n">Person</span><span class="o">&gt;</span><span class="p">::</span><span class="n">of</span><span class="p">([</span>
+<span class="w">                    </span><span class="n">vals</span><span class="o">!</span><span class="p">[</span><span class="s">"Ada Lovelace"</span><span class="p">,</span><span class="w"> </span><span class="s">"ada@acme.dev"</span><span class="p">,</span><span class="w"> </span><span class="n">Role</span><span class="p">::</span><span class="n">Engineer</span><span class="p">,</span><span class="w"> </span><span class="mi">150</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">],</span>
+<span class="w">                    </span><span class="n">vals</span><span class="o">!</span><span class="p">[</span><span class="s">"Grace Hopper"</span><span class="p">,</span><span class="w"> </span><span class="s">"grace@acme.dev"</span><span class="p">,</span><span class="w"> </span><span class="n">Role</span><span class="p">::</span><span class="n">Manager</span><span class="p">,</span><span class="w"> </span><span class="mi">170</span><span class="p">,</span><span class="w"> </span><span class="kc">true</span><span class="p">],</span>
+<span class="w">                </span><span class="p">])</span>
+<span class="w">            </span><span class="p">})</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">        </span><span class="p">.</span><span class="n">page</span><span class="p">(</span><span class="s">"Settings"</span><span class="p">,</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="n">section</span><span class="p">(</span><span class="s">"Theme"</span><span class="p">,</span><span class="w"> </span><span class="n">theme_switch</span><span class="p">()))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">persist</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">run</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>Field kinds follow the Rust type: <code>String</code> is a text field, a field called <code>email</code> gets email validation, <code>choices!</code> enums become a picker, numbers a slider (<code>#[form(range = .., step = ..)]</code>), <code>bool</code> a checkbox, <code>#[form(long)]</code> a multi-line editor and <code>#[form(skip)]</code> hides a field. <code>app(..).page(..)</code> gives you a sidebar of pages; <code>.persist()</code> saves every <code>store</code> and the open page between runs.</p>
+<h2>Hand-built forms</h2>
+<p>Where a derive does not fit, build the form from <code>field</code>. A <code>field</code> is a label, a control and an optional error message:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">valid</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Signup</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">email</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">password</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Signup</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Signup</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">short</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">min_len</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">password</span><span class="p">,</span><span class="w"> </span><span class="mi">8</span><span class="p">);</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">field</span><span class="p">(</span><span class="s">"Name"</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)).</span><span class="n">hint</span><span class="p">(</span><span class="s">"Ada Lovelace"</span><span class="p">),</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">required</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">field</span><span class="p">(</span><span class="s">"Email"</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">email</span><span class="p">)),</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">email</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">email</span><span class="p">)),</span>
+<span class="w">        </span><span class="n">field</span><span class="p">(</span><span class="s">"Password"</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">password</span><span class="p">)).</span><span class="n">secure</span><span class="p">(),</span><span class="w"> </span><span class="n">short</span><span class="p">.</span><span class="n">as_deref</span><span class="p">()),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">14.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>The validators in <code>alloy_ui::valid</code> (<code>required</code>, <code>email</code>, <code>min_len</code>) return the message to show, or <code>None</code>.</p>
+<h3>When errors appear</h3>
+<p>A form that opens with a red "Required" under every empty field is hostile, so <code>field</code> hides its message until the person has <strong>touched</strong> the control: focused it and then left it (by Tab or by clicking elsewhere). The line for the message is reserved from the start, so the form does not jump when the message appears. While someone is still typing in a field, you never scold them for an unfinished address.</p>
+<p>To also show every error after a failed submit, pass the attempt in with <code>field_after</code> and keep it in a <code>local</code>:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">valid</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Login</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">user</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Login</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Login</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">tried</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">local</span><span class="p">(</span><span class="kc">false</span><span class="p">);</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">field_after</span><span class="p">(</span><span class="s">"User"</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">user</span><span class="p">)),</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">required</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">user</span><span class="p">),</span><span class="w"> </span><span class="n">tried</span><span class="p">.</span><span class="n">get</span><span class="p">()),</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Sign in"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">primary</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="n">enabled</span><span class="p">(</span><span class="kc">true</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">act</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Login</span><span class="o">|</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">required</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">user</span><span class="p">).</span><span class="n">is_some</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="n">tried</span><span class="p">.</span><span class="n">set</span><span class="p">(</span><span class="kc">true</span><span class="p">);</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>Wizards</h2>
+<p><code>wizard(at!(s.step))</code> is a multi-page form whose Next button stays disabled until the page says it is valid:</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">valid</span><span class="p">};</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Wizard</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">step</span><span class="p">:</span><span class="w"> </span><span class="kt">usize</span><span class="p">,</span>
+<span class="w">    </span><span class="n">name</span><span class="p">:</span><span class="w"> </span><span class="nb">String</span><span class="p">,</span>
+<span class="w">    </span><span class="n">terms</span><span class="p">:</span><span class="w"> </span><span class="kt">bool</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Wizard</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Wizard</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">wizard</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">step</span><span class="p">))</span>
+<span class="w">        </span><span class="p">.</span><span class="n">page</span><span class="p">(</span>
+<span class="w">            </span><span class="s">"Account"</span><span class="p">,</span>
+<span class="w">            </span><span class="n">valid</span><span class="p">::</span><span class="n">required</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">).</span><span class="n">is_none</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">field</span><span class="p">(</span><span class="s">"Name"</span><span class="p">,</span><span class="w"> </span><span class="n">input</span><span class="p">(</span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)),</span><span class="w"> </span><span class="n">valid</span><span class="p">::</span><span class="n">required</span><span class="p">(</span><span class="o">&amp;</span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">))],</span>
+<span class="w">        </span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">page</span><span class="p">(</span><span class="s">"Review"</span><span class="p">,</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">terms</span><span class="p">,</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">check</span><span class="p">(</span><span class="s">"I accept the terms"</span><span class="p">,</span><span class="w"> </span><span class="n">at</span><span class="o">!</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">terms</span><span class="p">))])</span>
+<span class="w">        </span><span class="p">.</span><span class="n">finish</span><span class="p">(</span><span class="s">"Create account"</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">done</span><span class="p">(</span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">heading</span><span class="p">(</span><span class="s">"You're all set"</span><span class="p">),</span><span class="w"> </span><span class="fm">format!</span><span class="p">(</span><span class="s">"Welcome, {}."</span><span class="p">,</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">name</span><span class="p">)])</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">28.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<nav class="pager"><a href="04-widgets.html">&larr; Widgets</a><a href="06-async-resources.html">Async resources &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

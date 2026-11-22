@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Navigation: routes, back and forward · Alloy</title>
+<meta name="description" content="Navigation: routes, back and forward in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html" aria-current="page">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Navigation: routes, back and forward</h1>
+<p><code>router(home)</code> keeps a stack of screens for the window. A route is any type you choose, usually an enum, so the compiler checks every screen is handled and every link carries the data it needs.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Inbox</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Mail</span><span class="p">(</span><span class="kt">u32</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">())</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">nav</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">router</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="p">);</span>
+<span class="w">    </span><span class="n">nav</span><span class="p">.</span><span class="n">show</span><span class="p">(</span><span class="o">|</span><span class="n">route</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="s">"Inbox"</span><span class="p">),</span>
+<span class="w">            </span><span class="n">button</span><span class="p">(</span><span class="s">"Open message 7"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">nav</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">(</span><span class="mi">7</span><span class="p">))),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">            </span><span class="n">nav</span><span class="p">.</span><span class="n">back_button</span><span class="p">(),</span>
+<span class="w">            </span><span class="n">heading</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Message {id}"</span><span class="p">)),</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">24.0</span><span class="p">)</span>
+<span class="w">        </span><span class="p">.</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p><code>nav</code> is a small <code>Copy</code> handle, so any handler can capture it with no <code>.clone()</code>. It lives with the widget tree (like <a href="02-state-and-bindings.html"><code>local</code></a>), not in your state struct.</p>
+<table>
+<thead>
+<tr>
+<th>Call</th>
+<th>Does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>push(route)</code></td>
+<td>go to a screen; clears the forward history, like a browser</td>
+</tr>
+<tr>
+<td><code>replace(route)</code></td>
+<td>swap the current screen without adding a history step</td>
+</tr>
+<tr>
+<td><code>back()</code> / <code>forward()</code></td>
+<td>step through the history</td>
+</tr>
+<tr>
+<td><code>reset(route)</code></td>
+<td>drop the history and make <code>route</code> the only screen</td>
+</tr>
+<tr>
+<td><code>current()</code>, <code>trail()</code>, <code>depth()</code>, <code>can_back()</code>, <code>can_forward()</code></td>
+<td>ask where you are</td>
+</tr>
+<tr>
+<td><code>show(\|route\| ..)</code></td>
+<td>build the current screen <strong>and</strong> bind <code>alt+←</code> / <code>alt+→</code></td>
+</tr>
+<tr>
+<td><code>back_button()</code></td>
+<td>a Back button, disabled at the first screen</td>
+</tr>
+<tr>
+<td><code>breadcrumbs(\|route\| label)</code></td>
+<td><code>Inbox › Message 7</code>, each earlier step a link back</td>
+</tr>
+</tbody>
+</table>
+<h2>Reopen where you left off</h2>
+<p><code>router_saved("my-app", Route::Inbox)</code> is <code>router</code> that remembers. The stack is written to <code>&lt;app data&gt;/my-app/router.json</code> after every change and read back at launch, so the app reopens on the screen (and with the Back history) the person left. Routes must derive <code>Serialize</code> and <code>Deserialize</code>. A missing, corrupt or out-of-date file (say you renamed a variant) is ignored and the app starts at <code>home</code>; at most the last 50 steps are kept. <code>router_saved_at(path, home)</code> takes an explicit file.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone, serde::Serialize, serde::Deserialize)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Inbox</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Mail</span><span class="p">(</span><span class="kt">u32</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">())</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">nav</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">router_saved</span><span class="p">(</span><span class="s">"my-mail"</span><span class="p">,</span><span class="w"> </span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="p">);</span>
+<span class="w">    </span><span class="n">nav</span><span class="p">.</span><span class="n">show</span><span class="p">(</span><span class="o">|</span><span class="n">route</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="s">"Open message 7"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="k">move</span><span class="w"> </span><span class="o">|</span><span class="n">_</span><span class="o">|</span><span class="w"> </span><span class="n">nav</span><span class="p">.</span><span class="n">push</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">(</span><span class="mi">7</span><span class="p">))).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">nav</span><span class="p">.</span><span class="n">back_button</span><span class="p">(),</span><span class="w"> </span><span class="n">heading</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Message {id}"</span><span class="p">))].</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>Deep links</h2>
+<p><code>.links(parse)</code> lets URLs open screens. Register a scheme with <code>url_schemes</code> (an <code>App</code>) or <code>.url_scheme("myapp")</code> (a <code>sketch</code>), then tell the router how to read a link. <code>link_path</code> splits <code>myapp://note/3?x=1</code> into <code>["note", "3"]</code>; return <code>None</code> for anything that is not a route and the link is ignored.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Clone, PartialEq)]</span>
+<span class="k">enum</span><span class="w"> </span><span class="nc">Route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">Inbox</span><span class="p">,</span>
+<span class="w">    </span><span class="n">Mail</span><span class="p">(</span><span class="kt">u32</span><span class="p">),</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">_</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="p">())</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="p">()</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">nav</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">router</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="p">).</span><span class="n">links</span><span class="p">(</span><span class="o">|</span><span class="n">url</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">link_path</span><span class="p">(</span><span class="n">url</span><span class="p">).</span><span class="n">as_slice</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="p">[</span><span class="n">kind</span><span class="p">,</span><span class="w"> </span><span class="n">id</span><span class="p">]</span><span class="w"> </span><span class="k">if</span><span class="w"> </span><span class="n">kind</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">"mail"</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">id</span><span class="p">.</span><span class="n">parse</span><span class="p">().</span><span class="n">ok</span><span class="p">().</span><span class="n">map</span><span class="p">(</span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">),</span>
+<span class="w">        </span><span class="n">_</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="nb">None</span><span class="p">,</span>
+<span class="w">    </span><span class="p">});</span>
+<span class="w">    </span><span class="n">nav</span><span class="p">.</span><span class="n">show</span><span class="p">(</span><span class="o">|</span><span class="n">route</span><span class="o">|</span><span class="w"> </span><span class="k">match</span><span class="w"> </span><span class="n">route</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Inbox</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">heading</span><span class="p">(</span><span class="s">"Inbox"</span><span class="p">).</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">        </span><span class="n">Route</span><span class="p">::</span><span class="n">Mail</span><span class="p">(</span><span class="n">id</span><span class="p">)</span><span class="w"> </span><span class="o">=&gt;</span><span class="w"> </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">nav</span><span class="p">.</span><span class="n">back_button</span><span class="p">(),</span><span class="w"> </span><span class="n">heading</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"Message {id}"</span><span class="p">))].</span><span class="n">into</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">})</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>A link pushes its screen (so Back returns to where the person was) unless that screen is already showing. It works while the app runs, for a second launch of a single-instance app, and for the link that launched the app: one that arrives before the router exists waits for it. Combine with <code>router_saved</code> to restore the last session and then jump to the link. Test it with <code>Harness::open_url("myapp://mail/7")</code>, or by hand with <code>my-app --open myapp://mail/7</code>.</p>
+<p>For a sidebar app with fixed sections use <a href="04-widgets.html"><code>app(..).page(..)</code></a> instead; the router is for drill-down flows (list, detail, edit) where Back matters. Both can be mixed: a page body may own a router.</p>
+<p>Test a flow like a person would: <code>Harness::click("Open message 7").expect("Message 7").chord("alt+ArrowLeft").expect("Inbox")</code> (see <a href="15-testing.html">testing</a>).</p>
+<nav class="pager"><a href="13-localization.html">&larr; Localization</a><a href="15-testing.html">Testing your app &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

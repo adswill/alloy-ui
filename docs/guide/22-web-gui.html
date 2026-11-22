@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>22. Web GUI: drive an app from a browser · Alloy</title>
+<meta name="description" content="22. Web GUI: drive an app from a browser in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html" aria-current="page">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>22. Web GUI: drive an app from a browser</h1>
+<p>Alloy draws with its own renderer, so there is no webview. The web GUI keeps it that way: your app
+runs natively and a browser tab is only a <strong>remote display</strong>. The page holds no app logic.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">app</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sketch</span><span class="p">(</span><span class="mi">0</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="n">button</span><span class="p">(</span><span class="fm">format!</span><span class="p">(</span><span class="s">"{n}"</span><span class="p">)).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">1</span><span class="p">));</span>
+<span class="w">    </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">web</span><span class="p">::</span><span class="n">serve</span><span class="p">(</span><span class="n">app</span><span class="p">,</span><span class="w"> </span><span class="s">"127.0.0.1:8080"</span><span class="p">,</span><span class="w"> </span><span class="p">(</span><span class="mf">900.0</span><span class="p">,</span><span class="w"> </span><span class="mf">600.0</span><span class="p">)).</span><span class="n">unwrap</span><span class="p">();</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<p>Open <code>http://127.0.0.1:8080</code>.</p>
+<p>You do not have to write that call. Any app that ends in <code>.run("Title")</code> also serves itself when
+started with <code>--web [addr]</code> or with <code>ALLOY_WEB=127.0.0.1:8080</code> set, so <code>cargo run --release -p
+alloy-ui --example notes -- --web</code> shows the notes example in a browser with no code change. Try the counter: <code>cargo run -p alloy-ui-examples --bin web</code>.</p>
+<h2>How it works</h2>
+<ul>
+<li><code>serve</code> runs the app through the same headless runtime that <code>Harness</code> uses in tests.</li>
+<li><code>GET /frame?v=N</code> returns the newest frame as a PNG, or <code>204</code> when nothing changed since version <code>N</code>.</li>
+<li><code>POST /event</code> takes JSON: <code>move{x,y}</code>, <code>down</code>, <code>up</code>, <code>scroll{dy}</code>, <code>text{s}</code>, <code>key{k,mods}</code>, <code>resize{w,h}</code>.</li>
+<li>The server uses only <code>std</code> plus the <code>serde_json</code> the crate already depends on.</li>
+</ul>
+<h2>What it is for</h2>
+<p>Trying an app without installing a toolchain on the viewing machine, screen-sharing a demo, and
+looking at an app running on a remote or headless box.</p>
+<h2>Limits (honest list)</h2>
+<ul>
+<li>Frames are drawn by the CPU rasteriser, so there is no GPU shader content (<code>gpu_view</code>, 3D).</li>
+<li>No audio or video, no native menus, tray, file dialogs or clipboard bridge.</li>
+<li>One shared app instance: every viewer sees and drives the same window.</li>
+<li>No authentication. Bind to loopback unless you mean to expose the app, because the page can click and type.</li>
+<li>Checked on macOS only. Linux and Windows are covered by CI, not by hand.</li>
+</ul>
+<nav class="pager"><a href="21-mobile.html">&larr; Mobile: Android and iOS</a><span></span></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

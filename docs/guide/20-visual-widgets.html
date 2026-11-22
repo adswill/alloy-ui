@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Visual widgets · Alloy</title>
+<meta name="description" content="Visual widgets in the Alloy guide">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html" aria-current="page">Guide</a>
+<a href="../../docs/cookbook/index.html">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="index.html">Overview</a><a href="01-getting-started.html">Getting started</a><a href="02-state-and-bindings.html">State and bindings</a><a href="03-layout.html">Layout</a><a href="04-widgets.html">Widgets</a><a href="05-records-and-forms.html">Records and forms</a><a href="06-async-resources.html">Async resources</a><a href="07-multi-window.html">Multi-window</a><a href="08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="09-theming.html">Theming</a><a href="10-bundling.html">Bundling</a><a href="11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="13-localization.html">Localization</a><a href="14-navigation.html">Navigation: routes, back and forward</a><a href="15-testing.html">Testing your app</a><a href="16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="17-shipping.html">Shipping</a><a href="18-desktop-integration.html">Desktop integration</a><a href="19-system-integration.html">System integration</a><a href="20-visual-widgets.html" aria-current="page">Visual widgets</a><a href="21-mobile.html">Mobile: Android and iOS</a><a href="22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="../cookbook/index.html">Overview</a><a href="../cookbook/01-state-and-input.html">State and input</a><a href="../cookbook/02-layout.html">Layout</a><a href="../cookbook/03-data.html">Data</a><a href="../cookbook/04-app-polish.html">Finished-app details</a><a href="../cookbook/05-look-and-language.html">Look and language</a><a href="../cookbook/06-shell-and-testing.html">Shell and testing</a><a href="../cookbook/07-interaction.html">Interaction patterns</a><a href="../cookbook/08-motion-and-loading.html">Motion and loading</a><a href="../cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="../cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Visual widgets</h1>
+<p>Run <code>cargo run -p alloy-ui --example viz</code> for all of these in one window. Renders live in <code>gallery/widgets4/</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Widget</th>
+<th>One line</th>
+<th>State lives in</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pie(..).donut()</code></td>
+<td>pie or ring, legend, hover lift, click to select</td>
+<td>your app (<code>.selected</code>)</td>
+</tr>
+<tr>
+<td><code>candles(..)</code></td>
+<td>OHLC with volume bars and a crosshair readout</td>
+<td>your app</td>
+</tr>
+<tr>
+<td><code>stream(..)</code></td>
+<td>live line chart over a <code>Ring</code>; samples glide in</td>
+<td>a <code>Ring</code> per series</td>
+</tr>
+<tr>
+<td><code>kanban(&amp;lanes)</code></td>
+<td>drag cards between and within lanes; Alt+arrows from the keyboard</td>
+<td>your app (<code>mv.apply(&amp;mut lanes)</code>)</td>
+</tr>
+<tr>
+<td><code>calendar(day, view, &amp;entries)</code></td>
+<td>month, week, day; drag to move, drag the bottom edge to resize, click to create</td>
+<td>your app (<code>CalAction</code>)</td>
+</tr>
+<tr>
+<td><code>node_graph(&amp;nodes, &amp;wires)</code></td>
+<td>move, connect, delete; scroll to zoom, drag to pan</td>
+<td>your app (<code>GraphAction</code>); pan and zoom in the widget</td>
+</tr>
+<tr>
+<td><code>canvas(w, h, \|f\| ..)</code></td>
+<td><code>Frame</code> + <code>Path</code>: rects, circles, lines, curves, filled polygons, text, clip</td>
+<td>n/a</td>
+</tr>
+<tr>
+<td><code>viewport3d([object(mesh)..])</code></td>
+<td>lit meshes, orbit camera, software-projected through the 2D renderer</td>
+<td>camera in the widget</td>
+</tr>
+<tr>
+<td><code>media(source, playback)</code></td>
+<td>player chrome over any <code>MediaSource</code></td>
+<td>your app (<code>Playback</code>)</td>
+</tr>
+</tbody>
+</table>
+<h2>Notes and limits</h2>
+<ul>
+<li><strong>Polygon fills</strong> are a new draw primitive (<code>DrawCommand::Polygon</code>): ear-clipped into triangles in the renderer. Outline edges are anti-aliased; interior seams are exact (no translucent hairlines). Self-intersecting outlines and holes are not supported, so a donut slice is one simple polygon and a full ring is split in two.</li>
+<li><strong>The 3D viewport is software</strong>: painter's-algorithm depth sort and flat lighting, so intersecting meshes can show sorting artefacts. It suits previews and gizmos, not scenes. Sharing a live wgpu texture with the window renderer is not implemented; <code>Frame::image</code> places a renderer-registered image.</li>
+<li><strong>Media has no decoder.</strong> Alloy ships the player (seek, volume, keyboard, clock) and the <code>MediaSource</code> trait; a decoder crate implements it. The position is a pure function of the clock, so a paused player costs nothing and a playing one only redraws.</li>
+<li><strong>Idle cost</strong>: <code>stream</code> glides new samples in for one interval, then idles; <code>.stepped()</code> redraws once per sample. <code>viewport3d(..).spin(..)</code> and a playing <code>media</code> keep ticking by design; everything else is idle at rest.</li>
+</ul>
+<nav class="pager"><a href="19-system-integration.html">&larr; System integration</a><a href="21-mobile.html">Mobile: Android and iOS &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

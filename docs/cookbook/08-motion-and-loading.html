@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Motion and loading · Alloy</title>
+<meta name="description" content="Motion and loading in the Alloy cookbook">
+<link rel="icon" href="../../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../../index.html"><img src="../../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../../docs/guide/index.html">Guide</a>
+<a href="../../docs/cookbook/index.html" aria-current="page">Cookbook</a>
+<a href="../../docs/editor.html">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="../guide/index.html">Overview</a><a href="../guide/01-getting-started.html">Getting started</a><a href="../guide/02-state-and-bindings.html">State and bindings</a><a href="../guide/03-layout.html">Layout</a><a href="../guide/04-widgets.html">Widgets</a><a href="../guide/05-records-and-forms.html">Records and forms</a><a href="../guide/06-async-resources.html">Async resources</a><a href="../guide/07-multi-window.html">Multi-window</a><a href="../guide/08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="../guide/09-theming.html">Theming</a><a href="../guide/10-bundling.html">Bundling</a><a href="../guide/11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="../guide/12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="../guide/13-localization.html">Localization</a><a href="../guide/14-navigation.html">Navigation: routes, back and forward</a><a href="../guide/15-testing.html">Testing your app</a><a href="../guide/16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="../guide/17-shipping.html">Shipping</a><a href="../guide/18-desktop-integration.html">Desktop integration</a><a href="../guide/19-system-integration.html">System integration</a><a href="../guide/20-visual-widgets.html">Visual widgets</a><a href="../guide/21-mobile.html">Mobile: Android and iOS</a><a href="../guide/22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="index.html">Overview</a><a href="01-state-and-input.html">State and input</a><a href="02-layout.html">Layout</a><a href="03-data.html">Data</a><a href="04-app-polish.html">Finished-app details</a><a href="05-look-and-language.html">Look and language</a><a href="06-shell-and-testing.html">Shell and testing</a><a href="07-interaction.html">Interaction patterns</a><a href="08-motion-and-loading.html" aria-current="page">Motion and loading</a><a href="09-structure-and-data.html">Structure and data at scale</a><a href="10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="../editor.html">VS Code extension</a></aside>
+<article class="prose">
+<h1>Motion and loading</h1>
+<p class="tests">5 recipes, each compiled as a doc-test</p>
+<h2>36. A skeleton while data loads</h2>
+<p>Show the shape of the content before it exists. <code>skeleton_text(n)</code> draws <code>n</code> shimmering lines, so the screen does not jump when the real text lands.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">loaded</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">bool</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">heading</span><span class="p">(</span><span class="s">"Release notes"</span><span class="p">),</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="o">*</span><span class="n">loaded</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">col</span><span class="o">!</span><span class="p">[</span><span class="n">text</span><span class="p">(</span><span class="s">"Faster startup."</span><span class="p">),</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="s">"Smoother scrolling."</span><span class="p">)].</span><span class="n">gap</span><span class="p">(</span><span class="mf">6.0</span><span class="p">).</span><span class="n">into</span><span class="p">()</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Node</span><span class="p">::</span><span class="n">from</span><span class="p">(</span><span class="n">skeleton_text</span><span class="p">(</span><span class="mi">2</span><span class="p">).</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">))</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Load"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">l</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">bool</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">l</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">220.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">expect_no</span><span class="p">(</span><span class="s">"Faster startup."</span><span class="p">).</span><span class="n">click</span><span class="p">(</span><span class="s">"Load"</span><span class="p">).</span><span class="n">expect</span><span class="p">(</span><span class="s">"Faster startup."</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>37. A number that rolls</h2>
+<p><code>counter(value)</code> animates between values digit by digit. Chain <code>.prefix</code>, <code>.suffix</code> and <code>.decimals</code> for money and units.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">n</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">i64</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">i64</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">counter</span><span class="p">(</span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">f64</span><span class="p">).</span><span class="n">large</span><span class="p">().</span><span class="n">prefix</span><span class="p">(</span><span class="s">"$"</span><span class="p">),</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Add 250"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">n</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">i64</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">n</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="mi">250</span><span class="p">),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">10.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="mi">1200</span><span class="k">i64</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">280.0</span><span class="p">,</span><span class="w"> </span><span class="mf">160.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Add 250"</span><span class="p">).</span><span class="n">settle</span><span class="p">();</span>
+<span class="w">    </span><span class="fm">assert!</span><span class="p">(</span><span class="o">!</span><span class="n">ui</span><span class="p">.</span><span class="n">png</span><span class="p">().</span><span class="n">is_empty</span><span class="p">());</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>38. A list that arrives one row at a time</h2>
+<p><code>stagger</code> delays each child a little more than the one before it, so a list reads as arriving instead of appearing all at once.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">shown</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="kt">bool</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="kt">bool</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">rows</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s">"Build passed"</span><span class="p">,</span><span class="w"> </span><span class="s">"Tests passed"</span><span class="p">,</span><span class="w"> </span><span class="s">"Deployed"</span><span class="p">];</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">button</span><span class="p">(</span><span class="s">"Show activity"</span><span class="p">).</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="kt">bool</span><span class="o">|</span><span class="w"> </span><span class="o">*</span><span class="n">s</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">true</span><span class="p">),</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="o">*</span><span class="n">shown</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Node</span><span class="p">::</span><span class="n">from</span><span class="p">(</span><span class="n">stagger</span><span class="p">(</span><span class="n">rows</span><span class="p">.</span><span class="n">map</span><span class="p">(</span><span class="o">|</span><span class="n">r</span><span class="o">|</span><span class="w"> </span><span class="n">text</span><span class="p">(</span><span class="n">r</span><span class="p">).</span><span class="n">pad_xy</span><span class="p">(</span><span class="mf">12.0</span><span class="p">,</span><span class="w"> </span><span class="mf">8.0</span><span class="p">).</span><span class="n">surface</span><span class="p">().</span><span class="n">round</span><span class="p">(</span><span class="mf">6.0</span><span class="p">))).</span><span class="n">gap</span><span class="p">(</span><span class="mf">6.0</span><span class="p">))</span>
+<span class="w">        </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="n">Node</span><span class="p">::</span><span class="n">from</span><span class="p">(</span><span class="n">text</span><span class="p">(</span><span class="s">""</span><span class="p">))</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">12.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="k">mut</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="kc">false</span><span class="p">,</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">360.0</span><span class="p">,</span><span class="w"> </span><span class="mf">260.0</span><span class="p">);</span>
+<span class="w">    </span><span class="n">ui</span><span class="p">.</span><span class="n">click</span><span class="p">(</span><span class="s">"Show activity"</span><span class="p">).</span><span class="n">settle</span><span class="p">().</span><span class="n">expect</span><span class="p">(</span><span class="s">"Deployed"</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>39. A stat card with a trend line</h2>
+<p><code>stat</code> is a label over a big number; add a <code>sparkline</code> beside it for the shape of the last few days.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::{</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">testing</span><span class="p">::</span><span class="n">Harness</span><span class="p">};</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">visits</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">f32</span><span class="o">&gt;</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="nb">Vec</span><span class="o">&lt;</span><span class="kt">f32</span><span class="o">&gt;&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">total</span><span class="p">:</span><span class="w"> </span><span class="kt">f32</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">visits</span><span class="p">.</span><span class="n">iter</span><span class="p">().</span><span class="n">sum</span><span class="p">();</span>
+<span class="w">    </span><span class="n">row</span><span class="o">!</span><span class="p">[</span><span class="n">stat</span><span class="p">(</span><span class="s">"Visits this week"</span><span class="p">,</span><span class="w"> </span><span class="n">total</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="kt">i64</span><span class="p">),</span><span class="w"> </span><span class="n">space</span><span class="p">(),</span><span class="w"> </span><span class="n">sparkline</span><span class="p">(</span><span class="n">visits</span><span class="p">.</span><span class="n">clone</span><span class="p">()).</span><span class="n">w</span><span class="p">(</span><span class="mf">120.0</span><span class="p">)]</span>
+<span class="w">        </span><span class="p">.</span><span class="n">align_center</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">card</span><span class="p">()</span>
+<span class="w">        </span><span class="p">.</span><span class="n">w</span><span class="p">(</span><span class="mf">360.0</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">ui</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Harness</span><span class="p">::</span><span class="n">new</span><span class="p">(</span><span class="n">sketch</span><span class="p">(</span><span class="fm">vec!</span><span class="p">[</span><span class="mf">12.0</span><span class="p">,</span><span class="w"> </span><span class="mf">18.0</span><span class="p">,</span><span class="w"> </span><span class="mf">15.0</span><span class="p">,</span><span class="w"> </span><span class="mf">24.0</span><span class="p">,</span><span class="w"> </span><span class="mf">30.0</span><span class="p">],</span><span class="w"> </span><span class="n">view</span><span class="p">),</span><span class="w"> </span><span class="mf">420.0</span><span class="p">,</span><span class="w"> </span><span class="mf">140.0</span><span class="p">);</span>
+<span class="w">    </span><span class="fm">assert!</span><span class="p">(</span><span class="n">ui</span><span class="p">.</span><span class="n">has_text</span><span class="p">(</span><span class="s">"99"</span><span class="p">));</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h2>40. A donut chart you can click</h2>
+<p><code>pie</code> draws slices from <code>(name, value)</code> pairs. <code>.donut()</code> leaves a hole for a title, and <code>.act(..)</code> reports which slice was clicked.</p>
+<div class="hl"><pre><span></span><code><span class="k">use</span><span class="w"> </span><span class="n">alloy_ui</span><span class="p">::</span><span class="n">prelude</span><span class="p">::</span><span class="o">*</span><span class="p">;</span>
+
+<span class="cp">#[derive(Default)]</span>
+<span class="k">struct</span><span class="w"> </span><span class="nc">Spend</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="n">picked</span><span class="p">:</span><span class="w"> </span><span class="nb">Option</span><span class="o">&lt;</span><span class="kt">usize</span><span class="o">&gt;</span><span class="p">,</span>
+<span class="p">}</span>
+
+<span class="k">fn</span><span class="w"> </span><span class="nf">view</span><span class="p">(</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">Spend</span><span class="p">)</span><span class="w"> </span><span class="p">-&gt;</span><span class="w"> </span><span class="nc">impl</span><span class="w"> </span><span class="n">View</span><span class="o">&lt;</span><span class="n">Act</span><span class="o">&lt;</span><span class="n">Spend</span><span class="o">&gt;&gt;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">let</span><span class="w"> </span><span class="n">names</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="s">"Rent"</span><span class="p">,</span><span class="w"> </span><span class="s">"Food"</span><span class="p">,</span><span class="w"> </span><span class="s">"Travel"</span><span class="p">];</span>
+<span class="w">    </span><span class="n">col</span><span class="o">!</span><span class="p">[</span>
+<span class="w">        </span><span class="n">pie</span><span class="p">([(</span><span class="s">"Rent"</span><span class="p">,</span><span class="w"> </span><span class="mf">1200.0</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="s">"Food"</span><span class="p">,</span><span class="w"> </span><span class="mf">540.0</span><span class="p">),</span><span class="w"> </span><span class="p">(</span><span class="s">"Travel"</span><span class="p">,</span><span class="w"> </span><span class="mf">310.0</span><span class="p">)])</span>
+<span class="w">            </span><span class="p">.</span><span class="n">donut</span><span class="p">()</span>
+<span class="w">            </span><span class="p">.</span><span class="n">title</span><span class="p">(</span><span class="s">"This month"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">unit</span><span class="p">(</span><span class="s">" €"</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">selected</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">picked</span><span class="p">)</span>
+<span class="w">            </span><span class="p">.</span><span class="n">act</span><span class="p">(</span><span class="o">|</span><span class="n">s</span><span class="p">:</span><span class="w"> </span><span class="kp">&amp;</span><span class="nc">mut</span><span class="w"> </span><span class="n">Spend</span><span class="p">,</span><span class="w"> </span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">s</span><span class="p">.</span><span class="n">picked</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">Some</span><span class="p">(</span><span class="n">i</span><span class="p">))</span>
+<span class="w">            </span><span class="p">.</span><span class="n">height</span><span class="p">(</span><span class="mf">200.0</span><span class="p">),</span>
+<span class="w">        </span><span class="n">caption</span><span class="p">(</span><span class="n">s</span><span class="p">.</span><span class="n">picked</span><span class="p">.</span><span class="n">map_or</span><span class="p">(</span><span class="s">"Click a slice"</span><span class="p">.</span><span class="n">to_string</span><span class="p">(),</span><span class="w"> </span><span class="o">|</span><span class="n">i</span><span class="o">|</span><span class="w"> </span><span class="n">names</span><span class="p">[</span><span class="n">i</span><span class="p">].</span><span class="n">to_string</span><span class="p">())).</span><span class="n">dim</span><span class="p">(),</span>
+<span class="w">    </span><span class="p">]</span>
+<span class="w">    </span><span class="p">.</span><span class="n">gap</span><span class="p">(</span><span class="mf">8.0</span><span class="p">)</span>
+<span class="w">    </span><span class="p">.</span><span class="n">pad</span><span class="p">(</span><span class="mf">20.0</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+<nav class="pager"><a href="07-interaction.html">&larr; Interaction patterns</a><a href="09-structure-and-data.html">Structure and data at scale &rarr;</a></nav>
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../../site.js" defer></script>
+</body>
+</html>

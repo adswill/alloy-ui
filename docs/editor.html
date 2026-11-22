@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VS Code extension · Alloy</title>
+<meta name="description" content="Snippets and .alloy syntax for VS Code">
+<link rel="icon" href="../assets/logo/alloy-favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../style.css">
+<script>try{var t=localStorage.getItem("alloy-theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+<a class="brand" href="../index.html"><img src="../assets/logo/alloy-mark.svg" alt=""><span>Alloy</span></a>
+<nav aria-label="Main">
+<a href="../docs/guide/index.html">Guide</a>
+<a href="../docs/cookbook/index.html">Cookbook</a>
+<a href="../docs/editor.html" aria-current="page">Editor</a>
+</nav>
+<span class="sp"></span>
+<button class="theme-btn" id="theme" type="button" aria-label="Toggle light and dark">Theme</button>
+<a class="gh" href="https://github.com/adswill/alloy-ui">GitHub</a>
+</div></header>
+<main class="wrap docs">
+<aside class="side" aria-label="Documentation"><h4>Guide</h4><a href="guide/index.html">Overview</a><a href="guide/01-getting-started.html">Getting started</a><a href="guide/02-state-and-bindings.html">State and bindings</a><a href="guide/03-layout.html">Layout</a><a href="guide/04-widgets.html">Widgets</a><a href="guide/05-records-and-forms.html">Records and forms</a><a href="guide/06-async-resources.html">Async resources</a><a href="guide/07-multi-window.html">Multi-window</a><a href="guide/08-shortcuts-palette-toasts-undo.html">Shortcuts, command palette, toasts and undo</a><a href="guide/09-theming.html">Theming</a><a href="guide/10-bundling.html">Bundling</a><a href="guide/11-capabilities-and-ipc.html">Capabilities and IPC</a><a href="guide/12-dev-loop.html">The dev loop: alloy dev and the inspector</a><a href="guide/13-localization.html">Localization</a><a href="guide/14-navigation.html">Navigation: routes, back and forward</a><a href="guide/15-testing.html">Testing your app</a><a href="guide/16-coming-from-iced-and-egui.html">Coming from iced, egui or Slint</a><a href="guide/17-shipping.html">Shipping</a><a href="guide/18-desktop-integration.html">Desktop integration</a><a href="guide/19-system-integration.html">System integration</a><a href="guide/20-visual-widgets.html">Visual widgets</a><a href="guide/21-mobile.html">Mobile: Android and iOS</a><a href="guide/22-web-gui.html">Web GUI: drive an app from a browser</a><h4>Cookbook</h4><a href="cookbook/index.html">Overview</a><a href="cookbook/01-state-and-input.html">State and input</a><a href="cookbook/02-layout.html">Layout</a><a href="cookbook/03-data.html">Data</a><a href="cookbook/04-app-polish.html">Finished-app details</a><a href="cookbook/05-look-and-language.html">Look and language</a><a href="cookbook/06-shell-and-testing.html">Shell and testing</a><a href="cookbook/07-interaction.html">Interaction patterns</a><a href="cookbook/08-motion-and-loading.html">Motion and loading</a><a href="cookbook/09-structure-and-data.html">Structure and data at scale</a><a href="cookbook/10-editors-and-media.html">Editors, charts and icons</a><h4>Tools</h4><a href="editor.html" aria-current="page">VS Code extension</a></aside>
+<article class="prose">
+<h1>Alloy for VS Code</h1>
+<p>Snippets for writing <a href="https://github.com/adswill/alloy-ui">Alloy</a> apps in Rust, and for <code>.alloy</code> live views: highlighting, error squiggles, completion and hover, all from the same parser the running app uses.</p>
+<h2>The language server</h2>
+<p>Install the <code>alloy</code> tool once (it also gives you <code>alloy dev</code> and <code>alloy test</code>):</p>
+<div class="hl"><pre><span></span><code>cargo<span class="w"> </span>install<span class="w"> </span>--git<span class="w"> </span>https://github.com/adswill/alloy-ui<span class="w"> </span>alloy-ui-cli
+</code></pre></div>
+
+<p>Open any <code>.alloy</code> file and the extension starts <code>alloy lsp</code> in the background:</p>
+<ul>
+<li><strong>Diagnostics.</strong> Every mistake is underlined with the message the app itself would show (<code>unknown element</code>, <code>unknown setting</code>, <code>is not a flag</code>, a missing closing quote, bad indentation), all at once, not just the first. A flag or setting that loads but does nothing on that element (<code>text "x" primary</code>) is a warning.</li>
+<li><strong>Completion.</strong> Elements at the start of a line (<code>theme</code> only on the first), then the settings and flags that make sense for that element, <code>@actions</code> already used in the file, <code>{variables}</code> inside quoted text, and the values of <code>density=</code> and <code>contrast=</code>.</li>
+<li><strong>Hover.</strong> An element name shows what it does and what it accepts.</li>
+</ul>
+<p>Commands (Command Palette): <strong>Alloy: Run with live reload</strong> (<code>alloy dev</code> in a terminal), <strong>Alloy: Run tests with snapshot diffs</strong> (<code>alloy test</code>), <strong>Alloy: Restart language server</strong>. If <code>alloy</code> is not on your PATH, set <code>alloy.server.path</code>. Without the tool the extension still gives you colours and snippets and offers to copy the install command.</p>
+<h2>Rust snippets</h2>
+<p>Type a prefix in a <code>.rs</code> file and press Tab. Whole-program snippets give you a complete app to run; the short ones drop a widget into the <code>col![...]</code> you are writing.</p>
+<table>
+<thead>
+<tr>
+<th>prefix</th>
+<th>inserts</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>alloy-sketch</code></td>
+<td>a complete app: state plus a view function</td>
+</tr>
+<tr>
+<td><code>alloy-state</code></td>
+<td>a state struct, a view with a bound input and <code>main</code></td>
+</tr>
+<tr>
+<td><code>alloy-app</code></td>
+<td>a sidebar app with pages, theme switch and saved state</td>
+</tr>
+<tr>
+<td><code>alloy-elm</code></td>
+<td>the <code>App</code> trait: <code>Msg</code>, <code>update_cmd</code>, <code>view</code></td>
+</tr>
+<tr>
+<td><code>alloy-choices</code></td>
+<td>a <code>choices!</code> enum with a bound <code>options</code> control</td>
+</tr>
+<tr>
+<td><code>alloy-record</code></td>
+<td>a <code>derive(Record)</code> struct shown as a CRUD screen</td>
+</tr>
+<tr>
+<td><code>alloy-resource</code></td>
+<td>background loading with loading, error and retry</td>
+</tr>
+<tr>
+<td><code>alloy-shortcut</code></td>
+<td>a shortcut and a palette command</td>
+</tr>
+<tr>
+<td><code>alloy-test</code></td>
+<td>a headless <code>Harness</code> test</td>
+</tr>
+<tr>
+<td><code>alloy-i18n</code></td>
+<td>catalogs, <code>set_locale</code> and <code>t!</code></td>
+</tr>
+<tr>
+<td><code>alloy-live</code></td>
+<td>a <code>live!</code> view wired to state and handlers</td>
+</tr>
+<tr>
+<td><code>alloy-col</code>, <code>alloy-row</code></td>
+<td>a column or row with gap and padding</td>
+</tr>
+<tr>
+<td><code>alloy-input</code>, <code>alloy-check</code>, <code>alloy-slider</code></td>
+<td>bound controls using <code>at!</code></td>
+</tr>
+<tr>
+<td><code>alloy-button</code></td>
+<td>a primary button with a handler</td>
+</tr>
+<tr>
+<td><code>alloy-field</code></td>
+<td>a labelled control with a validation message</td>
+</tr>
+<tr>
+<td><code>alloy-table</code></td>
+<td>a sortable table with text and number columns</td>
+</tr>
+<tr>
+<td><code>alloy-toast</code>, <code>alloy-local</code></td>
+<td>a toast with Undo, a <code>local</code> value</td>
+</tr>
+</tbody>
+</table>
+<h2><code>.alloy</code> live views</h2>
+<p>Files ending in <code>.alloy</code> are the small indented markup that <code>live!("ui/home.alloy")</code> reloads on save under <code>alloy dev</code>. The extension colours elements, attributes, flags, <code>@actions</code>, <code>{variables}</code> inside text and colours, and marks an unknown element in red, the same mistake the runtime reports as <code>unknown element</code>.</p>
+<div class="hl"><pre><span></span><code><span class="o">#</span><span class="w"> </span><span class="n">ui</span><span class="o">/</span><span class="n">home</span><span class="o">.</span><span class="n">alloy</span>
+<span class="n">theme</span><span class="w"> </span><span class="n">dark</span><span class="w"> </span><span class="n">accent</span><span class="o">=#</span><span class="mi">6</span><span class="n">D4AFF</span>
+<span class="n">col</span><span class="w"> </span><span class="n">page</span><span class="w"> </span><span class="n">gap</span><span class="o">=</span><span class="mi">14</span>
+<span class="w">  </span><span class="n">heading</span><span class="w"> </span><span class="s">"Hello, {name}"</span>
+<span class="w">  </span><span class="n">text</span><span class="w"> </span><span class="err">"</span><span class="o">{</span><span class="n">count</span><span class="o">}</span><span class="w"> </span><span class="n">so</span><span class="w"> </span><span class="n">far"</span><span class="w"> </span><span class="n">dim</span>
+<span class="w">  </span><span class="n">row</span><span class="w"> </span><span class="n">gap</span><span class="o">=</span><span class="mi">8</span><span class="w"> </span><span class="n">center</span>
+<span class="w">    </span><span class="n">button</span><span class="w"> </span><span class="s">"Add"</span><span class="w"> </span><span class="n">primary</span><span class="w"> </span><span class="err">@</span><span class="n">add</span>
+<span class="w">    </span><span class="n">button</span><span class="w"> </span><span class="s">"Reset"</span><span class="w"> </span><span class="n">ghost</span><span class="w"> </span><span class="err">@</span><span class="n">reset</span>
+</code></pre></div>
+
+<p>Snippets for the file itself: <code>col</code>, <code>row</code>, <code>heading</code>, <code>text</code>, <code>button</code>, <code>theme</code> and <code>alloy-counter</code>. Comments start with <code>#</code>, and the editor indents after a <code>col</code> or <code>row</code> line.</p>
+<p>The element table lives in <code>crates/core/src/live_syntax.rs</code> and is shared by the runtime and the language server. If the format changes, update that file, <code>syntaxes/alloy.tmLanguage.json</code> and the checks in <code>test/</code>.</p>
+<h2>Checked, not just written</h2>
+<ul>
+<li><code>test/grammar.test.js</code> tokenises sample views with the same TextMate engine VS Code uses and asserts the scope of each piece (<code>npm install &amp;&amp; npm test</code>).</li>
+<li><code>test/extension.test.js</code> loads <code>extension.js</code> against a stub of the VS Code API (commands, terminal, restart) and, when an <code>alloy</code> binary is present, drives the real server with a JSON-RPC client: diagnostics, completion, hover, an edit that clears the errors, and a clean shutdown. CI sets <code>ALLOY_BIN</code> and requires it.</li>
+<li><code>test/check_snippets.py</code> expands every Rust snippet the way VS Code does and compiles it against the real <code>alloy-ui</code> crate, so a snippet cannot drift from the API.</li>
+</ul>
+<h2>Install from source</h2>
+<p>This extension is not on the Marketplace. To try it:</p>
+<div class="hl"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>editors/vscode
+npm<span class="w"> </span>ci
+npx<span class="w"> </span>vsce<span class="w"> </span>package<span class="w">                  </span><span class="c1"># writes alloy-ui-0.2.0.vsix</span>
+code<span class="w"> </span>--install-extension<span class="w"> </span>alloy-ui-0.2.0.vsix
+</code></pre></div>
+
+<p>CI builds the same file on every run (job <code>vscode</code>, artifact <code>alloy-vscode-vsix</code>) so you can download and install it without a toolchain. It is not published to the Marketplace.</p>
+<p>Licensed under MIT.</p>
+
+</article>
+</main>
+<footer><div class="wrap"><span>Alloy is MIT or Apache-2.0 licensed. Docs are built from the repository.</span><span><a href="../index.html">Home</a> · <a href="https://github.com/adswill/alloy-ui">Source</a></span></div></footer>
+<script src="../site.js" defer></script>
+</body>
+</html>
