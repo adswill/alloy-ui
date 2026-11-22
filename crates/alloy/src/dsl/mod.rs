@@ -203,6 +203,8 @@ pub struct Btn<M> {
     wide: bool,
     off: bool,
     sel: bool,
+    tint: Option<Color>,
+    hover: Option<Color>,
     id: u64,
 }
 
@@ -216,6 +218,8 @@ pub fn button<M>(label: impl Into<String>) -> Btn<M> {
         wide: false,
         off: false,
         sel: false,
+        tint: None,
+        hover: None,
         id: auto_id(1),
     }
 }
@@ -234,6 +238,17 @@ impl<M> Btn<M> {
     /// Low emphasis: no fill until hovered.
     pub fn ghost(mut self) -> Self {
         self.variant = Variant::Ghost;
+        self
+    }
+    /// Fill with your own colour. It lightens on hover and darkens when pressed, and the label
+    /// picks white or near-black for contrast: `button("Play").tint(green)`.
+    pub fn tint(mut self, c: Color) -> Self {
+        self.tint = Some(c);
+        self
+    }
+    /// The colour while hovered, for a [`tint`](Self::tint)ed button.
+    pub fn hover(mut self, c: Color) -> Self {
+        self.hover = Some(c);
         self
     }
     /// Stretch to the available width.
@@ -302,6 +317,12 @@ impl<M: Clone + 'static> Btn<M> {
         let mut b = w::Button::new(&cx::ui(), self.label)
             .variant(self.variant)
             .selected(self.sel);
+        if let Some(c) = self.tint {
+            b = b.tint(c);
+        }
+        if let Some(c) = self.hover {
+            b = b.hover_tint(c);
+        }
         if let Some(m) = self.on.filter(|_| !self.off) {
             b = b.on_press(m);
         }

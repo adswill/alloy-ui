@@ -114,3 +114,54 @@ assert_eq!(h.desktop_spec().menus[0].title, "File");
 ```
 
 Ids are the item's shortcut when it has one, otherwise `cmd:<label>`; tray items are `tray:<label>`, the icon click is `tray:click`, and hotkeys are `global:<keys>`.
+
+## Ask before closing, and know when the window has focus
+
+`App::on_close` runs when the user closes the window. Return `None` to let it close, or a
+message to keep it open and handle that message instead, usually to ask about unsaved work:
+
+```rust,no_run
+use alloy_ui::prelude::*;
+
+#[derive(Clone)]
+enum Msg { AskToSave, Quit, Focus(bool) }
+
+#[derive(Default)]
+struct Doc { dirty: bool, asking: bool, focused: bool }
+
+impl App for Doc {
+    type Msg = Msg;
+    fn update_cmd(&mut self, m: Msg) -> Cmd<Msg> {
+        match m {
+            Msg::AskToSave => self.asking = true,
+            Msg::Focus(f) => self.focused = f,
+            Msg::Quit => return Cmd::exit(),
+        }
+        Cmd::none()
+    }
+    fn on_close(&self) -> Option<Msg> {
+        self.dirty.then_some(Msg::AskToSave)
+    }
+    fn on_focus(&self, focused: bool) -> Option<Msg> {
+        Some(Msg::Focus(focused))
+    }
+    fn view(&self) -> impl View<Msg> {
+        col![
+            text(if self.asking { "Save changes?" } else { "editing" }),
+            button("Discard and quit").on(Msg::Quit),
+        ]
+    }
+}
+
+fn main() { Doc::default().run("Doc") }
+```
+
+`App::on_focus(bool)` fires when the window gains or loses keyboard focus. In tests,
+`Harness::close()` returns whether the app let the window close, and `Harness::focus(bool)`
+simulates the change.
+
+## Your own button colour, with hover
+
+`button("Play").tint(green)` fills the button with your colour. It lightens on hover and
+darkens while pressed by itself, and the label picks white or near-black for contrast. Give
+`.hover(colour)` to choose the hover colour yourself.

@@ -36,6 +36,8 @@ pub struct Button<M> {
     id: Option<u64>,
     width: Length,
     selected: bool,
+    tint: Option<alloy_ui_core::Color>,
+    hover_tint: Option<alloy_ui_core::Color>,
 }
 
 impl<M: Clone + 'static> Button<M> {
@@ -49,6 +51,8 @@ impl<M: Clone + 'static> Button<M> {
             id: None,
             width: Length::Shrink,
             selected: false,
+            tint: None,
+            hover_tint: None,
         }
     }
     /// Message to emit on activation; enables the button.
@@ -59,6 +63,19 @@ impl<M: Clone + 'static> Button<M> {
     /// Visual weight.
     pub fn variant(mut self, v: Variant) -> Self {
         self.variant = v;
+        self
+    }
+    /// Fill with `c` instead of the theme colour. It turns lighter on hover and darker while
+    /// pressed on its own, and the label switches to whichever of white or near-black reads
+    /// better. Disabled buttons ignore it. Override the hover colour with
+    /// [`hover_tint`](Self::hover_tint).
+    pub fn tint(mut self, c: alloy_ui_core::Color) -> Self {
+        self.tint = Some(c);
+        self
+    }
+    /// The fill while hovered, for a [`tint`](Self::tint)ed button.
+    pub fn hover_tint(mut self, c: alloy_ui_core::Color) -> Self {
+        self.hover_tint = Some(c);
         self
     }
     /// Mark this button as the current choice (only [`Variant::Nav`] shows it).
@@ -160,6 +177,25 @@ impl<M: Clone + 'static> Widget<M> for Button<M> {
             )
         };
         let (fill, border, text) = match (self.variant, enabled) {
+            _ if self.tint.is_some() && enabled => {
+                let base = self.tint.unwrap_or(p.accent);
+                let (white, black) = (
+                    alloy_ui_core::Color::hex(0xFFFFFF),
+                    alloy_ui_core::Color::hex(0x101114),
+                );
+                let hot = self
+                    .hover_tint
+                    .unwrap_or_else(|| util::mix(base, white, 0.18));
+                let fill = util::mix(util::mix(base, hot, h), util::mix(base, black, 0.2), pr);
+                let label = if alloy_ui_theme::contrast_ratio(base, white)
+                    >= alloy_ui_theme::contrast_ratio(base, black)
+                {
+                    white
+                } else {
+                    black
+                };
+                (fill, None, label)
+            }
             (Variant::Primary, true) => (
                 util::mix(util::mix(p.accent, p.accent_hover, h), p.accent_pressed, pr),
                 None,

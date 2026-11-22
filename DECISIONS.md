@@ -160,3 +160,10 @@ Shaping with cosmic-text cost about 150 us per string, paid on every layout pass
 - **Dense live lines are drawn as pixel-column envelopes.** Past 1.5 samples per pixel the stream chart emits the first, lowest and highest point of each column, so the draw list is bounded by the width, not by the data.
 - **Kanban auto-scroll is tick driven.** A held card makes the board `animating`; each tick scrolls the lane under the pointer by a speed that grows with the square of the depth into a 56 px edge zone (cap 900 px/s). Nothing runs when no card is held.
 - **Node graph: zoom range 0.25 to 2.5, `F` fits, `+`/`-` zoom, optional minimap.** The minimap shows nodes and the visible area together, so the outline never leaves the panel; it is off unless asked for so existing layouts are unchanged.
+
+## 2026-11-21: Web GUI is a remote display, not a WASM target
+`alloy_ui::web::serve` runs the app natively and streams PNG frames to a one-file browser viewer over
+plain HTTP (poll `/frame`, post input to `/event`). Chosen over compiling to WASM because it needs no
+new toolchain, reuses the headless renderer and `core::Event`, keeps "no webview, no JS in apps", and
+can be verified here. Trade-offs: CPU-rasterised frames only, one shared app instance, no auth. A WASM
+canvas target stays possible later and can reuse the same event vocabulary.

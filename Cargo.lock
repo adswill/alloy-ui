@@ -73,6 +73,7 @@ dependencies = [
  "alloy-ui",
  "alloy-ui-core",
  "alloy-ui-examples",
+ "alloy-ui-layout",
  "alloy-ui-render",
 ]
 

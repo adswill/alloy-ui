@@ -39,7 +39,12 @@ fn run(app: impl App, size: (f32, f32)) {
     let (w, ht) = (size.0 as u32 * 2, size.1 as u32 * 2);
     // One renderer for all frames, like a window: fonts and caches stay warm.
     let mut cpur = CpuRenderer::new(w, ht);
-    let _ = cpur.render_to_image(&list, w, ht, 2.0);
+    let img = cpur.render_to_image(&list, w, ht, 2.0);
+    // Output fingerprint (FNV-1a) so an optimisation can be checked byte-identical.
+    let hash = img.rgba.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)
+    });
+    println!("cpu image hash: {hash:016x}");
     let cpu = t(&mut || {
         let _ = cpur.render_to_image(&list, w, ht, 2.0);
     });

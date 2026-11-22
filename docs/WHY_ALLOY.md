@@ -21,12 +21,13 @@ Rival cells are based on the sources linked in the differentiator sections. A da
 | Own GPU renderer, no webview | Have | Yes | Yes | Yes | No (webview) | Yes | No (webview) |
 | Lines of code for a typical app | About 2x to 3x fewer on ordinary apps (1.6x before the pass 6 ergonomics); 9x to 14x on table/form/list-shaped apps (see BENCHMARKS.md, audit) | baseline | separate `.slint` markup plus Rust glue | small | small | large (text input alone is 700+ lines) | frontend plus Rust |
 | Basic text input widget | Have (`text_input`, `text_edit`, `text_editor`) | Yes | Yes | Yes | via DOM | No, you write it | via DOM |
-| Accessibility tree | Missing | Not visible to Narrator in 2025 test | - | Janky in 2025 test | Partial in 2025 test | Not visible in 2025 test | Browser-provided |
+| Accessibility tree | Partial (widgets publish a tree to AT-SPI / NSAccessibility / UI Automation; screen-reader behaviour is verified by CI only) | Not visible to Narrator in 2025 test | - | Janky in 2025 test | Partial in 2025 test | Not visible in 2025 test | Browser-provided |
 | IME | Partial (unverified on every OS) | Added in 0.14 | - | Broke kanji selection in 2025 test | Works | Works | Browser-provided |
 | Licence | MIT/Apache (to confirm in Cargo.toml) | MIT | GPLv3, royalty-free with attribution, or paid | MIT/Apache | MIT/Apache | Apache/GPL parts | MIT/Apache |
 | Tiny binary, low idle CPU | Have, measured on Linux only | - | - | - | No (webview) | - | Good |
-| Hot reload | Missing | Missing | Live preview exists *(unverified)* | - | Yes *(unverified)* | - | Via the web dev server |
-| Multi-window | Unknown, needs a check | Yes (daemon API) | - | - | - | - | Yes |
+| Hot reload | Have (`alloy dev` restarts on save and keeps state with `persist`; `live!` views reload with no restart) | Missing | Live preview exists *(unverified)* | - | Yes *(unverified)* | - | Via the web dev server |
+| Multi-window | Have (`Command::open_window`, per-window views and redraw) | Yes (daemon API) | - | - | - | - | Yes |
+| Run in a browser with no code change | Have (`--web` or `ALLOY_WEB`: native app, browser as remote display; CPU-rendered, see guide chapter 22) | - | - | - | Yes (it is a web page) | - | Yes (it is a web page) |
 
 ## Top differentiators
 

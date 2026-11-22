@@ -1,2 +1,7 @@
 /target
 Cargo.lock.bak
+
+# Local tooling output and agent working notes, not needed to use Alloy
+/graphify-out/
+/docs/superpowers/
+/.impeccable/

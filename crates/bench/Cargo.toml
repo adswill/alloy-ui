@@ -15,6 +15,7 @@ workspace = true
 alloy-ui = { path = "../alloy" }
 alloy-ui-examples = { path = "../../examples" }
 alloy-ui-core.workspace = true
+alloy-ui-layout.workspace = true
 alloy-ui-render = { workspace = true, features = ["gpu", "soft-window"] }
 
 [[bin]]
@@ -36,3 +37,7 @@ path = "src/bin/large.rs"
 [[bin]]
 name = "startup"
 path = "src/bin/startup.rs"
+
+[[bin]]
+name = "layout"
+path = "src/bin/layout.rs"
