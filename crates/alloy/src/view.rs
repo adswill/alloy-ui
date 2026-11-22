@@ -466,8 +466,56 @@ pub trait View<M: 'static>: Into<Node<M>> + Sized {
     fn tip(self, text: impl Into<String>) -> Node<M> {
         Node(w::Tooltip::new(&cx::ui(), self.into().0, text).into_element())
     }
+    /// A tooltip you can place: `.tooltip("Library").tooltip_at(TipSide::Right, 8.0).tooltip_delay(200)`.
+    /// Same as [`tip`](Self::tip) until you call one of those.
+    fn tooltip(self, text: impl Into<String>) -> Tip<M> {
+        Tip {
+            child: self.into(),
+            text: text.into(),
+            side: w::TipSide::Below,
+            offset: 6.0,
+            delay_ms: 500,
+        }
+    }
 }
 impl<M: 'static, T: Into<Node<M>>> View<M> for T {}
+
+/// A tooltip under construction, from [`View::tooltip`]. It converts into a [`Node`], so it
+/// can be used anywhere a view can; `.tooltip_at(..)` and `.tooltip_delay(..)` adjust it.
+pub struct Tip<M> {
+    child: Node<M>,
+    text: String,
+    side: w::TipSide,
+    offset: f32,
+    delay_ms: u64,
+}
+
+impl<M: 'static> Tip<M> {
+    /// Open on `side` of the control, `offset` pixels away, so it does not cover the
+    /// neighbouring control: `.tooltip("Home").tooltip_at(TipSide::Right, 8.0)`. The bubble is
+    /// kept inside the window.
+    pub fn tooltip_at(mut self, side: w::TipSide, offset: f32) -> Self {
+        self.side = side;
+        self.offset = offset;
+        self
+    }
+    /// Wait `ms` of resting pointer before showing (default 500; `0` shows at once).
+    pub fn tooltip_delay(mut self, ms: u64) -> Self {
+        self.delay_ms = ms;
+        self
+    }
+}
+
+impl<M: 'static> From<Tip<M>> for Node<M> {
+    fn from(t: Tip<M>) -> Self {
+        Node(
+            w::Tooltip::new(&cx::ui(), t.child.0, t.text)
+                .at(t.side, t.offset)
+                .delay(t.delay_ms)
+                .into_element(),
+        )
+    }
+}
 
 #[doc(hidden)]
 pub fn node<M: 'static, V: Into<Node<M>>>(v: V) -> Node<M> {

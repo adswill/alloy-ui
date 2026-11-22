@@ -7,6 +7,7 @@ use alloy_ui_core::{
     Widget,
 };
 use alloy_ui_layout::Length;
+use std::cell::Cell;
 use std::rc::Rc;
 
 const BAR: f32 = 8.0;
@@ -55,6 +56,14 @@ pub struct VirtualGrid<M> {
     selected: Option<usize>,
     build: Build<M>,
     on_select: Option<Rc<dyn Fn(usize) -> M>>,
+    on_activate: Option<Rc<dyn Fn(usize) -> M>>,
+    ring: bool,
+    /// Bounds of the last draw, so `animating` can look at the cells that were on show.
+    shown: Cell<Option<Rectangle>>,
+}
+
+fn tree_animating<M>(e: &Element<M>) -> bool {
+    e.0.animating() || e.0.children().iter().any(tree_animating)
 }
 
 impl<M: 'static> VirtualGrid<M> {
@@ -77,6 +86,9 @@ impl<M: 'static> VirtualGrid<M> {
             selected: None,
             build: Rc::new(cell),
             on_select: None,
+            on_activate: None,
+            ring: true,
+            shown: Cell::new(None),
         }
     }
     /// As many columns as fit, each at least `min_width` pixels wide (cells then stretch to
@@ -108,6 +120,19 @@ impl<M: 'static> VirtualGrid<M> {
     /// Called with the index of the cell the user picked.
     pub fn on_select(mut self, f: impl Fn(usize) -> M + 'static) -> Self {
         self.on_select = Some(Rc::new(f));
+        self
+    }
+    /// Called with the index of the highlighted cell when Enter is pressed while the grid has
+    /// focus. Arrow keys still only select, so `on_select` can mean "highlight" and this
+    /// "open".
+    pub fn on_activate(mut self, f: impl Fn(usize) -> M + 'static) -> Self {
+        self.on_activate = Some(Rc::new(f));
+        self
+    }
+    /// Show or hide the focus ring drawn around the whole grid (shown by default). Hide it when
+    /// the selected cell is highlighted enough, or when the grid does not fill its box.
+    pub fn focus_ring(mut self, on: bool) -> Self {
+        self.ring = on;
         self
     }
     /// Box as an element.
@@ -210,6 +235,31 @@ impl<M: 'static> VirtualGrid<M> {
         let l = e.0.arrange(r);
         (e, l)
     }
+    fn cell_ids(&self, b: &Rectangle) -> Vec<usize> {
+        let g = self.geo(b);
+        self.row_range(b)
+            .flat_map(|r| r * g.cols..((r + 1) * g.cols).min(self.count))
+            .collect()
+    }
+    /// Offer `event` to the visible cells, stopping at the first that consumes it.
+    fn offer(&self, b: &Rectangle, event: &Event, cursor: Point, out: &mut Vec<M>) -> bool {
+        let g = self.geo(b);
+        for i in self.cell_ids(b) {
+            let (mut cell, l) = self.laid(b, &g, i);
+            if cell.0.on_event(event, &l, cursor, out) {
+                return true;
+            }
+        }
+        false
+    }
+    /// Show `event` to every visible cell (hover watchers, timers); answers are ignored.
+    fn broadcast(&self, b: &Rectangle, event: &Event, cursor: Point, out: &mut Vec<M>) {
+        let g = self.geo(b);
+        for i in self.cell_ids(b) {
+            let (mut cell, l) = self.laid(b, &g, i);
+            cell.0.on_event(event, &l, cursor, out);
+        }
+    }
     fn thumb(&self, b: &Rectangle) -> Option<Rectangle> {
         let content = self.content_h(&self.geo(b));
         let max = self.max_off(b);
@@ -274,6 +324,25 @@ impl<M: 'static> Widget<M> for VirtualGrid<M> {
     ) -> bool {
         let b = layout.bounds;
         let inside = b.contains(cursor);
+        // An overlay press (open popover or context menu in a cell) arrives with the pointer
+        // parked off-screen: offer it to every visible cell so the owner finds it.
+        if self.ui.hit_pending() && matches!(event, Event::MousePressed(_) | Event::Scrolled { .. })
+        {
+            return self.offer(&b, event, cursor, out);
+        }
+        // Cells see pointer movement and ticks always, and every key and press while a popup
+        // (a cell's context menu) is open.
+        match event {
+            Event::CursorMoved(_) | Event::CursorLeft | Event::Tick(_) => {
+                self.broadcast(&b, event, cursor, out)
+            }
+            Event::KeyPressed(..) | Event::MousePressed(_) if self.ui.popup().is_some() => {
+                if self.offer(&b, event, cursor, out) {
+                    return true;
+                }
+            }
+            _ => {}
+        }
         match event {
             Event::Scrolled { dy, .. } if inside => {
                 let before = self.target(&b);
@@ -328,6 +397,14 @@ impl<M: 'static> Widget<M> for VirtualGrid<M> {
                     }
                 }
             }
+            Event::KeyPressed(Key::Enter, _)
+                if self.ui.is_focused(Some(self.id)) && self.on_activate.is_some() =>
+            {
+                if let (Some(i), Some(f)) = (self.selected, &self.on_activate) {
+                    out.push(f(i));
+                    return true;
+                }
+            }
             Event::KeyPressed(Key::Named(k), _)
                 if self.ui.is_focused(Some(self.id)) && self.count > 0 =>
             {
@@ -362,12 +439,22 @@ impl<M: 'static> Widget<M> for VirtualGrid<M> {
         }
         false
     }
+    fn animating(&self) -> bool {
+        let Some(b) = self.shown.get() else {
+            return false;
+        };
+        let g = self.geo(&b);
+        self.cell_ids(&b)
+            .into_iter()
+            .any(|i| tree_animating(&self.laid(&b, &g, i).0))
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         let t = self.ui.theme();
         let p = &t.palette;
         self.ui.register(self.id);
-        if self.ui.is_focused(Some(self.id)) {
+        self.shown.set(Some(b));
+        if self.ring && self.ui.is_focused(Some(self.id)) {
             out.push(focus_ring(b, t.radii.small, p.focus_ring));
         }
         out.push(DrawCommand::PushClip(b));

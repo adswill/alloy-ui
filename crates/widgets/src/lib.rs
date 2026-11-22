@@ -159,7 +159,7 @@ pub use text_edit::Edit;
 pub use text_editor::TextEditor;
 pub use text_input::TextInput;
 pub use toggle::Toggle;
-pub use tooltip::Tooltip;
+pub use tooltip::{TipSide, Tooltip};
 pub use transition::{Enter, Glide, Hero, Route, RouteKind};
 pub use tree::{Tree, TreeItem};
 pub use ui::{ApproxMetrics, Clipboard, MemoryClipboard, Root, TextMetrics, Ui};

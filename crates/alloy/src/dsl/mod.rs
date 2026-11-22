@@ -224,6 +224,7 @@ pub struct Btn<M> {
     sel: bool,
     tint: Option<Color>,
     hover: Option<Color>,
+    esc: Option<M>,
     id: u64,
 }
 
@@ -239,11 +240,17 @@ pub fn button<M>(label: impl Into<String>) -> Btn<M> {
         sel: false,
         tint: None,
         hover: None,
+        esc: None,
         id: auto_id(1),
     }
 }
 
 impl<M> Btn<M> {
+    /// Message sent on Escape while a [`confirm`](Btn::confirm) question is showing.
+    pub fn on_escape(mut self, m: M) -> Self {
+        self.esc = Some(m);
+        self
+    }
     /// Message sent when pressed.
     pub fn on(mut self, m: M) -> Self {
         self.on = Some(m);
@@ -310,6 +317,9 @@ impl<S: 'static> Btn<Act<S>> {
 impl<S: 'static> Btn<Act<S>> {
     /// Ask first: the button turns into "prompt [label] [Cancel]" and only the second click
     /// runs the action. Put it last, after `.act(..)`.
+    ///
+    /// While the question shows, Escape cancels it, like a modal. `.on_escape(..)` adds a
+    /// handler that also runs then.
     #[track_caller]
     pub fn confirm(mut self, prompt: &str) -> Node<Act<S>> {
         let asking = crate::local(false);
@@ -325,6 +335,16 @@ impl<S: 'static> Btn<Act<S>> {
             (go.0)(s)
         });
         let back = button("Cancel").ghost().act(move |_| asking.set(false));
+        let extra = self.esc.take();
+        crate::keys::register(crate::keys::Hotkey::new(
+            "esc",
+            Act::new(move |s: &mut S| {
+                asking.set(false);
+                if let Some(e) = &extra {
+                    (e.0)(s);
+                }
+            }),
+        ));
         crate::row([Node::from(caption(prompt)), sure.into(), back.into()])
             .align_center()
             .gap(8.0)

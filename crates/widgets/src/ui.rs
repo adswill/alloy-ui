@@ -1204,6 +1204,26 @@ impl Ui {
         f(b.downcast_mut::<T>().expect("type checked above"))
     }
 
+    /// Select the characters `range` (char indices, clamped to the text) in the text field `id`,
+    /// anchor at `range.start`, caret at `range.end`. An empty range just places the caret.
+    /// Shows while the field has focus; focus it with [`set_focus`](Self::set_focus).
+    pub fn select_text(&self, id: u64, range: std::ops::Range<usize>) {
+        let mut e = self.edit(id);
+        e.anchor = range.start;
+        e.caret = range.end;
+        e.preedit.clear();
+        self.set_edit(id, e);
+    }
+    /// Select all text of field `id`.
+    pub fn select_all_text(&self, id: u64) {
+        self.select_text(id, 0..usize::MAX);
+    }
+    /// The selected range of text field `id` as char indices (`start..end`; empty when only a caret).
+    pub fn text_selection(&self, id: u64) -> std::ops::Range<usize> {
+        let (a, b) = self.edit(id).range();
+        a..b
+    }
+
     pub(crate) fn edit(&self, id: u64) -> Edit {
         self.0.borrow().edits.get(&id).cloned().unwrap_or_default()
     }

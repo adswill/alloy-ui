@@ -25,6 +25,13 @@ enum Entry<S> {
         label: String,
         keys: String,
         act: Act<S>,
+        enabled: bool,
+    },
+    /// A standard item the platform knows (`std:hide`, `std:copy`, ...).
+    Standard {
+        id: &'static str,
+        label: &'static str,
+        keys: &'static str,
     },
     Separator,
     Sub(String, Vec<Entry<S>>),
@@ -44,18 +51,53 @@ impl<S: 'static> MenuBuilder<S> {
 
     /// An item that runs `f` on the state. `keys` is its shortcut (`"mod+o"`: Cmd on macOS,
     /// Ctrl elsewhere), or `""` for none. Items also appear in the command palette.
-    pub fn item(
+    pub fn item(self, label: &str, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.item_enabled(label, keys, true, f)
+    }
+
+    /// Like [`item`](Self::item) but greyed out and inert when `enabled` is false. The menu is
+    /// rebuilt after every change by an [`App`](crate::App) that returns a fresh
+    /// [`Desktop`](crate::Desktop), so the flag can follow the state there.
+    pub fn item_enabled(
         mut self,
         label: &str,
         keys: &str,
+        enabled: bool,
         f: impl Fn(&mut S) + Send + Sync + 'static,
     ) -> Self {
         self.entries.push(Entry::Item {
             label: label.into(),
             keys: keys.into(),
             act: Act::new(f),
+            enabled,
         });
         self
+    }
+
+    fn standard(mut self, id: &'static str, label: &'static str, keys: &'static str) -> Self {
+        self.entries.push(Entry::Standard { id, label, keys });
+        self
+    }
+
+    /// Standard Cut (`mod+x`). Replayed as that key press to the focused widget, so a text
+    /// field cuts its own selection and no app shortcut is stolen.
+    pub fn cut(self) -> Self {
+        self.standard("std:cut", "Cut", "mod+x")
+    }
+
+    /// Standard Copy (`mod+c`), see [`cut`](Self::cut).
+    pub fn copy(self) -> Self {
+        self.standard("std:copy", "Copy", "mod+c")
+    }
+
+    /// Standard Paste (`mod+v`), see [`cut`](Self::cut).
+    pub fn paste(self) -> Self {
+        self.standard("std:paste", "Paste", "mod+v")
+    }
+
+    /// Standard Select All (`mod+a`), see [`cut`](Self::cut).
+    pub fn select_all(self) -> Self {
+        self.standard("std:select_all", "Select All", "mod+a")
     }
 
     /// A thin line between groups of items.
@@ -76,6 +118,62 @@ impl<S: 'static> MenuBuilder<S> {
     }
 }
 
+/// The application menu (the one named after the app, first in the macOS menu bar), built
+/// inside [`Sketch::app_menu`](crate::Sketch::app_menu). Only macOS has such a menu; elsewhere
+/// the custom items' shortcuts still work and the rest is ignored.
+pub struct AppMenuBuilder<S>(MenuBuilder<S>);
+
+impl<S: 'static> AppMenuBuilder<S> {
+    /// The system About panel.
+    pub fn about(self) -> Self {
+        Self(self.0.standard("std:about", "About", ""))
+    }
+
+    /// A custom item, e.g. `.item("Settings...", "mod+,", |s| s.open_settings())`.
+    pub fn item(self, label: &str, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        Self(self.0.item(label, keys, f))
+    }
+
+    /// Like [`item`](Self::item) with an enabled flag.
+    pub fn item_enabled(
+        self,
+        label: &str,
+        keys: &str,
+        enabled: bool,
+        f: impl Fn(&mut S) + Send + Sync + 'static,
+    ) -> Self {
+        Self(self.0.item_enabled(label, keys, enabled, f))
+    }
+
+    /// A thin line between groups of items.
+    pub fn separator(self) -> Self {
+        Self(self.0.separator())
+    }
+
+    /// Hide the app (`mod+h`).
+    pub fn hide(self) -> Self {
+        Self(self.0.standard("std:hide", "Hide", "mod+h"))
+    }
+
+    /// Hide every other app (`mod+alt+h`).
+    pub fn hide_others(self) -> Self {
+        Self(
+            self.0
+                .standard("std:hide_others", "Hide Others", "mod+alt+h"),
+        )
+    }
+
+    /// Show every hidden app.
+    pub fn show_all(self) -> Self {
+        Self(self.0.standard("std:show_all", "Show All", ""))
+    }
+
+    /// Quit the app (`mod+q`).
+    pub fn quit(self) -> Self {
+        Self(self.0.standard("alloy:quit", "Quit", "mod+q"))
+    }
+}
+
 /// The tray icon being built inside [`Sketch::tray`](crate::Sketch::tray).
 pub struct TrayBuilder<S> {
     icon: Option<(Vec<u8>, u32, u32)>,
@@ -90,6 +188,7 @@ impl<S: 'static> TrayBuilder<S> {
             label: label.into(),
             keys: String::new(),
             act: Act::new(f),
+            enabled: true,
         });
         self
     }
@@ -120,6 +219,9 @@ impl<S: 'static> TrayBuilder<S> {
 pub struct DesktopSpec {
     /// Top-level menus, in order.
     pub menus: Vec<Menu>,
+    /// The application menu (first in the macOS menu bar), if the app asked for one with
+    /// [`Sketch::app_menu`](crate::Sketch::app_menu). Ignored off macOS.
+    pub app_menu: Option<Menu>,
     /// The tray icon, if any.
     pub tray: Option<TraySettings>,
     /// Global hotkeys, as registered.
@@ -130,6 +232,7 @@ pub struct DesktopSpec {
 /// [`Sketch`](crate::Sketch) and [`Pages`](crate::Pages). An [`App`](crate::App) written by hand can hold one and return its `spec()` and `hotkeys()`.
 pub struct Desktop<S> {
     menus: Vec<(String, Vec<Entry<S>>)>,
+    app_menu: Option<Vec<Entry<S>>>,
     tray: Option<(String, TrayBuilder<S>)>,
     globals: Vec<(String, Act<S>)>,
 }
@@ -138,6 +241,7 @@ impl<S> Default for Desktop<S> {
     fn default() -> Self {
         Self {
             menus: Vec::new(),
+            app_menu: None,
             tray: None,
             globals: Vec::new(),
         }
@@ -160,7 +264,18 @@ fn to_menu<S>(title: &str, entries: &[Entry<S>], tray: bool) -> Menu {
         .map(|e| match e {
             Entry::Separator => MenuItem::Separator,
             Entry::Sub(t, es) => MenuItem::Submenu(to_menu(t, es, tray)),
-            Entry::Item { label, keys, .. } => MenuItem::Action {
+            Entry::Standard { id, label, keys } => MenuItem::Action {
+                id: (*id).into(),
+                label: (*label).into(),
+                shortcut: (!keys.is_empty()).then(|| (*keys).into()),
+                enabled: true,
+            },
+            Entry::Item {
+                label,
+                keys,
+                enabled,
+                ..
+            } => MenuItem::Action {
                 id: if tray {
                     format!("tray:{label}")
                 } else {
@@ -168,7 +283,7 @@ fn to_menu<S>(title: &str, entries: &[Entry<S>], tray: bool) -> Menu {
                 },
                 label: label.clone(),
                 shortcut: (!keys.is_empty()).then(|| keys.clone()),
-                enabled: true,
+                enabled: *enabled,
             },
         })
         .collect();
@@ -181,17 +296,19 @@ fn to_menu<S>(title: &str, entries: &[Entry<S>], tray: bool) -> Menu {
 fn hotkeys<S: 'static>(entries: &[Entry<S>], tray: bool, out: &mut Vec<Hotkey<Act<S>>>) {
     for e in entries {
         match e {
-            Entry::Separator => {}
+            Entry::Separator | Entry::Standard { .. } => {}
             Entry::Sub(_, es) => hotkeys(es, tray, out),
+            // A disabled item neither fires from its shortcut nor shows in the palette.
+            Entry::Item { enabled: false, .. } => {}
             Entry::Item { label, act, .. } if tray => {
                 out.push(Hotkey::hidden(&format!("tray:{label}"), act.clone()))
             }
-            Entry::Item { label, keys, act } if keys.is_empty() => {
-                out.push(Hotkey::command(label, act.clone()))
-            }
-            Entry::Item { label, keys, act } => {
-                out.push(Hotkey::new(keys, act.clone()).labelled(label))
-            }
+            Entry::Item {
+                label, keys, act, ..
+            } if keys.is_empty() => out.push(Hotkey::command(label, act.clone())),
+            Entry::Item {
+                label, keys, act, ..
+            } => out.push(Hotkey::new(keys, act.clone()).labelled(label)),
         }
     }
 }
@@ -201,6 +318,11 @@ impl<S: 'static> Desktop<S> {
     pub fn menu(&mut self, title: &str, build: impl FnOnce(MenuBuilder<S>) -> MenuBuilder<S>) {
         self.menus
             .push((title.into(), build(MenuBuilder::new()).entries));
+    }
+
+    /// Set the application menu (macOS): `.app_menu(|m| m.about().separator().hide().quit())`.
+    pub fn app_menu(&mut self, build: impl FnOnce(AppMenuBuilder<S>) -> AppMenuBuilder<S>) {
+        self.app_menu = Some(build(AppMenuBuilder(MenuBuilder::new())).0.entries);
     }
 
     /// Show a tray icon with `tooltip`.
@@ -224,6 +346,9 @@ impl<S: 'static> Desktop<S> {
         for (_, es) in &self.menus {
             hotkeys(es, false, &mut out);
         }
+        if let Some(es) = &self.app_menu {
+            hotkeys(es, false, &mut out);
+        }
         if let Some((_, t)) = &self.tray {
             hotkeys(&t.entries, true, &mut out);
             if let Some(c) = &t.click {
@@ -244,6 +369,7 @@ impl<S: 'static> Desktop<S> {
                 .iter()
                 .map(|(t, es)| to_menu(t, es, false))
                 .collect(),
+            app_menu: self.app_menu.as_ref().map(|es| to_menu("", es, false)),
             tray: self.tray.as_ref().map(|(tip, t)| {
                 let (icon_rgba, icon_width, icon_height) =
                     t.icon.clone().unwrap_or_else(default_icon);

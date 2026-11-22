@@ -64,7 +64,7 @@ impl<M> Cmd<M> {
     }
 }
 
-fn key_hash(key: impl std::hash::Hash) -> u64 {
+pub(crate) fn key_hash(key: impl std::hash::Hash) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     key.hash(&mut h);
     h.finish()
@@ -231,6 +231,26 @@ pub trait App: Sized + 'static {
     /// `DesktopSpec::default()` (the default) or builds one with a [`Desktop`](crate::Desktop).
     fn desktop(&self) -> crate::DesktopSpec {
         crate::DesktopSpec::default()
+    }
+
+    /// The smallest size, in logical pixels, the user can resize the window to. `None` (the
+    /// default) means no limit. [`Sketch::min_window_size`] sets it; the OS enforces it in a
+    /// real window and [`Harness::resize`](crate::Harness::resize) clamps to it.
+    fn min_window_size(&self) -> Option<(f32, f32)> {
+        None
+    }
+
+    /// Where toasts sit: pixels kept free below the stack, and how many show at once.
+    /// Defaults to `(24.0, 4)`; [`Sketch::toast_inset`] and [`Sketch::toast_max`] set it.
+    fn toast_layout(&self) -> (f32, usize) {
+        (24.0, 4)
+    }
+
+    /// The density of the whole window (spacing, paddings, default row heights), or `None`
+    /// (the default) to leave it to the theme or [`Look`](crate::Look). [`Sketch::density`]
+    /// sets it. It wins over the density of a `Look`.
+    fn density(&self) -> Option<alloy_ui_theme::Density> {
+        None
     }
 
     /// A copy of the state for undo, or `None` (the default) for an app without it.
@@ -402,6 +422,9 @@ pub trait App: Sized + 'static {
                 });
         }
         alloy_ui_platform::request_window_effect(self.window_effect());
+        if let Some((w, h)) = self.min_window_size() {
+            alloy_ui_platform::request_min_window_size(w, h);
+        }
         let settings = WindowSettings {
             title: title.into(),
             size: alloy_ui_core::Size::new(width, height),
@@ -469,6 +492,7 @@ impl<A: App> Application for Shell<A> {
             cx::window_ui_or_fork(id, &self.ui)
         };
         cx::enter(&ui, || {
+            cx::pin_density(self.app.density());
             view_subs_begin();
             let page: Node<A::Msg> = self.app.view_window(id.0).into();
             view_subs_commit(id.0);
@@ -495,6 +519,7 @@ impl<A: App> Application for Shell<A> {
                 }
             }
             keys::publish_desktop(self.app.desktop());
+            keys::publish_toast_layout(self.app.toast_layout());
             keys::publish_menu(
                 hot.iter()
                     .filter(|h| !h.keys.is_empty())
@@ -572,6 +597,18 @@ impl<S: 'static> Closing<'_, S> {
         self.cancelled = true;
     }
 
+    /// Keep the window open but hide it: "close to the menu bar". The app keeps running and a
+    /// tray or menu handler brings the window back with [`show_window`](crate::show_window).
+    pub fn hide(&mut self) {
+        self.cancelled = true;
+        crate::keys::hide_window();
+    }
+
+    /// Same as [`hide`](Self::hide).
+    pub fn hide_window(&mut self) {
+        self.hide();
+    }
+
     /// Keep the window open and run `f` on the state, e.g. to open a "Save changes?" prompt
     /// or remember that the window is hidden.
     pub fn cancel_close_then(&mut self, f: impl Fn(&mut S) + Send + Sync + 'static) {
@@ -632,7 +669,10 @@ pub struct Sketch<S: 'static, V> {
     keys: Vec<(String, Option<String>, Act<S>)>,
     undo: Option<Undo<S>>,
     desktop: crate::Desktop<S>,
+    min_size: Option<(f32, f32)>,
     hooks: Hooks<S>,
+    toasts: (f32, usize),
+    density: Option<alloy_ui_theme::Density>,
 }
 
 struct Undo<S> {
@@ -698,6 +738,27 @@ impl<S: 'static, V> Sketch<S, V> {
         self
     }
 
+    /// Set the application menu, the first one in the macOS menu bar (named after the app):
+    /// `.app_menu(|m| m.about().item("Settings...", "mod+,", |s| s.settings()).separator()
+    /// .hide().hide_others().show_all().separator().quit())`. Standard edit items go in a
+    /// regular menu with [`MenuBuilder::cut`](crate::MenuBuilder::cut) and friends. Other OSes
+    /// have no such menu; the custom items' shortcuts still work.
+    pub fn app_menu(
+        mut self,
+        build: impl FnOnce(crate::AppMenuBuilder<S>) -> crate::AppMenuBuilder<S>,
+    ) -> Self {
+        self.desktop.app_menu(build);
+        self
+    }
+
+    /// Refuse to let the window shrink below `width` x `height` logical pixels (macOS
+    /// `setContentMinSize:`, the same on Windows and Linux). [`Harness::resize`](crate::Harness::resize)
+    /// clamps to it too, so tests see what users see.
+    pub fn min_window_size(mut self, width: f32, height: f32) -> Self {
+        self.min_size = Some((width, height));
+        self
+    }
+
     /// Put an icon in the system tray (menu bar on macOS) with a context menu:
     /// `.tray("My app", |t| t.click(|s| s.show()).item("Quit", |_| quit()))`.
     pub fn tray(
@@ -714,6 +775,27 @@ impl<S: 'static, V> Sketch<S, V> {
     /// X11; on Wayland the desktop offers no way to do it, so it is logged and skipped.
     pub fn global_hotkey(mut self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         self.desktop.global_hotkey(keys, f);
+        self
+    }
+
+    /// Pixels kept free between the toast stack and the window bottom (default 24). Raise it to
+    /// clear a status bar.
+    pub fn toast_inset(mut self, px: f32) -> Self {
+        self.toasts.0 = px.max(0.0);
+        self
+    }
+
+    /// One switch for how roomy every page is: `Density::Compact` (about 80% spacing) tightens
+    /// paddings, gaps and default row heights, `Density::Spacious` relaxes them. Read it back
+    /// with [`density()`](crate::density). Wins over a [`Look`](crate::Look)'s density.
+    pub fn density(mut self, d: alloy_ui_theme::Density) -> Self {
+        self.density = Some(d);
+        self
+    }
+
+    /// The most toasts shown at once (default 4); the oldest is dropped first. At least 1.
+    pub fn toast_max(mut self, n: usize) -> Self {
+        self.toasts.1 = n.max(1);
         self
     }
 
@@ -853,7 +935,10 @@ where
         keys: Vec::new(),
         undo: None,
         desktop: crate::Desktop::default(),
+        min_size: None,
         hooks: Hooks::default(),
+        toasts: (24.0, 4),
+        density: None,
     }
 }
 
@@ -892,6 +977,18 @@ where
 
     fn desktop(&self) -> crate::DesktopSpec {
         self.desktop.spec()
+    }
+
+    fn min_window_size(&self) -> Option<(f32, f32)> {
+        self.min_size
+    }
+
+    fn toast_layout(&self) -> (f32, usize) {
+        self.toasts
+    }
+
+    fn density(&self) -> Option<alloy_ui_theme::Density> {
+        self.density
     }
 
     fn snapshot(&self) -> Option<Snap> {

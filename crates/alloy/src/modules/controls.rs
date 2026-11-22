@@ -167,6 +167,56 @@ fn fold<S: 'static>(open: crate::Local<bool>, title: String, body: Node<Act<S>>)
     }
 }
 
+/// A collapsible section for crowded pages: a header with a chevron over a body that opens and
+/// closes with a size animation. Its open state is saved under `id` (like [`store_as`]), so it
+/// survives rebuilds, page changes and, with persistence on, restarts, and two places using the
+/// same `id` share it: `fold_section("advanced", "Advanced", body)`. Starts closed; see
+/// [`fold_section_open`]. [`accordion`] keeps its call-site state and is unchanged.
+#[track_caller]
+pub fn fold_section<S: 'static>(
+    id: impl std::fmt::Display,
+    title: impl Into<String>,
+    body: impl Into<Node<Act<S>>>,
+) -> Node<Act<S>> {
+    fold_section_with(id, false, title.into(), body.into())
+}
+
+/// Like [`fold_section`] but open the first time it is shown (when nothing is saved under `id`).
+#[track_caller]
+pub fn fold_section_open<S: 'static>(
+    id: impl std::fmt::Display,
+    title: impl Into<String>,
+    body: impl Into<Node<Act<S>>>,
+) -> Node<Act<S>> {
+    fold_section_with(id, true, title.into(), body.into())
+}
+
+fn fold_section_with<S: 'static>(
+    id: impl std::fmt::Display,
+    start_open: bool,
+    title: String,
+    body: Node<Act<S>>,
+) -> Node<Act<S>> {
+    use crate::input::Interact;
+    let open = crate::store_as(&format!("section.{id}"), move || start_open);
+    let shown = open.get();
+    let chevron = crate::icon(if shown {
+        crate::Icon::ChevronDown
+    } else {
+        crate::Icon::ChevronRight
+    })
+    .dim();
+    let head = row([Node::from(chevron), Node::from(text(title))])
+        .gap(6.0)
+        .tap(move |_: &mut S| open.toggle());
+    let body: Node<Act<S>> = if shown {
+        body
+    } else {
+        Node::from(row(Vec::<Node<Act<S>>>::new()))
+    };
+    col([head, crate::grow(body)]).gap(6.0).into()
+}
+
 // -------------------------------------------------------------------- combobox
 
 /// A text field that suggests matching options as you type. See [`combobox`].

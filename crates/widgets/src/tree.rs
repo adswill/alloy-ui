@@ -8,6 +8,7 @@ use alloy_ui_core::{
 };
 use alloy_ui_layout::Length;
 
+/// Row height at the designed (comfortable) density.
 const ROW_H: f32 = 28.0;
 const INDENT: f32 = 18.0;
 
@@ -56,6 +57,7 @@ pub struct Tree<M> {
     on_select: Option<Box<dyn Fn(u64) -> M>>,
     on_toggle: Option<Box<dyn Fn(u64) -> M>>,
     id: Option<u64>,
+    row_h: f32,
 }
 
 impl<M: 'static> Tree<M> {
@@ -69,6 +71,7 @@ impl<M: 'static> Tree<M> {
             on_select: None,
             on_toggle: None,
             id: None,
+            row_h: ui.theme().density.px(ROW_H),
         }
     }
     /// Ids of the open branches.
@@ -127,10 +130,10 @@ impl<M: 'static> Tree<M> {
         walk(self, &self.items, 0, None, &mut out);
         out
     }
-    fn row_rect(b: &Rectangle, i: usize) -> Rectangle {
+    fn row_rect(&self, b: &Rectangle, i: usize) -> Rectangle {
         Rectangle::new(
-            Point::new(b.origin.x, b.origin.y + i as f32 * ROW_H),
-            Size::new(b.size.width, ROW_H),
+            Point::new(b.origin.x, b.origin.y + i as f32 * self.row_h),
+            Size::new(b.size.width, self.row_h),
         )
     }
 }
@@ -140,7 +143,7 @@ impl<M: 'static> Widget<M> for Tree<M> {
         util::sized(Length::Fill(1), Length::Shrink)
     }
     fn measure(&self, _available: Size) -> Size {
-        Size::new(160.0, self.rows().len() as f32 * ROW_H)
+        Size::new(160.0, self.rows().len() as f32 * self.row_h)
     }
     fn on_event(
         &mut self,
@@ -153,7 +156,7 @@ impl<M: 'static> Widget<M> for Tree<M> {
         let rows = self.rows();
         match event {
             Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
-                let i = ((cursor.y - b.origin.y) / ROW_H) as usize;
+                let i = ((cursor.y - b.origin.y) / self.row_h) as usize;
                 let Some(r) = rows.get(i) else { return true };
                 if self.id.is_some() {
                     self.ui.set_focus(self.id);
@@ -224,7 +227,7 @@ impl<M: 'static> Widget<M> for Tree<M> {
         }
         out.push(DrawCommand::PushClip(b));
         for (i, r) in rows.iter().enumerate() {
-            let rr = Self::row_rect(&b, i);
+            let rr = self.row_rect(&b, i);
             let sel = Some(r.item.id) == self.selected;
             let inner = Rectangle::new(
                 Point::new(rr.origin.x + 2.0, rr.origin.y + 1.0),
@@ -251,7 +254,7 @@ impl<M: 'static> Widget<M> for Tree<M> {
                 });
             }
             let x0 = rr.origin.x + 8.0 + r.depth as f32 * INDENT;
-            let cy = rr.origin.y + ROW_H / 2.0;
+            let cy = rr.origin.y + self.row_h / 2.0;
             if !r.item.children.is_empty() {
                 // Chevron: right when closed, down when open.
                 let (cx, a) = (x0 + INDENT / 2.0, 3.0);

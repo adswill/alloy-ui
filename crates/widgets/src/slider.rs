@@ -24,6 +24,8 @@ pub struct Slider<M> {
     on_change: Option<Box<dyn Fn(f32) -> M>>,
     id: Option<u64>,
     width: Length,
+    label: String,
+    value_text: Option<String>,
 }
 
 impl<M: 'static> Slider<M> {
@@ -38,7 +40,19 @@ impl<M: 'static> Slider<M> {
             on_change: None,
             id: None,
             width: Length::Fill(1),
+            label: String::new(),
+            value_text: None,
         }
+    }
+    /// Accessible name read by screen readers ("Grid zoom"). Draws nothing.
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
+    }
+    /// Accessible value text ("25 min") instead of the bare number.
+    pub fn value_text(mut self, text: impl Into<String>) -> Self {
+        self.value_text = Some(text.into());
+        self
     }
     /// Snap values to multiples of `step` from `min`.
     pub fn step(mut self, step: f32) -> Self {
@@ -136,9 +150,13 @@ impl<M: 'static> Widget<M> for Slider<M> {
         let t = self.ui.theme();
         let p = &t.palette;
         let b = layout.bounds;
-        self.ui.describe(Role::Slider, "", &b, |n| {
+        self.ui.describe(Role::Slider, &self.label, &b, |n| {
             n.id = self.id;
-            n.value = Some(self.value.to_string());
+            n.value = Some(
+                self.value_text
+                    .clone()
+                    .unwrap_or_else(|| self.value.to_string()),
+            );
             n.enabled = self.on_change.is_some();
         });
         let enabled = self.on_change.is_some();

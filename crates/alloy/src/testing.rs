@@ -40,10 +40,19 @@ impl TextMetrics for Metrics {
     }
 }
 
+/// `size` raised to the app's minimum window size, if it has one.
+fn clamp_min(size: (f32, f32), min: Option<(f32, f32)>) -> (f32, f32) {
+    match min {
+        Some((w, h)) => (size.0.max(w), size.1.max(h)),
+        None => size,
+    }
+}
+
 /// A running app with scripted input and software rendering.
 pub struct Harness<A: App> {
     rt: Runtime<Shell<A>>,
     size: (f32, f32),
+    min_size: Option<(f32, f32)>,
     now: u64,
     ticking: bool,
     tasks: alloy_ui_ipc::TaskRunner<A::Msg>,
@@ -51,6 +60,12 @@ pub struct Harness<A: App> {
     keyed: std::collections::HashMap<u64, alloy_ui_ipc::TaskHandle>,
     /// When each subscription last fired on the scripted clock.
     sub_last: std::collections::HashMap<u64, u64>,
+    /// `pump_like_runtime`: apply resources only on the real runtime's timer.
+    faithful: bool,
+    last_pump: u64,
+    /// Keys (from `Cmd::perform_keyed`) `settle` does not wait for.
+    ignore: std::collections::HashSet<u64>,
+    phases: Vec<(&'static str, std::time::Duration)>,
 }
 
 impl<A: App> Harness<A> {
@@ -60,24 +75,74 @@ impl<A: App> Harness<A> {
     }
     /// Like [`new`](Self::new) with an explicit theme.
     pub fn themed(app: A, width: f32, height: f32, theme: Theme) -> Self {
+        let min = app.min_window_size();
+        let (width, height) = clamp_min((width, height), min);
+        // Toasts and their clock are per thread; an earlier Harness must not leak into this one.
+        crate::keys::reset_toasts();
+        let mut phases = Vec::new();
+        let mut t = std::time::Instant::now();
+        let mut mark = |name: &'static str| {
+            phases.push((name, t.elapsed()));
+            alloy_ui_render::perf_mark(name, &mut t);
+        };
         let ui = Ui::new(theme);
         // Gesture speeds follow the scripted clock, so tests are deterministic.
         ui.use_tick_clock();
         ui.set_metrics(Rc::new(Metrics(TextMeasurer::new())));
+        mark("harness-ui-setup");
         let rt = Runtime::new(
             Shell::new(app, ui),
             Size::new(width, height),
             crate::layout_root::<A::Msg>,
         );
+        mark("harness-first-view");
         Self {
             rt,
             size: (width, height),
+            min_size: min,
             now: 1000,
             ticking: false,
             tasks: alloy_ui_ipc::TaskRunner::new(|| {}),
             running: Vec::new(),
             keyed: Default::default(),
             sub_last: Default::default(),
+            faithful: false,
+            last_pump: 1000,
+            ignore: Default::default(),
+            phases,
+        }
+    }
+    /// Timed phases of building this Harness (`harness-ui-setup`, `harness-first-view`), the
+    /// headless counterpart of the `ALLOY_PERF=1` phase log of a real window (which this also
+    /// prints to stderr). Use it to see where a slow first frame goes.
+    pub fn phases(&self) -> &[(&'static str, std::time::Duration)] {
+        &self.phases
+    }
+    /// Run `f`, record its time as phase `name` (also logged with `ALLOY_PERF=1`) and return
+    /// its result: `let rows = ui.perf_mark("load", |_| load());`.
+    pub fn perf_mark<R>(&mut self, name: &'static str, f: impl FnOnce(&mut Self) -> R) -> R {
+        let mut t = std::time::Instant::now();
+        let r = f(self);
+        self.phases.push((name, t.elapsed()));
+        alloy_ui_render::perf_mark(name, &mut t);
+        r
+    }
+    /// Apply `resource`s only the way the real runtime does: on its pump timer (every 50 ms
+    /// of scripted time while a fetch runs, 500 ms for refresh timers), never directly from
+    /// [`settle`](Self::settle). Off by default, where `settle` pumps at once.
+    pub fn pump_like_runtime(&mut self, on: bool) -> &mut Self {
+        self.faithful = on;
+        self
+    }
+    /// Run the runtime's resource pump if its timer is due on the scripted clock.
+    fn runtime_pump(&mut self) {
+        let Some(period) = crate::resource::pump_period() else {
+            return;
+        };
+        if self.now.saturating_sub(self.last_pump) >= period.as_millis() as u64 {
+            self.last_pump = self.now;
+            crate::resource::pump();
+            self.rt.dispatch_all(Vec::new());
         }
     }
     /// Start the futures `update` asked for (`Cmd::perform`, `perform_keyed`, `cancel`).
@@ -91,7 +156,9 @@ impl<A: App> Harness<A> {
                     if let Some(old) = self.keyed.insert(k, h.clone()) {
                         old.cancel();
                     }
-                    self.running.push(h);
+                    if !self.ignore.contains(&k) {
+                        self.running.push(h);
+                    }
                 }
                 Cancel(k) => {
                     if let Some(old) = self.keyed.remove(&k) {
@@ -171,14 +238,21 @@ impl<A: App> Harness<A> {
         self.click(target).chord("mod+a");
         self.type_text(value)
     }
-    /// Scroll the wheel by `dy` pixels (positive moves content up) over the text `over`.
+    /// Scroll the wheel by `dy` pixels (positive scrolls toward the start, negative toward the content below; see [`scroll_here`](Self::scroll_here)) over the text `over`.
     pub fn scroll(&mut self, over: &str, dy: f32) -> &mut Self {
         self.hover(over);
         self.rt.handle_event(&Event::Scrolled { dx: 0.0, dy });
         self
     }
     /// Resize the window to `width` x `height` logical pixels.
+    /// The window size in logical pixels, after any clamping to `min_window_size`.
+    pub fn size(&self) -> (f32, f32) {
+        self.size
+    }
+    /// Resize the window like the user dragging its edge; clamps to the app's minimum size.
     pub fn resize(&mut self, width: f32, height: f32) -> &mut Self {
+        // Like a real window, never smaller than the app's `min_window_size`.
+        let (width, height) = clamp_min((width, height), self.min_size);
         self.size = (width, height);
         self.rt
             .handle_event(&Event::Resized(Size::new(width, height)));
@@ -391,7 +465,13 @@ impl<A: App> Harness<A> {
         }
         self
     }
-    /// Scroll the wheel by `dy` logical pixels at the pointer (positive scrolls content up).
+    /// Scroll the wheel by `dy` logical pixels at the pointer, without moving it.
+    ///
+    /// The sign is the wheel's: positive `dy` is a wheel turned up and shows earlier content
+    /// (content moves down), negative `dy` shows the content below (content moves up). Use
+    /// `scroll_here(-120.0)` to scroll down. [`scroll`](Self::scroll) first hovers the text
+    /// `over` on every call, so once that text has scrolled out of its clip it can no longer
+    /// find the pointer: scroll a list with one `scroll`, then `scroll_here` for the rest.
     pub fn scroll_here(&mut self, dy: f32) -> &mut Self {
         self.rt.handle_event(&Event::Scrolled { dx: 0.0, dy });
         self
@@ -406,7 +486,11 @@ impl<A: App> Harness<A> {
     /// Cancelled futures deliver nothing.
     pub fn settle(&mut self) -> &mut Self {
         for _ in 0..200 {
-            crate::resource::pump();
+            if self.faithful {
+                self.advance(50);
+            } else {
+                crate::resource::pump();
+            }
             self.start_tasks();
             let msgs = self.tasks.drain();
             self.rt.dispatch_all(msgs);
@@ -425,6 +509,14 @@ impl<A: App> Harness<A> {
             std::thread::sleep(std::time::Duration::from_millis(25));
         }
         self
+    }
+    /// Like [`settle`](Self::settle), but never waits for futures started with
+    /// `Cmd::perform_keyed(key, ..)` under one of `keys` (a delivery loop that never ends).
+    /// Their results still arrive if they finish. The choice stays for later `settle` calls;
+    /// pass `&[]` to wait for everything again.
+    pub fn settle_ignoring<K: std::hash::Hash>(&mut self, keys: &[K]) -> &mut Self {
+        self.ignore = keys.iter().map(|k| crate::app::key_hash(k)).collect();
+        self.settle()
     }
     /// Type text into the focused widget.
     pub fn type_text(&mut self, text: &str) -> &mut Self {
@@ -484,6 +576,9 @@ impl<A: App> Harness<A> {
         self.now += ms;
         self.ticking = self.rt.handle_event(&Event::Tick(self.now)).tick;
         self.fire_subscriptions(from);
+        if self.faithful {
+            self.runtime_pump();
+        }
         self
     }
     /// Fire the app's timers (`.tick`, `every`, `tick_while_shown`) that fell due since `from`.

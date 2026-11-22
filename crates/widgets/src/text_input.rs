@@ -28,6 +28,9 @@ pub struct TextInput<M> {
     width: Length,
     secure: bool,
     invalid: bool,
+    selection: Option<std::ops::Range<usize>>,
+    select_all_on_focus: bool,
+    on_escape: Option<Box<dyn Fn() -> M>>,
 }
 
 /// Clipboard view for password fields: paste works, copy and cut do nothing.
@@ -52,6 +55,39 @@ impl<M: 'static> TextInput<M> {
             width: Length::Fill(1),
             secure: false,
             invalid: false,
+            selection: None,
+            select_all_on_focus: false,
+            on_escape: None,
+        }
+    }
+    /// Select the chars `range` (clamped to the text; an empty range places the caret). Applied
+    /// whenever the range you pass differs from the last one, so the user can then change it.
+    pub fn selection(mut self, range: std::ops::Range<usize>) -> Self {
+        self.selection = Some(range);
+        self
+    }
+    /// Select all text when the field gains focus (by click or Tab), as search boxes do.
+    pub fn select_all_on_focus(mut self, on: bool) -> Self {
+        self.select_all_on_focus = on;
+        self
+    }
+    /// Called when Escape is pressed in the focused field. When set, Escape is consumed and the
+    /// field keeps focus (call `ui().set_focus(None)` from the handler to blur); when unset,
+    /// Escape blurs the field as before.
+    pub fn on_escape(mut self, f: impl Fn() -> M + 'static) -> Self {
+        self.on_escape = Some(Box::new(f));
+        self
+    }
+    /// Apply a pending `.selection(..)` request to `e`.
+    fn apply_selection(&self, e: &mut Edit) {
+        if let Some(r) = &self.selection {
+            let req = (r.start, r.end);
+            if e.sel_req != Some(req) {
+                let len = self.value.chars().count();
+                e.sel_req = Some(req);
+                e.anchor = r.start.min(len);
+                e.caret = r.end.max(r.start).min(len);
+            }
         }
     }
     /// Hint shown while empty.
@@ -160,6 +196,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let len = self.value.chars().count();
         let mut e = self.ui.edit(self.id);
         e.clamp(len);
+        self.apply_selection(&mut e);
         let caret0 = e.caret;
         let editable = self.on_input.is_some();
         let key = util::key_of(&b);
@@ -168,11 +205,17 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let clipboard: &dyn Clipboard = if self.secure { &paste_only } else { &*clip };
         let consumed = match event {
             Event::MousePressed(MouseButton::Left) if b.contains(cursor) => {
+                let gaining = !self.ui.is_focused(Some(self.id));
                 self.ui.set_focus(Some(self.id));
-                self.ui.set_pressed(Some(key));
-                let i = self.index_at(&b, e.scroll_x, cursor.x);
-                e.move_to(i, false);
                 e.preedit.clear();
+                if gaining && self.select_all_on_focus {
+                    e.focus_seen = true;
+                    e.select_all(len);
+                } else {
+                    self.ui.set_pressed(Some(key));
+                    let i = self.index_at(&b, e.scroll_x, cursor.x);
+                    e.move_to(i, false);
+                }
                 true
             }
             Event::CursorMoved(p) if self.ui.pressed() == Some(key) => {
@@ -210,7 +253,11 @@ impl<M: 'static> Widget<M> for TextInput<M> {
                     true
                 }
                 Key::Escape => {
-                    self.ui.set_focus(None);
+                    if let Some(f) = &self.on_escape {
+                        out.push(f());
+                    } else {
+                        self.ui.set_focus(None);
+                    }
                     true
                 }
                 Key::Character(_) if editable && self.history(&mut e, k, m, out) => true,
@@ -249,7 +296,13 @@ impl<M: 'static> Widget<M> for TextInput<M> {
         let editable = self.on_input.is_some();
         self.ui.register_text(self.id);
         let mut e = self.ui.edit(self.id);
-        e.clamp(self.value.chars().count());
+        let len = self.value.chars().count();
+        e.clamp(len);
+        self.apply_selection(&mut e);
+        if focused && !e.focus_seen && self.select_all_on_focus {
+            e.select_all(len);
+        }
+        e.focus_seen = focused;
         let s = t.typography.body;
         let pad = self.pad();
         let inner_w = (b.size.width - 2.0 * pad).max(0.0);

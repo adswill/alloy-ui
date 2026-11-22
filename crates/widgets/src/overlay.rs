@@ -14,7 +14,13 @@ use alloy_ui_core::{
     style::Style, Border, Color, DrawCommand, DrawList, Element, Event, Key, Layout, MouseButton,
     Point, Rectangle, Size, Widget,
 };
-use std::rc::Rc;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
+
+thread_local! {
+    /// The last card and body a dialog drew while open, replayed while it leaves when it keeps
+    /// its content on exit.
+    static LAST: RefCell<HashMap<u64, (Rectangle, Vec<DrawCommand>)>> = RefCell::new(HashMap::new());
+}
 
 /// Slot of the layer: set while open; the focus to hand back on close lives beside it.
 const K_FOCUS_ID: u64 = 0x0000_00F0_0000_0000;
@@ -22,6 +28,8 @@ const K_PREV: u64 = 0x0E01_0000_0000;
 /// Transition of the enter and exit animation.
 /// Whether the content has a popover or menu open (it gets Escape first).
 const K_INNER: u64 = 0x0E03_0000_0000;
+/// Set once the enter animation has been seeded for this layer.
+const K_SEED: u64 = 0x0E04_0000_0000;
 /// Transition of the enter and exit animation.
 const K_ANIM: u64 = 0x0E02_0000_0000;
 /// Pixels the card travels while entering and leaving.
@@ -46,6 +54,9 @@ struct Layer<M> {
     width: f32,
     scrim_close: bool,
     on_close: Option<Rc<dyn Fn() -> M>>,
+    max_height: Option<f32>,
+    keep: bool,
+    default_action: Option<Rc<dyn Fn() -> M>>,
     content: Element<M>,
 }
 
@@ -59,6 +70,9 @@ impl<M: 'static> Layer<M> {
             width: 420.0,
             scrim_close: true,
             on_close: None,
+            max_height: None,
+            keep: false,
+            default_action: None,
             content,
         }
     }
@@ -69,6 +83,16 @@ impl<M: 'static> Layer<M> {
             return if self.open { 1.0 } else { 0.0 };
         }
         let t = self.ui.theme();
+        // A dialog built only while open has no animation yet: start it from closed.
+        if self.open && self.ui.slot(self.id ^ K_SEED).is_none() {
+            self.ui.set_slot(self.id ^ K_SEED, Some(1));
+            self.ui.ease_with(
+                self.id ^ K_ANIM,
+                0.0,
+                t.motion.normal_ms as u64,
+                t.motion.easing,
+            );
+        }
         self.ui.ease_with(
             self.id ^ K_ANIM,
             self.open as u8 as f32,
@@ -92,7 +116,10 @@ impl<M: 'static> Layer<M> {
             .min(vp.size.width);
         let w = w.max(1.0);
         let inner_w = (w - 2.0 * pad).max(1.0);
-        let h = c.height.min((vp.size.height - 2.0 * MARGIN).max(1.0));
+        let mut h = c.height.min((vp.size.height - 2.0 * MARGIN).max(1.0));
+        if let Some(m) = self.max_height {
+            h = h.min((m - 2.0 * pad).max(1.0));
+        }
         let (cw, ch) = (w, h + 2.0 * pad);
         Rectangle::new(
             Point::new(
@@ -104,6 +131,11 @@ impl<M: 'static> Layer<M> {
     }
     /// The visible card (the content area grown by its padding).
     fn card(&self) -> Rectangle {
+        if !self.open && self.keep {
+            if let Some((c, _)) = LAST.with(|l| l.borrow().get(&self.id).cloned()) {
+                return c;
+            }
+        }
         let a = self.area();
         if self.mode == Mode::Plain {
             return a;
@@ -168,6 +200,24 @@ impl<M: 'static> Layer<M> {
                 }
                 if dialog {
                     self.close(out);
+                    return true;
+                }
+                // A plain portal: the content sees Escape, then `on_close` takes it.
+                let used = self.forward(event, cursor, out);
+                if self.on_close.is_some() {
+                    self.close(out);
+                    return true;
+                }
+                used
+            }
+            Event::KeyPressed(Key::Enter, _) if dialog && self.default_action.is_some() => {
+                let inner = self.ui.slot(self.id ^ K_INNER).is_some();
+                let typing = self.ui.text_focused();
+                if (inner || typing) && self.forward(event, cursor, out) {
+                    return true;
+                }
+                if let Some(f) = &self.default_action {
+                    out.push(f());
                 }
                 true
             }
@@ -226,8 +276,19 @@ impl<M: 'static> Layer<M> {
                 }),
                 shadow: Some(t.elevation.high),
             });
-            let l = self.content.0.arrange(self.area());
-            self.content.0.draw(&l, &mut body);
+            let mut inner = DrawList::default();
+            if !self.open && self.keep {
+                if let Some((_, cmds)) = LAST.with(|l| l.borrow().get(&self.id).cloned()) {
+                    inner.0 = cmds;
+                }
+            } else {
+                let l = self.content.0.arrange(self.area());
+                self.content.0.draw(&l, &mut inner);
+                if self.keep {
+                    LAST.with(|l| l.borrow_mut().insert(self.id, (card, inner.0.clone())));
+                }
+            }
+            body.0.extend(inner.0);
             for c in body.0 {
                 list.0.push(util::fade_translate(c, k, 0.0, dy));
             }
@@ -302,6 +363,11 @@ impl<M: 'static> Portal<M> {
         self.0.open = open;
         self
     }
+    /// Message to send when Escape reaches the portal and nothing inside it used the key.
+    pub fn on_close(mut self, f: impl Fn() -> M + 'static) -> Self {
+        self.0.on_close = Some(Rc::new(f));
+        self
+    }
     /// Box as an element.
     pub fn into_element(self) -> Element<M> {
         Element::new(self)
@@ -341,6 +407,23 @@ impl<M: 'static> Modal<M> {
     /// Whether a click on the scrim closes the dialog (default yes).
     pub fn scrim_close(mut self, yes: bool) -> Self {
         self.0.scrim_close = yes;
+        self
+    }
+    /// Tallest the card may be, padding included. Content that is taller is squeezed into it,
+    /// so a `scroll(..)` with `Fill` height inside scrolls.
+    pub fn max_height(mut self, px: f32) -> Self {
+        self.0.max_height = Some(px);
+        self
+    }
+    /// Keep drawing the last content while the dialog leaves, instead of an empty card, for
+    /// apps that clear the content when they close it.
+    pub fn keep_content_on_exit(mut self, yes: bool) -> Self {
+        self.0.keep = yes;
+        self
+    }
+    /// Message to send on Enter (unless a text field or an open menu inside uses it).
+    pub fn default_action(mut self, f: impl Fn() -> M + 'static) -> Self {
+        self.0.default_action = Some(Rc::new(f));
         self
     }
     /// Box as an element.

@@ -126,6 +126,9 @@ struct Reg {
     keys: Vec<Registered>,
     meta: Option<Meta>,
     toasts: Vec<ToastItem>,
+    /// Pixels under the stack and how many show at once; set by the app each view build.
+    toast_inset: Option<f32>,
+    toast_max: Option<usize>,
     next_toast: u64,
     now: u64,
     menu: Vec<(String, String)>,
@@ -136,6 +139,10 @@ struct Reg {
     desktop: DesktopSpec,
     desktop_sent: Option<DesktopSpec>,
     quit: bool,
+    /// The window is hidden (by `hide_window`, until `show_window`).
+    window_hidden: bool,
+    /// A hide (`true`) or show (`false`) the shell has yet to apply.
+    window_hide_req: Option<bool>,
 }
 
 thread_local! {
@@ -202,6 +209,35 @@ pub fn quit() {
     reg(|r| r.quit = true);
 }
 
+/// Hide the window without closing it; the app keeps running (in the tray, say). Call it from
+/// any handler or from [`Closing::hide`](crate::Closing::hide). Bring the window back with
+/// [`show_window`].
+pub fn hide_window() {
+    reg(|r| {
+        r.window_hidden = true;
+        r.window_hide_req = Some(true);
+    });
+}
+
+/// Show the window again and focus it. Callable from tray, menu and global-hotkey handlers:
+/// `.tray("App", |t| t.click(|_| show_window()))`.
+pub fn show_window() {
+    reg(|r| {
+        r.window_hidden = false;
+        r.window_hide_req = Some(false);
+    });
+}
+
+/// True after [`hide_window`] until [`show_window`].
+pub fn window_hidden() -> bool {
+    reg(|r| r.window_hidden)
+}
+
+/// The hide/show the shell has yet to apply: `Some(true)` visible wanted.
+pub(crate) fn take_window_visibility() -> Option<bool> {
+    reg(|r| r.window_hide_req.take().map(|hide| !hide))
+}
+
 pub(crate) fn take_quit() -> bool {
     reg(|r| std::mem::take(&mut r.quit))
 }
@@ -265,7 +301,8 @@ pub fn toast(text: impl Into<String>) -> Toast {
             born: None,
         });
         // Keep a burst of toasts from piling up the screen.
-        if r.toasts.len() > 4 {
+        let max = r.toast_max.unwrap_or(4);
+        while r.toasts.len() > max {
             r.toasts.remove(0);
         }
         Toast(id)
@@ -318,8 +355,31 @@ pub(crate) fn toasts<R>(f: impl FnOnce(&mut Vec<ToastItem>, u64) -> R) -> R {
     reg(|r| f(&mut r.toasts, r.now))
 }
 
+pub(crate) fn publish_toast_layout((inset, max): (f32, usize)) {
+    reg(|r| {
+        r.toast_inset = Some(inset);
+        r.toast_max = Some(max);
+        while r.toasts.len() > max {
+            r.toasts.remove(0);
+        }
+    });
+}
+
+/// Pixels kept free under the toast stack.
+pub(crate) fn toast_inset() -> f32 {
+    reg(|r| r.toast_inset.unwrap_or(24.0))
+}
+
 pub(crate) fn set_now(ms: u64) {
     reg(|r| r.now = ms);
+}
+
+/// Forget the toasts and the clock of an earlier window or `Harness` on this thread.
+pub(crate) fn reset_toasts() {
+    reg(|r| {
+        r.toasts.clear();
+        r.now = 0;
+    });
 }
 
 // -------------------------------------------------------- view extension

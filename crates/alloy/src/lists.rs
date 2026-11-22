@@ -30,6 +30,8 @@ pub struct VGrid<S> {
     gap: Option<f32>,
     selected: Option<Option<usize>>,
     on: Option<Run2<S>>,
+    activate: Option<Run2<S>>,
+    ring: bool,
     id: u64,
 }
 
@@ -58,6 +60,8 @@ pub fn vgrid<S: 'static, N: Into<Node<Act<S>>>>(
         gap: None,
         selected: None,
         on: None,
+        activate: None,
+        ring: true,
         id: auto_id(560),
     }
 }
@@ -93,6 +97,17 @@ impl<S: 'static> VGrid<S> {
         self.on = Some(Arc::new(f));
         self
     }
+    /// Called with the highlighted cell's index when Enter is pressed while the grid has
+    /// focus. `.act` runs on every arrow key, so use this one to open the cell.
+    pub fn on_activate(mut self, f: impl Fn(&mut S, usize) + Send + Sync + 'static) -> Self {
+        self.activate = Some(Arc::new(f));
+        self
+    }
+    /// Show or hide the focus ring around the whole grid (shown by default).
+    pub fn focus_ring(mut self, on: bool) -> Self {
+        self.ring = on;
+        self
+    }
 }
 
 impl<S: 'static> From<VGrid<S>> for Node<Act<S>> {
@@ -112,6 +127,13 @@ impl<S: 'static> From<VGrid<S>> for Node<Act<S>> {
                     }
                 })
             });
+        e = e.focus_ring(v.ring);
+        if let Some(f) = v.activate {
+            e = e.on_activate(move |i| {
+                let f = f.clone();
+                Act::new(move |s: &mut S| f(s, i))
+            });
+        }
         if let Some(m) = v.fit {
             e = e.fit(m);
         }
@@ -135,6 +157,7 @@ type Run1<S> = Arc<dyn Fn(&mut S, usize) + Send + Sync>;
 /// A carousel under construction. See [`carousel`].
 pub struct Carousel<M> {
     slides: Vec<Element<M>>,
+    lazy: Option<(usize, Rc<dyn Fn(usize) -> Element<M>>)>,
     index: Option<usize>,
     auto: Option<Duration>,
     fade: Option<u32>,
@@ -149,7 +172,7 @@ pub struct Carousel<M> {
 /// itself; `.auto(secs(5.0))` advances on a timer (paused while the pointer is over it),
 /// `.index(i)` pins it to your state and `.act(|s, i| ..)` hears about changes. The Left and
 /// Right keys work when it has focus. Every slide is built each frame, so keep them light (an
-/// image and a caption).
+/// image and a caption), or use [`carousel_with`] to build only the slide on show and the next.
 #[track_caller]
 pub fn carousel<M: 'static, N: Into<Node<M>>>(slides: impl IntoIterator<Item = N>) -> Carousel<M> {
     Carousel {
@@ -157,6 +180,7 @@ pub fn carousel<M: 'static, N: Into<Node<M>>>(slides: impl IntoIterator<Item = N
             .into_iter()
             .map(|n| n.into().into_element())
             .collect(),
+        lazy: None,
         index: None,
         auto: None,
         fade: None,
@@ -166,6 +190,23 @@ pub fn carousel<M: 'static, N: Into<Node<M>>>(slides: impl IntoIterator<Item = N
         on: None,
         id: auto_id(561),
     }
+}
+
+/// A carousel of `count` slides, slide `i` built by `slide(i)` only when it is needed: the
+/// first (for the default height), the current one, the next one and one that is fading out.
+/// Everything else is as for [`carousel`].
+#[track_caller]
+pub fn carousel_with<M: 'static, N: Into<Node<M>>>(
+    count: usize,
+    slide: impl Fn(usize) -> N + 'static,
+) -> Carousel<M> {
+    let ui = cx::ui();
+    let mut c = carousel::<M, N>(std::iter::empty());
+    c.lazy = Some((
+        count,
+        Rc::new(move |i| cx::scoped(&ui, i as u64, || slide(i).into().into_element())),
+    ));
+    c
 }
 
 impl<M: 'static> Carousel<M> {
@@ -185,7 +226,7 @@ impl<M: 'static> Carousel<M> {
         self.fade = Some(ms);
         self
     }
-    /// A fixed height in pixels (by default the tallest slide, at least 96).
+    /// A fixed height in pixels (by default the first slide's height, at least 96).
     pub fn height(mut self, px: f32) -> Self {
         self.height = Some(px);
         self
@@ -220,9 +261,12 @@ impl<S: 'static> Carousel<Act<S>> {
 
 impl<M: 'static> From<Carousel<M>> for Node<M> {
     fn from(c: Carousel<M>) -> Self {
-        let mut e = w::Carousel::new(&cx::ui(), c.id, c.slides)
-            .arrows(c.arrows)
-            .dots(c.dots);
+        let ui = cx::ui();
+        let base = match c.lazy {
+            Some((n, build)) => w::Carousel::lazy(&ui, c.id, n, move |i| build(i)),
+            None => w::Carousel::new(&ui, c.id, c.slides),
+        };
+        let mut e = base.arrows(c.arrows).dots(c.dots);
         if let Some(i) = c.index {
             e = e.index(i);
         }

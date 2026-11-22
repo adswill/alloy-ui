@@ -11,6 +11,7 @@ use alloy_ui_core::{
     Widget,
 };
 use alloy_ui_layout::Length;
+use std::cell::Cell;
 use std::rc::Rc;
 
 const K_IDX: u64 = 0xCA50_0001 << 20;
@@ -33,6 +34,11 @@ pub struct Carousel<M> {
     dots: bool,
     on_change: Option<Rc<dyn Fn(usize) -> M>>,
     slides: Vec<Element<M>>,
+    /// Lazy mode: builds slide `i` on demand; `built[i]` says whether `slides[i]` is real.
+    build: Option<Rc<dyn Fn(usize) -> Element<M>>>,
+    built: Vec<bool>,
+    /// Bounds of the last draw, so `animating` knows whether the pointer is over it.
+    shown: Cell<Option<Rectangle>>,
 }
 
 impl<M: 'static> Carousel<M> {
@@ -48,7 +54,50 @@ impl<M: 'static> Carousel<M> {
             arrows: true,
             dots: true,
             on_change: None,
+            built: vec![true; slides.len()],
             slides,
+            build: None,
+            shown: Cell::new(None),
+        }
+    }
+    /// `count` slides built on demand by `slide(i)`: only the first (it sets the default
+    /// height), the current one, the next one and one still fading out exist at a time.
+    /// `id` must be unique per window.
+    pub fn lazy(
+        ui: &Ui,
+        id: u64,
+        count: usize,
+        slide: impl Fn(usize) -> Element<M> + 'static,
+    ) -> Self {
+        let mut c = Self::new(
+            ui,
+            id,
+            (0..count)
+                .map(|_| crate::space::Space::fixed(0.0, 0.0).into_element())
+                .collect(),
+        );
+        c.build = Some(Rc::new(slide));
+        c.built = vec![false; count];
+        c
+    }
+    /// Build the slides that should exist now (lazy mode only).
+    fn materialize(&mut self) {
+        let Some(build) = self.build.clone() else {
+            return;
+        };
+        let (n, cur) = (self.len(), self.current());
+        for i in 0..n {
+            let wanted = i == 0
+                || i == cur
+                || i == (cur + 1) % n
+                || self
+                    .ui
+                    .presence(self.slide_key(i), false, self.fade_ms)
+                    .mounted;
+            if wanted && !self.built[i] {
+                self.slides[i] = build(i);
+                self.built[i] = true;
+            }
         }
     }
     /// Show slide `i` (you own the position; pair with `on_change`).
@@ -66,7 +115,7 @@ impl<M: 'static> Carousel<M> {
         self.fade_ms = ms;
         self
     }
-    /// A fixed height in pixels (by default the tallest slide, at least 96).
+    /// A fixed height in pixels (by default the first slide's height, at least 96).
     pub fn height(mut self, px: f32) -> Self {
         self.height = Some(px);
         self
@@ -87,7 +136,8 @@ impl<M: 'static> Carousel<M> {
         self
     }
     /// Box as an element.
-    pub fn into_element(self) -> Element<M> {
+    pub fn into_element(mut self) -> Element<M> {
+        self.materialize();
         Element::new(self)
     }
 
@@ -109,6 +159,7 @@ impl<M: 'static> Carousel<M> {
             self.ui.set_slot(self.id ^ K_IDX, Some(to as i64));
         }
         self.ui.set_slot(self.id ^ K_LAST, Some(now as i64));
+        self.materialize();
         if let Some(f) = &self.on_change {
             out.push(f(to));
         }
@@ -160,12 +211,12 @@ impl<M: 'static> Widget<M> for Carousel<M> {
         }
     }
     fn measure(&self, _available: Size) -> Size {
-        self.slides
-            .iter()
-            .map(|s| util::node_of(s.0.as_ref()).preferred_size())
-            .fold(Size::new(0.0, 0.0), |a, s| {
-                Size::new(a.width.max(s.width), a.height.max(s.height).max(96.0))
-            })
+        // The first slide sets the size, so the carousel does not jump (or measure a whole
+        // page) as other slides come and go.
+        self.slides.first().map_or(Size::new(0.0, 96.0), |s| {
+            let s = util::node_of(s.0.as_ref()).preferred_size();
+            Size::new(s.width, s.height.max(96.0))
+        })
     }
     fn children(&self) -> &[Element<M>] {
         &self.slides
@@ -187,6 +238,10 @@ impl<M: 'static> Widget<M> for Carousel<M> {
         let inside = b.contains(cursor);
         let now = self.ui.now();
         match event {
+            // Held while the pointer is over it (no ticks come then), restarting on leaving.
+            Event::CursorMoved(p) if self.auto_ms.is_some() && b.contains(*p) => {
+                self.ui.set_slot(self.id ^ K_LAST, Some(now as i64));
+            }
             Event::Tick(ms) => {
                 if let (Some(every), true) = (self.auto_ms, self.controls()) {
                     let last = self.ui.slot(self.id ^ K_LAST);
@@ -245,14 +300,20 @@ impl<M: 'static> Widget<M> for Carousel<M> {
         }
     }
     fn animating(&self) -> bool {
-        // The timer needs ticks; the crossfade is tracked by the Ui itself.
-        (self.auto_ms.is_some() && self.controls()) || util::any_animating(&self.slides)
+        // The timer needs ticks, except while the pointer holds it still; the crossfade is
+        // tracked by the Ui itself.
+        let held = self
+            .shown
+            .get()
+            .is_some_and(|b| b.contains(self.ui.cursor()));
+        (self.auto_ms.is_some() && self.controls() && !held) || util::any_animating(&self.slides)
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         let t = self.ui.theme();
         let p = &t.palette;
         self.ui.register(self.id);
+        self.shown.set(Some(b));
         let cur = self.current();
         out.push(DrawCommand::PushClip(b));
         for (i, (s, l)) in self.slides.iter().zip(&layout.children).enumerate() {

@@ -532,6 +532,8 @@ pub struct Theme {
     pub elevation: Elevation,
     /// Motion tokens.
     pub motion: Motion,
+    /// The density the spacing tokens were scaled for (see [`Theme::density`]).
+    pub density: Density,
 }
 
 impl Theme {
@@ -545,6 +547,7 @@ impl Theme {
             radii: Radii::standard(),
             elevation: Elevation::light(),
             motion: Motion::standard(),
+            density: Density::Comfortable,
         }
     }
 
@@ -558,6 +561,7 @@ impl Theme {
             radii: Radii::standard(),
             elevation: Elevation::dark(),
             motion: Motion::standard(),
+            density: Density::Comfortable,
         }
     }
 

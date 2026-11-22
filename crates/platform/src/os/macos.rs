@@ -349,31 +349,55 @@ fn build(
                 enabled,
             } => {
                 ids.push(id.clone());
-                let key = shortcut.as_deref().map(key_equivalent).unwrap_or_default();
-                // SAFETY: `menuAction:` is defined on Target above and takes one object argument.
+                let chord = shortcut.as_deref().and_then(crate::menu::chord);
+                let key = chord.as_ref().map(|c| c.key.clone()).unwrap_or_default();
+                // Hide, Hide Others, Show All and About are answered by NSApplication itself.
+                let native = match id.as_str() {
+                    "std:hide" => Some(sel!(hide:)),
+                    "std:hide_others" => Some(sel!(hideOtherApplications:)),
+                    "std:show_all" => Some(sel!(unhideAllApplications:)),
+                    "std:about" => Some(sel!(orderFrontStandardAboutPanel:)),
+                    _ => None,
+                };
+                // SAFETY: `menuAction:` is defined on Target above and takes one object argument;
+                // the native selectors are NSApplication actions that take one object argument.
                 let mi = unsafe {
                     NSMenuItem::initWithTitle_action_keyEquivalent(
                         NSMenuItem::alloc(mtm),
                         &NSString::from_str(label),
-                        Some(sel!(menuAction:)),
+                        Some(native.unwrap_or(sel!(menuAction:))),
                         &NSString::from_str(&key),
                     )
                 };
+                if let Some(c) = &chord {
+                    use objc2_app_kit::NSEventModifierFlags as F;
+                    let mut mask = F::empty();
+                    for (on, f) in [
+                        (c.cmd, F::Command),
+                        (c.ctrl, F::Control),
+                        (c.alt, F::Option),
+                        (c.shift, F::Shift),
+                    ] {
+                        if on {
+                            mask |= f;
+                        }
+                    }
+                    mi.setKeyEquivalentModifierMask(mask);
+                }
                 mi.setTag(base + ids.len() as isize);
                 mi.setEnabled(*enabled);
-                // SAFETY: `tgt` responds to `menuAction:` and is kept alive by `KEEP`.
-                unsafe { mi.setTarget(Some(tgt)) };
+                if native.is_none() {
+                    // SAFETY: `tgt` responds to `menuAction:` and is kept alive by `KEEP`.
+                    unsafe { mi.setTarget(Some(tgt)) };
+                } else {
+                    // SAFETY: a nil target sends the action up the responder chain to NSApplication.
+                    unsafe { mi.setTarget(None) };
+                }
                 menu.addItem(&mi);
             }
         }
     }
     menu
-}
-
-/// The key character of a shortcut like `Mod+Shift+S` (modifiers use AppKit
-/// defaults: Cmd). Only the final key is honoured; Cmd is implied.
-pub(crate) fn key_equivalent(shortcut: &str) -> String {
-    shortcut.rsplit('+').next().unwrap_or("").to_lowercase()
 }
 
 pub fn set_menu(_w: &winit::window::Window, menus: &[Menu]) -> Result<(), PlatformError> {

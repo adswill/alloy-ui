@@ -87,6 +87,60 @@ pub fn format_shortcut(s: &str) -> String {
     )
 }
 
+/// A shortcut split into what a native menu item needs: the key it shows and its modifiers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chord {
+    /// The key as AppKit-style key-equivalent text: one lowercase character, or a control
+    /// character for Enter, Tab, Escape, Backspace and Space.
+    pub key: String,
+    /// Command (macOS) / Super.
+    pub cmd: bool,
+    /// Control.
+    pub ctrl: bool,
+    /// Option / Alt.
+    pub alt: bool,
+    /// Shift.
+    pub shift: bool,
+}
+
+/// Split `"mod+ctrl+f"` into a [`Chord`]. Every modifier is kept (the macOS menu used to keep
+/// only the last key and imply Cmd). `None` for an empty or unparsable shortcut.
+pub fn chord(shortcut: &str) -> Option<Chord> {
+    let sc = crate::shortcut::Shortcut::parse(shortcut)?;
+    let key = match sc.key.to_ascii_lowercase().as_str() {
+        "enter" | "return" => "\r".to_string(),
+        "tab" => "\t".to_string(),
+        "escape" | "esc" => "\u{1b}".to_string(),
+        "backspace" => "\u{8}".to_string(),
+        "space" => " ".to_string(),
+        k if k.chars().count() == 1 => k.to_string(),
+        _ => String::new(),
+    };
+    Some(Chord {
+        key,
+        cmd: sc.mods.logo,
+        ctrl: sc.mods.ctrl,
+        alt: sc.mods.alt,
+        shift: sc.mods.shift,
+    })
+}
+
+/// Menu ids that start with this prefix are standard items: the platform may run them natively
+/// (Hide, Hide Others, Show All, About on macOS), and the rest are replayed as the key press
+/// [`standard_shortcut`] names, so the focused widget handles Cut/Copy/Paste/Select All itself.
+pub const STANDARD_PREFIX: &str = "std:";
+
+/// The key press a standard item stands for, if it is one that is replayed to the focused widget.
+pub fn standard_shortcut(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "std:cut" => "mod+x",
+        "std:copy" => "mod+c",
+        "std:paste" => "mod+v",
+        "std:select_all" => "mod+a",
+        _ => return None,
+    })
+}
+
 /// Installs menus into the OS.
 pub trait MenuBackend {
     /// Install `menus` as the application menu bar.
@@ -115,6 +169,19 @@ mod tests {
         assert_eq!(m.find("new"), Some("New"));
         assert_eq!(m.find("r1"), Some("a.txt"));
         assert_eq!(m.find("zz"), None);
+    }
+
+    #[test]
+    fn chords_keep_every_modifier() {
+        let c = chord("mod+ctrl+f").unwrap();
+        assert_eq!(c.key, "f");
+        assert!(c.ctrl && !c.alt && !c.shift);
+        assert_eq!(c.cmd, cfg!(target_os = "macos"));
+        let c = chord("alt+shift+Enter").unwrap();
+        assert_eq!(c.key, "\r");
+        assert!(c.alt && c.shift);
+        assert_eq!(chord(""), None);
+        assert_eq!(standard_shortcut("std:copy"), Some("mod+c"));
     }
 
     #[test]
