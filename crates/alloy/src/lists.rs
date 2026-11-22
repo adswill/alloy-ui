@@ -153,11 +153,12 @@ impl<S: 'static> From<VGrid<S>> for Node<Act<S>> {
 // ---------------------------------------------------------------- carousel
 
 type Run1<S> = Arc<dyn Fn(&mut S, usize) + Send + Sync>;
+type LazySlides<M> = Option<(usize, Rc<dyn Fn(usize) -> Element<M>>)>;
 
 /// A carousel under construction. See [`carousel`].
 pub struct Carousel<M> {
     slides: Vec<Element<M>>,
-    lazy: Option<(usize, Rc<dyn Fn(usize) -> Element<M>>)>,
+    lazy: LazySlides<M>,
     index: Option<usize>,
     auto: Option<Duration>,
     fade: Option<u32>,

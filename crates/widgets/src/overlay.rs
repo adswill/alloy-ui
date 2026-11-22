@@ -187,7 +187,7 @@ impl<M: 'static> Layer<M> {
                 true
             }
             Event::Scrolled { .. } => {
-                let at = self.ui.take_hit(self.id).map_or(cursor, |p| p);
+                let at = self.ui.take_hit(self.id).unwrap_or(cursor);
                 self.forward(event, at, out);
                 true
             }

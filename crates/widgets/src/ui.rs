@@ -492,9 +492,9 @@ impl Ui {
         let s = self.0.borrow();
         s.focused.is_some_and(|f| s.text_ids.contains(&f))
     }
-    /// Move focus to the nearest focusable widget in the direction `(dx, dy)` (each -1, 0 or
-    /// 1) among those drawn inside `within`, starting from the focused one. Returns whether
-    /// focus moved; at the edge it stays put.
+    /// Move focus to the nearest focusable widget in the direction `(dx, dy)`, each of them -1,
+    /// 0 or 1, among those drawn inside `within`, starting from the focused one. Returns
+    /// whether focus moved; at the edge it stays put.
     pub fn focus_toward(&self, dx: i32, dy: i32, within: Rectangle) -> bool {
         let mut s = self.0.borrow_mut();
         let Some(cur) = s.focused.and_then(|f| s.rects.get(&f).map(|r| (f, *r))) else {
@@ -530,7 +530,7 @@ impl Ui {
             }
             // Prefer the neighbour in line with the current one over a nearer one off to the side.
             let score = along + 2.0 * across;
-            if best.is_none_or(|(b, _)| score < b) {
+            if best.map_or(true, |(b, _)| score < b) {
                 best = Some((score, id));
             }
         }

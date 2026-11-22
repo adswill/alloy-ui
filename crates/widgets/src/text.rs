@@ -24,15 +24,7 @@ pub enum TextRole {
     Caption,
 }
 
-/// Greedy word wrap of `content` into lines no wider than `max_width`.
-/// Explicit newlines always break. A single word wider than the limit gets its own line.
-pub(crate) fn wrap_lines(ui: &Ui, content: &str, size: f32, max_width: f32) -> Vec<String> {
-    let mut lines = Vec::new();
-    for_each_wrapped(ui, content, size, max_width, |l| lines.push(l.to_owned()));
-    lines
-}
-
-/// The same lines as [`wrap_lines`], handed out as slices of `content`: no
+/// Greedy word wrap into lines no wider than `max_width`, handed out as slices of `content`: no
 /// allocation (a line is a byte range, never a rebuilt `String`).
 pub(crate) fn for_each_wrapped(
     ui: &Ui,

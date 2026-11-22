@@ -515,7 +515,7 @@ impl<A: App> Harness<A> {
     /// Their results still arrive if they finish. The choice stays for later `settle` calls;
     /// pass `&[]` to wait for everything again.
     pub fn settle_ignoring<K: std::hash::Hash>(&mut self, keys: &[K]) -> &mut Self {
-        self.ignore = keys.iter().map(|k| crate::app::key_hash(k)).collect();
+        self.ignore = keys.iter().map(crate::app::key_hash).collect();
         self.settle()
     }
     /// Type text into the focused widget.

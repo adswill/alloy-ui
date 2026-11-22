@@ -36,7 +36,7 @@ fn page(s: &Page) -> Node<Act<Page>> {
         ]
         .gap(8.0)
     });
-    scroll(col(rows).gap(4.0).pad(12.0)).into()
+    scroll(col(rows).gap(4.0).pad(12.0))
 }
 
 /// Allocations of one idle frame (a `Tick`: view, layout, draw), averaged over 10.

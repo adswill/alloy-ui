@@ -351,10 +351,10 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
             Event::CursorMoved(_) | Event::CursorLeft | Event::Tick(_) => {
                 self.broadcast(&b, event, cursor, out)
             }
-            Event::KeyPressed(..) | Event::MousePressed(_) if self.ui.popup().is_some() => {
-                if self.offer(&b, event, cursor, out) {
-                    return true;
-                }
+            Event::KeyPressed(..) | Event::MousePressed(_)
+                if self.ui.popup().is_some() && self.offer(&b, event, cursor, out) =>
+            {
+                return true;
             }
             _ => {}
         }
