@@ -18,6 +18,7 @@ pub struct Container<M> {
     border: Option<Border>,
     radius: f32,
     shadow: Option<Shadow>,
+    hover: Option<(crate::Ui, Color)>,
 }
 
 impl<M: 'static> Container<M> {
@@ -34,6 +35,7 @@ impl<M: 'static> Container<M> {
             border: None,
             radius: 0.0,
             shadow: None,
+            hover: None,
         }
     }
     /// Padding between the box edge and the child.
@@ -51,6 +53,12 @@ impl<M: 'static> Container<M> {
     /// tonal shift reads as depth, a loud one reads as decoration.
     pub fn gradient(mut self, from: Color, to: Color, angle_deg: f32) -> Self {
         self.gradient = Some((from, to, angle_deg));
+        self
+    }
+    /// Fill colour while the pointer is over the box, eased in and out. Without a
+    /// [`background`](Self::background) the colour fades in over whatever is behind.
+    pub fn hover_background(mut self, ui: &crate::Ui, c: Color) -> Self {
+        self.hover = Some((ui.clone(), c));
         self
     }
     /// Border.
@@ -125,10 +133,29 @@ impl<M: 'static> Widget<M> for Container<M> {
                 border: self.border,
                 shadow: self.shadow,
             });
-        } else if self.background.is_some() || self.border.is_some() || self.shadow.is_some() {
+        } else if self.background.is_some()
+            || self.border.is_some()
+            || self.shadow.is_some()
+            || self.hover.is_some()
+        {
+            let base = self.background.unwrap_or(Color::TRANSPARENT);
+            let fill = match &self.hover {
+                Some((ui, hot)) => {
+                    let h = ui.ease(
+                        crate::Ui::anim_key(&layout.bounds, 2),
+                        ui.hovered(&layout.bounds) as u8 as f32,
+                    );
+                    if base.a > 0.0 {
+                        util::mix(base, *hot, h)
+                    } else {
+                        hot.with_alpha(hot.a * h)
+                    }
+                }
+                None => base,
+            };
             out.push(DrawCommand::Quad {
                 bounds: layout.bounds,
-                fill: self.background.unwrap_or(Color::TRANSPARENT),
+                fill,
                 radius: self.radius,
                 border: self.border,
                 shadow: self.shadow,

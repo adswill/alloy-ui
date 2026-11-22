@@ -35,6 +35,9 @@ pub struct Input<M> {
     wide: bool,
     px: Option<f32>,
     secure: bool,
+    selection: Option<std::ops::Range<usize>>,
+    select_all: bool,
+    escape: Option<Box<dyn Fn() -> M>>,
 }
 
 /// A single-line text field showing `value`.
@@ -50,9 +53,32 @@ pub fn input<M>(value: impl Val<String, M>) -> Input<M> {
         wide: false,
         px: None,
         secure: false,
+        selection: None,
+        select_all: false,
+        escape: None,
     }
 }
 impl<M> Input<M> {
+    /// Select the chars `range` (clamped; empty places the caret). Re-applied only when the
+    /// range you pass changes, so the user can still move the selection afterwards.
+    pub fn selection(mut self, range: std::ops::Range<usize>) -> Self {
+        self.selection = Some(range);
+        self
+    }
+    /// Select all text whenever the field gains focus (click or Tab).
+    pub fn select_all_on_focus(mut self) -> Self {
+        self.select_all = true;
+        self
+    }
+    /// Message sent when Escape is pressed in the field. Escape is consumed only when this is
+    /// set (the field then keeps focus); otherwise it blurs the field.
+    pub fn on_escape(mut self, m: M) -> Self
+    where
+        M: Clone + 'static,
+    {
+        self.escape = Some(Box::new(move || m.clone()));
+        self
+    }
     /// Placeholder shown while empty.
     pub fn hint(mut self, h: impl Into<String>) -> Self {
         self.hint = h.into();
@@ -88,6 +114,10 @@ impl<M> Input<M> {
     }
 }
 impl<S: 'static> Input<Act<S>> {
+    /// Closure style: run `f` on the state when Escape is pressed (for example clear or blur).
+    pub fn escape(self, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        self.on_escape(Act::new(f))
+    }
     /// Closure style: run `f` on the state when Enter is pressed.
     pub fn submit(self, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         self.enter(Act::new(f))
@@ -108,7 +138,13 @@ impl<M: 'static> From<Input<M>> for Node<M> {
         if let Some(f) = i.enter {
             t = t.on_submit(f);
         }
-        t = t.secure(i.secure);
+        t = t.secure(i.secure).select_all_on_focus(i.select_all);
+        if let Some(r) = i.selection {
+            t = t.selection(r);
+        }
+        if let Some(f) = i.escape {
+            t = t.on_escape(f);
+        }
         if i.wide {
             t = t.width(Length::Fill(1));
         }
@@ -349,6 +385,12 @@ impl<M: 'static> From<Slide<M>> for Node<M> {
         }
         if s.wide {
             t = t.width(Length::Fill(1));
+        }
+        if let Some(l) = &s.label {
+            t = t.label(l.clone());
+        }
+        if let Some(u) = &s.unit {
+            t = t.value_text(format!("{} {u}", s.value));
         }
         let bar = Node(t.into_element());
         if s.label.is_none() && s.unit.is_none() {

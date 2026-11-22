@@ -182,7 +182,7 @@ impl<M: 'static> Widget<M> for NumberInput<M> {
         });
         let s = t.typography.body;
         let enabled = self.on_change.is_some();
-        self.ui.register(self.id);
+        self.ui.register_text(self.id);
         if self.ui.is_focused(Some(self.id)) {
             out.push(focus_ring(b, t.radii.medium, p.focus_ring));
         }

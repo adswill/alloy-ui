@@ -21,15 +21,120 @@ pub(crate) fn node_of<M>(w: &dyn Widget<M>) -> Node {
     }
 }
 
-/// Lay a widget (and its descendants) out inside exactly `bounds`.
-///
-/// Container widgets implement `Widget::arrange` with this.
-pub fn arrange_widget<M>(w: &dyn Widget<M>, bounds: Rectangle) -> Layout {
+fn arrange_uncached<M>(w: &dyn Widget<M>, bounds: Rectangle) -> Layout {
     let mut node = node_of(w);
     node.style.width = Length::Fixed(bounds.size.width);
     node.style.height = Length::Fixed(bounds.size.height);
     node.style.limits = alloy_ui_core::style::Limits::NONE;
     compute(&node, bounds.origin, bounds.size)
+}
+
+/// Hash everything `node_of` + `compute` read from a widget tree: each node's
+/// style, the child count, and each leaf's measured size. Allocation-free.
+fn fingerprint<M>(
+    w: &dyn Widget<M>,
+    h: &mut std::collections::hash_map::DefaultHasher,
+    nodes: &mut usize,
+) {
+    *nodes += 1;
+    use alloy_ui_core::style::Align;
+    use std::hash::Hasher;
+    let s = w.style();
+    let len = |h: &mut std::collections::hash_map::DefaultHasher, l: Length| match l {
+        Length::Fill(n) => {
+            h.write_u8(0);
+            h.write_u16(n)
+        }
+        Length::Shrink => h.write_u8(1),
+        Length::Fixed(v) => {
+            h.write_u8(2);
+            h.write_u32(v.to_bits())
+        }
+    };
+    let align = |a: Align| match a {
+        Align::Start => 0u8,
+        Align::Center => 1,
+        Align::End => 2,
+    };
+    h.write_u8(s.axis as u8);
+    h.write_u8(align(s.align));
+    h.write_u8(s.align_self.map_or(3, align));
+    h.write_u32(s.spacing.to_bits());
+    for v in [
+        s.padding.top,
+        s.padding.right,
+        s.padding.bottom,
+        s.padding.left,
+        s.limits.min.width,
+        s.limits.min.height,
+        s.limits.max.width,
+        s.limits.max.height,
+    ] {
+        h.write_u32(v.to_bits());
+    }
+    len(h, s.width);
+    len(h, s.height);
+    let kids = w.children();
+    h.write_usize(kids.len());
+    if kids.is_empty() {
+        let m = w.measure(Size::new(f32::INFINITY, f32::INFINITY));
+        h.write_u32(m.width.to_bits());
+        h.write_u32(m.height.to_bits());
+    }
+    for k in kids {
+        fingerprint(k.0.as_ref(), h, nodes);
+    }
+}
+
+/// Trees smaller than this are cheaper to lay out than to fingerprint and store.
+const CACHE_MIN_NODES: usize = 24;
+
+thread_local! {
+    /// Recent layouts, keyed by (tree fingerprint, bounds): most frames re-lay
+    /// out a tree that did not change.
+    static LAYOUTS: std::cell::RefCell<Vec<(u64, Layout)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Lay a widget (and its descendants) out inside exactly `bounds`.
+///
+/// Container widgets implement `Widget::arrange` with this. Big trees are
+/// memoised by (tree fingerprint, bounds): an unchanged tree at unchanged bounds
+/// returns the stored layout instead of rebuilding and re-solving the node
+/// tree. The result is identical either way.
+pub fn arrange_widget<M>(w: &dyn Widget<M>, bounds: Rectangle) -> Layout {
+    use std::hash::Hasher;
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for v in [
+        bounds.origin.x,
+        bounds.origin.y,
+        bounds.size.width,
+        bounds.size.height,
+    ] {
+        h.write_u32(v.to_bits());
+    }
+    let mut nodes = 0;
+    fingerprint(w, &mut h, &mut nodes);
+    if nodes < CACHE_MIN_NODES {
+        return arrange_uncached(w, bounds);
+    }
+    let key = h.finish();
+    if let Some(l) = LAYOUTS.with(|c| {
+        c.borrow()
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, l)| l.clone())
+    }) {
+        return l;
+    }
+    let l = arrange_uncached(w, bounds);
+    LAYOUTS.with(|c| {
+        let mut c = c.borrow_mut();
+        if c.len() >= 8 {
+            c.remove(0);
+        }
+        c.push((key, l.clone()));
+    });
+    l
 }
 
 /// Preferred size of a container from its style and children.

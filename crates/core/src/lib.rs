@@ -15,7 +15,7 @@ pub mod style;
 pub mod widget;
 
 pub use draw::{Border, DrawCommand, DrawList, FillRule, FontFamily, PathPaint, Shadow};
-pub use event::{Event, Key, Modifiers, MouseButton};
+pub use event::{canonical_key_name, Event, Key, Modifiers, MouseButton};
 pub use geometry::{Color, Point, Rectangle, Size, Vector};
 pub use host::{HostConfig, HostEvent, WindowEffect};
 pub use runtime::{

@@ -10,6 +10,7 @@ use alloy_ui_core::{
     Widget,
 };
 use alloy_ui_layout::Length;
+use std::cell::Cell;
 use std::rc::Rc;
 
 const BAR: f32 = 8.0;
@@ -98,6 +99,12 @@ pub struct VirtualList<M> {
     selected: Option<usize>,
     build: Build<M>,
     on_select: Option<Rc<dyn Fn(usize) -> M>>,
+    /// Bounds of the last draw, so `animating` can look at the rows that were on show.
+    shown: Cell<Option<Rectangle>>,
+}
+
+fn tree_animating<M>(e: &Element<M>) -> bool {
+    e.0.animating() || e.0.children().iter().any(tree_animating)
 }
 
 impl<M: 'static> VirtualList<M> {
@@ -118,6 +125,7 @@ impl<M: 'static> VirtualList<M> {
             selected: None,
             build: Rc::new(row),
             on_select: None,
+            shown: Cell::new(None),
         }
     }
     /// Row height in pixels (every row is the same height).
@@ -248,6 +256,23 @@ impl<M: 'static> VirtualList<M> {
         let l = e.0.arrange(area);
         (e, l)
     }
+    /// Offer `event` to the visible rows, stopping at the first that consumes it.
+    fn offer(&self, b: &Rectangle, event: &Event, cursor: Point, out: &mut Vec<M>) -> bool {
+        for i in self.range(b) {
+            let (mut row, l) = self.laid(b, i);
+            if row.0.on_event(event, &l, cursor, out) {
+                return true;
+            }
+        }
+        false
+    }
+    /// Show `event` to every visible row (hover watchers, timers); what they answer is ignored.
+    fn broadcast(&self, b: &Rectangle, event: &Event, cursor: Point, out: &mut Vec<M>) {
+        for i in self.range(b) {
+            let (mut row, l) = self.laid(b, i);
+            row.0.on_event(event, &l, cursor, out);
+        }
+    }
     fn thumb(&self, b: &Rectangle) -> Option<Rectangle> {
         let max = self.max_off(b);
         if max <= 0.0 || b.size.height <= 0.0 {
@@ -307,6 +332,32 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
     ) -> bool {
         let b = layout.bounds;
         let inside = b.contains(cursor);
+        // An overlay press (open popover or context menu in a row) arrives with the pointer
+        // parked off-screen: offer it to every visible row so the owner finds it.
+        if self.ui.hit_pending() && matches!(event, Event::MousePressed(_) | Event::Scrolled { .. })
+        {
+            for i in self.range(&b) {
+                let (mut row, l) = self.laid(&b, i);
+                if row.0.on_event(event, &l, cursor, out) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        // Rows see pointer movement and ticks always (hover, `tick_while_shown`), and while a
+        // popup (a row's context menu) is open they also see every key and press, so Escape,
+        // arrows, Enter and a click elsewhere reach the menu instead of moving the selection.
+        match event {
+            Event::CursorMoved(_) | Event::CursorLeft | Event::Tick(_) => {
+                self.broadcast(&b, event, cursor, out)
+            }
+            Event::KeyPressed(..) | Event::MousePressed(_)
+                if self.ui.popup().is_some() && self.offer(&b, event, cursor, out) =>
+            {
+                return true;
+            }
+            _ => {}
+        }
         match event {
             Event::Scrolled { dy, .. } if inside => {
                 let before = self.target(&b);
@@ -338,6 +389,13 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
                     }
                 }
                 return true;
+            }
+            // Right and middle presses belong to the row's own controls (a context menu).
+            Event::MousePressed(_) if inside => {
+                if let Some(i) = self.row_at((cursor.y - b.origin.y) as f64 + self.offset(&b)) {
+                    let (mut row, l) = self.laid(&b, i);
+                    return row.0.on_event(event, &l, cursor, out);
+                }
             }
             Event::CursorMoved(_) => {
                 if let Some(g) = self.ui.slot(self.id ^ K_DRAG) {
@@ -386,11 +444,19 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
         }
         false
     }
+    fn animating(&self) -> bool {
+        // A row can fade or slide in (`reveal_appear`): keep frames coming while one does.
+        let Some(b) = self.shown.get() else {
+            return false;
+        };
+        self.range(&b).any(|i| tree_animating(&self.laid(&b, i).0))
+    }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         let t = self.ui.theme();
         let p = &t.palette;
         self.ui.register(self.id);
+        self.shown.set(Some(b));
         if self.ui.is_focused(Some(self.id)) {
             out.push(focus_ring(b, t.radii.small, p.focus_ring));
         }

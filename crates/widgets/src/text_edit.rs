@@ -26,6 +26,10 @@ pub struct Edit {
     pub click_ms: u64,
     /// Position of the last mouse press.
     pub click_at: (f32, f32),
+    /// Last selection the app asked for with `.selection(..)`; a new request overrides the user's.
+    pub(crate) sel_req: Option<(usize, usize)>,
+    /// Whether the field had focus on the previous frame (for `select_all_on_focus`).
+    pub(crate) focus_seen: bool,
 }
 
 impl Edit {

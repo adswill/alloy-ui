@@ -68,7 +68,9 @@ use std::path::PathBuf;
 
 pub use clipboard::{ClipContent, ClipImage};
 pub use os::{app_data_dir, default_clipboard, default_dialogs, default_system_theme};
-pub use shell::{request_window_effect, run, PlatformEvent, ShellContext, ShellHandler};
+pub use shell::{
+    request_min_window_size, request_window_effect, run, PlatformEvent, ShellContext, ShellHandler,
+};
 
 /// Error type for platform operations.
 #[derive(Debug)]

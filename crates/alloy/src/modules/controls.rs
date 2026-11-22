@@ -1,4 +1,5 @@
-//! Small controls built from existing widgets: [`pagination`], [`rating`] and [`accordion`].
+//! Small controls built from existing widgets: [`pagination`], [`rating`], [`accordion`] and
+//! [`combobox`].
 //!
 //! ```ignore
 //! pagination(s.page, 12).act(|s, p| s.page = p)      // 1-based pages
@@ -7,7 +8,7 @@
 
 use super::*;
 use crate::{
-    dsl::{button, text},
+    dsl::{button, input, text},
     local,
     view::{col, row},
 };
@@ -166,6 +167,159 @@ fn fold<S: 'static>(open: crate::Local<bool>, title: String, body: Node<Act<S>>)
     }
 }
 
+/// A collapsible section for crowded pages: a header with a chevron over a body that opens and
+/// closes with a size animation. Its open state is saved under `id` (like [`store_as`]), so it
+/// survives rebuilds, page changes and, with persistence on, restarts, and two places using the
+/// same `id` share it: `fold_section("advanced", "Advanced", body)`. Starts closed; see
+/// [`fold_section_open`]. [`accordion`] keeps its call-site state and is unchanged.
+#[track_caller]
+pub fn fold_section<S: 'static>(
+    id: impl std::fmt::Display,
+    title: impl Into<String>,
+    body: impl Into<Node<Act<S>>>,
+) -> Node<Act<S>> {
+    fold_section_with(id, false, title.into(), body.into())
+}
+
+/// Like [`fold_section`] but open the first time it is shown (when nothing is saved under `id`).
+#[track_caller]
+pub fn fold_section_open<S: 'static>(
+    id: impl std::fmt::Display,
+    title: impl Into<String>,
+    body: impl Into<Node<Act<S>>>,
+) -> Node<Act<S>> {
+    fold_section_with(id, true, title.into(), body.into())
+}
+
+fn fold_section_with<S: 'static>(
+    id: impl std::fmt::Display,
+    start_open: bool,
+    title: String,
+    body: Node<Act<S>>,
+) -> Node<Act<S>> {
+    use crate::input::Interact;
+    let open = crate::store_as(&format!("section.{id}"), move || start_open);
+    let shown = open.get();
+    let chevron = crate::icon(if shown {
+        crate::Icon::ChevronDown
+    } else {
+        crate::Icon::ChevronRight
+    })
+    .dim();
+    let head = row([Node::from(chevron), Node::from(text(title))])
+        .gap(6.0)
+        .tap(move |_: &mut S| open.toggle());
+    let body: Node<Act<S>> = if shown {
+        body
+    } else {
+        Node::from(row(Vec::<Node<Act<S>>>::new()))
+    };
+    col([head, crate::grow(body)]).gap(6.0).into()
+}
+
+// -------------------------------------------------------------------- combobox
+
+/// A text field that suggests matching options as you type. See [`combobox`].
+pub struct Combo<S> {
+    options: Vec<String>,
+    current: String,
+    hint: String,
+    max: usize,
+    on: Option<Arc<dyn Fn(String) -> Act<S> + Send + Sync>>,
+}
+
+/// Type to filter `options` (case-insensitive, anywhere in the text) and click one to choose
+/// it. `current` is the chosen value, shown while you are not typing:
+/// `combobox(["Apple", "Banana"], &s.fruit).act(|s, v| s.fruit = v)`.
+pub fn combobox<S: 'static>(
+    options: impl IntoIterator<Item = impl Into<String>>,
+    current: impl Into<String>,
+) -> Combo<S> {
+    Combo {
+        options: options.into_iter().map(Into::into).collect(),
+        current: current.into(),
+        hint: String::new(),
+        max: 6,
+        on: None,
+    }
+}
+
+impl<S: 'static> Combo<S> {
+    /// Grey text shown in the empty field.
+    pub fn hint(mut self, h: impl Into<String>) -> Self {
+        self.hint = h.into();
+        self
+    }
+    /// Most suggestions shown at once (default 6).
+    pub fn max_shown(mut self, n: usize) -> Self {
+        self.max = n;
+        self
+    }
+    /// Called with the chosen option.
+    pub fn on(mut self, f: impl Fn(String) -> Act<S> + Send + Sync + 'static) -> Self {
+        self.on = Some(Arc::new(f));
+        self
+    }
+    /// Closure style: `.act(|state, chosen| ..)`.
+    pub fn act(self, f: impl Fn(&mut S, String) + Send + Sync + 'static) -> Self {
+        let f = Arc::new(f);
+        self.on(move |v| {
+            let f = f.clone();
+            Act::new(move |s: &mut S| f(s, v.clone()))
+        })
+    }
+}
+
+/// The options that contain `query` (ignoring case), in their original order, at most `max`.
+pub fn suggestions<'a>(options: &'a [String], query: &str, max: usize) -> Vec<&'a str> {
+    let q = query.trim().to_lowercase();
+    options
+        .iter()
+        .filter(|o| !q.is_empty() && o.to_lowercase().contains(&q))
+        .map(String::as_str)
+        .take(max)
+        .collect()
+}
+
+impl<S: 'static> From<Combo<S>> for Node<Act<S>> {
+    #[track_caller]
+    fn from(c: Combo<S>) -> Self {
+        let (query, touched) = (local(String::new()), local(false));
+        let shown = if touched.get() {
+            query.get()
+        } else {
+            c.current.clone()
+        };
+        let field = input(shown).hint(c.hint.clone()).on(move |t: String| {
+            Act::new(move |_: &mut S| {
+                query.set(t.clone());
+                touched.set(true);
+            })
+        });
+        let mut items: Vec<Node<Act<S>>> = vec![field.into()];
+        if touched.get() {
+            for opt in suggestions(&c.options, &query.get(), c.max) {
+                let pick = c.on.clone();
+                let value = opt.to_string();
+                items.push(
+                    button(opt)
+                        .ghost()
+                        .fill_w()
+                        .act(move |s: &mut S| {
+                            query.set(String::new());
+                            touched.set(false);
+                            if let Some(f) = &pick {
+                                (f(value.clone()).0)(s);
+                            }
+                        })
+                        .into(),
+                );
+            }
+        }
+        col(items).gap(2.0).into()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,5 +428,36 @@ mod tests {
         );
         ui.mouse_down().advance(16).advance(400);
         assert!(sum(fill(&ui).unwrap()) < sum(rest), "pressed is darker");
+    }
+
+    #[test]
+    fn suggestions_match_anywhere_ignore_case_and_cap() {
+        let o: Vec<String> = ["Apple", "Banana", "Blueberry", "Pineapple"]
+            .map(String::from)
+            .into();
+        assert_eq!(suggestions(&o, "an", 6), ["Banana"]);
+        assert_eq!(suggestions(&o, "APPLE", 6), ["Apple", "Pineapple"]);
+        assert_eq!(suggestions(&o, "b", 1), ["Banana"]);
+        assert!(suggestions(&o, "", 6).is_empty() && suggestions(&o, "zzz", 6).is_empty());
+    }
+
+    #[test]
+    fn combobox_filters_while_typing_and_picks_on_click() {
+        let app = sketch("Apple".to_string(), |s: &String| {
+            col![
+                text(format!("picked={s}")),
+                combobox(["Apple", "Banana", "Blueberry"], s.clone())
+                    .hint("Fruit")
+                    .act(|s: &mut String, v| *s = v)
+            ]
+        });
+        let mut ui = Harness::new(app, 300.0, 220.0);
+        ui.expect("picked=Apple").expect_no("Banana");
+        ui.fill("Apple", "bl")
+            .expect("Blueberry")
+            .expect_no("Banana");
+        ui.click("Blueberry")
+            .expect("picked=Blueberry")
+            .expect_no("Banana");
     }
 }

@@ -1,7 +1,7 @@
 //! Avatars, avatar groups and presence.
 
 use super::*;
-use alloy_ui_core::{Color, Point};
+use alloy_ui_core::{Color, Point, Rectangle, Size};
 use alloy_ui_layout::Length;
 use alloy_ui_widgets::Frame;
 
@@ -16,6 +16,8 @@ pub enum Presence {
     Busy,
     /// Not here.
     Offline,
+    /// Playing a game right now (Steam-style green).
+    InGame,
 }
 
 impl Presence {
@@ -25,6 +27,7 @@ impl Presence {
             Presence::Away => p.warning,
             Presence::Busy => p.danger,
             Presence::Offline => p.text_disabled,
+            Presence::InGame => Color::hex(0x90BA3C),
         }
     }
 }
@@ -56,6 +59,32 @@ fn face(f: &mut Frame, c: Point, r: f32, name: &str, ring: Option<Color>) {
     f.text_weight(pt(c.x - w / 2.0, c.y - size * 0.62), s, size, 600, ink);
 }
 
+fn square_face(f: &mut Frame, s: f32, name: &str, presence: Option<Presence>) {
+    let p = f.palette();
+    let hue = Color::hex(HUES[hash(name) as usize % HUES.len()]);
+    let r = (s * 0.1).max(2.0);
+    let all = Rectangle::new(pt(0.0, 0.0), Size::new(s, s));
+    f.round_rect(all, r, mix(p.surface, hue, 0.2));
+    let text = initials(name);
+    let size = (s * 0.37).max(9.0);
+    let w = f.text_width(&text, size) * 1.06;
+    f.text_weight(
+        pt((s - w) / 2.0, s / 2.0 - size * 0.62),
+        text,
+        size,
+        600,
+        mix(p.text, hue, 0.55),
+    );
+    match presence {
+        Some(pr) => {
+            // Stroke is centred on the rect, so inset by half the width to stay inside.
+            let inner = Rectangle::new(pt(1.0, 1.0), Size::new(s - 2.0, s - 2.0));
+            f.stroke_rect(inner, (r - 1.0).max(1.0), 2.0, pr.color(&p));
+        }
+        None => f.stroke_rect(all, r, 1.0, mix(p.surface, hue, 0.35)),
+    }
+}
+
 fn dot(f: &mut Frame, c: Point, r: f32, pr: Presence) {
     let p = f.palette();
     f.circle(c, r + 2.0, p.surface);
@@ -67,6 +96,7 @@ pub struct Avatar {
     name: String,
     size: f32,
     presence: Option<Presence>,
+    square: bool,
 }
 
 /// A round avatar with the person's initials on a tint picked from their name:
@@ -76,6 +106,7 @@ pub fn avatar(name: impl Into<String>) -> Avatar {
         name: name.into(),
         size: 32.0,
         presence: None,
+        square: false,
     }
 }
 
@@ -83,6 +114,13 @@ impl Avatar {
     /// Diameter in pixels (default 32).
     pub fn size(mut self, px: f32) -> Self {
         self.size = px;
+        self
+    }
+    /// A square avatar (slightly rounded corners). With a presence set it gets a 2px border in the
+    /// status colour instead of a dot, the way Steam friend lists do:
+    /// `avatar("Mira").square().presence(Presence::InGame)`.
+    pub fn square(mut self) -> Self {
+        self.square = true;
         self
     }
     /// A status dot at the bottom right.
@@ -96,6 +134,10 @@ impl<M: 'static> From<Avatar> for Node<M> {
     fn from(a: Avatar) -> Self {
         let s = a.size;
         paint(Length::Fixed(s), s, move |f| {
+            if a.square {
+                square_face(f, s, &a.name, a.presence);
+                return;
+            }
             let c = pt(s / 2.0, s / 2.0);
             face(f, c, s / 2.0, &a.name, None);
             if let Some(pr) = a.presence {

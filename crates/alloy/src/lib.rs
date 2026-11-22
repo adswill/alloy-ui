@@ -71,6 +71,14 @@ mod guide {
     struct G19;
     #[doc = include_str!("../../../docs/guide/21-mobile.md")]
     struct G20;
+    #[doc = include_str!("../../../docs/guide/23-window-app.md")]
+    struct GWindowApp;
+    #[doc = include_str!("../../../docs/guide/27-lists-layout.md")]
+    struct GListsLayout;
+    #[doc = include_str!("../../../docs/guide/24-input-focus.md")]
+    struct GInputFocus;
+    #[doc = include_str!("../../../docs/guide/25-overlays-dialogs.md")]
+    struct GOverlays;
 }
 
 /// `AGENTS.md` teaches coding agents the API; its snippets are compiled too.
@@ -124,12 +132,15 @@ pub mod fs;
 mod fx;
 pub mod i18n;
 mod icons;
+mod input;
 mod inputs;
 mod keys;
+mod lists;
 mod live;
 mod mock;
 mod modules;
 mod motion;
+mod overlay;
 mod palette;
 mod persist;
 pub mod plugin;
@@ -152,7 +163,7 @@ pub mod web;
 
 pub use alloy_ui_macros::{at, state};
 pub use alloy_ui_platform::safe_area::Insets;
-pub use app::{every, secs, sketch, App, Cmd, Sketch, Sub};
+pub use app::{every, secs, sketch, subscribe, tick_while_shown, App, Closing, Cmd, Sketch, Sub};
 pub use bind::{place, Lens, Place, Val};
 pub use blocks::{
     app, field, field_after, local, shell, store, store_as, table, theme_switch, wizard, Local,
@@ -164,7 +175,8 @@ pub use collections::{
     Prop, TextCell,
 };
 pub use cx::{
-    files_hovering, palette, safe_area, set_accent, set_dark, set_look, system, theme, ui, Look,
+    app_focused, density, files_hovering, palette, safe_area, set_accent, set_dark, set_look,
+    system, theme, ui, Look,
 };
 pub use declare::{clock, money};
 
@@ -175,11 +187,15 @@ pub fn open_palette() {
         palette::toggle();
     }
 }
-pub use desktop::{files, notify, Desktop, DesktopSpec, FileDialog, MenuBuilder, TrayBuilder};
+pub use alloy_ui_widgets::TipSide;
+pub use desktop::{
+    files, notify, AppMenuBuilder, Desktop, DesktopSpec, FileDialog, MenuBuilder, TrayBuilder,
+};
 pub use dsl::{
     attempt, button, caption, check, choose, custom, editor, gap, heading, input, list, nav,
     options, pick, progress, radio, radio_list, radio_list_with, radios, rule, scroll,
-    scroll_touch, section, slider, space, tabs, text, toggle, vspace, Act, Choice, Variant,
+    scroll_bottom, scroll_touch, section, slider, space, tabs, text, toggle, vspace, Act, Choice,
+    Variant,
 };
 pub use editors::{
     code_editor, data_grid, rich_editor, Block, BlockKind, CodeView, Grid, GridCell, GridColumn,
@@ -192,15 +208,23 @@ pub use fx::{
     Rolling, RouteKind,
 };
 pub use icons::{icon, icon_named, set_icon_pack, Ico, Icon, IconPack};
+pub use input::{hovered, hovered_for, text_focused, Hover, Interact, InteractMsg};
 pub use inputs::{number, stepper, Count, Stepper};
-pub use keys::{quit, redo, toast, undo, Hotkey, Meta, Shortcuts, Snap, Toast};
+pub use keys::{
+    hide_window, quit, redo, show_window, toast, undo, window_hidden, Hotkey, Meta, Shortcuts,
+    Snap, Toast,
+};
+pub use lists::{carousel, carousel_with, vgrid, Carousel, VGrid};
 pub use live::{live_file, Live};
 pub use mock::{series, Mock};
 pub use modules::*;
-pub use motion::{animated, fade, reveal, spring};
+pub use motion::{
+    animated, fade, fade_appear, image, keyed, presence_list, reveal, reveal_appear, spring, Pic,
+};
+pub use overlay::{modal, portal, Modal, Portal};
 pub use pro::{
-    context_menu, markdown, menu_item, menu_rule, popover, split, tab_bar, vlist, Markdown, Menu,
-    MenuEntry, Popover, Split, TabBar, VList,
+    context_menu, markdown, menu_item, menu_rule, popover, split, split_handle, tab_bar, vlist,
+    Markdown, Menu, MenuEntry, Popover, Split, SplitHandle, TabBar, VList,
 };
 pub use records::{
     crud, crud_app, records, records_in, table_of, Board, Field, FieldInfo, Kind, Record, Records,
@@ -212,7 +236,7 @@ pub use rich::{
     Series, Spark, Swatch, Tone, Tree, TreeItem,
 };
 pub use router::{link_path, router, router_saved, router_saved_at, Router};
-pub use view::{col, row, Boxed, Flex, Node, View};
+pub use view::{col, row, Boxed, Flex, Node, Tip, View};
 pub use viz::{
     calendar, candle, candles, canvas, card, entry, gpu_view, kanban, lane, media, node,
     node_graph, object, pie, pt, rgb, stream, viewport3d, CalAction, CalView, Candle, Candles,
@@ -235,21 +259,23 @@ pub mod prelude {
     };
     pub use crate::{
         animated, animated_with, app, attempt, badge, bar_chart, bars, browse, browse_of, button,
-        caption, check, choose, color_picker, context_menu, crud, crud_app, custom, editor, every,
-        fade, field, field_after, filter_by, gap, heading, icon, icon_named, input, line_chart,
-        link_path, list, local, markdown, menu_item, menu_rule, nav, number, options, palette,
-        pick, popover, progress, radio, radio_list, radio_list_with, radios, records, records_in,
-        resource, resource_for, reveal, router, router_saved, router_saved_at, rule, scroll,
-        scroll_touch, secs, section, series, set_accent, set_dark, set_icon_pack, set_look, shell,
-        sketch, sleep, slider, space, sparkline, split, spring, stat, stats, stepper, store,
-        store_as, swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, toggle, tree,
-        vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell, Icon, IconPack,
-        Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router, Stamp, TextCell,
-        TreeItem, View, Wizard,
+        caption, check, choose, color_picker, context_menu, crud, crud_app, custom, density,
+        editor, every, fade, fade_appear, field, field_after, filter_by, gap, heading, icon,
+        icon_named, image, input, keyed, line_chart, link_path, list, local, markdown, menu_item,
+        menu_rule, nav, number, options, palette, pick, popover, presence_list, progress, radio,
+        radio_list, radio_list_with, radios, records, records_in, resource, resource_for, reveal,
+        reveal_appear, router, router_saved, router_saved_at, rule, scroll, scroll_touch, secs,
+        section, series, set_accent, set_dark, set_icon_pack, set_look, shell, sketch, sleep,
+        slider, space, sparkline, split, spring, stat, stats, stepper, store, store_as, subscribe,
+        swatch, tab_bar, table, table_of, tabs, tally, text, theme_switch, tick_while_shown,
+        toggle, tree, vlist, vspace, wizard, Act, App, Cell, Choice, ChoiceCell, Cmd, FlagCell,
+        Icon, IconPack, Item, Live, Local, Look, Node, Place, Record, Records, Resource, Router,
+        Stamp, TextCell, TreeItem, View, Wizard,
     };
     pub use crate::{
-        at, choices, clipboard, clock, col, files, files_hovering, money, notify, quit, redo, row,
-        state, system, t, toast, undo, vals, Hotkey, Shortcuts, WindowEffect,
+        app_focused, at, choices, clipboard, clock, col, files, files_hovering, hide_window, modal,
+        money, notify, portal, quit, redo, row, show_window, state, system, t, toast, undo, vals,
+        Hotkey, Shortcuts, WindowEffect,
     };
     pub use crate::{
         calendar, candle, candles, canvas, card, counter, dots, enter, enter_after, entry, glide,
@@ -258,7 +284,12 @@ pub mod prelude {
         skeleton_circle, skeleton_text, spinner, spinner_sized, stack, stagger, stream, timeline,
         viewport3d, weighted, Anchor, Layer, RouteKind,
     };
+    pub use crate::{
+        carousel, carousel_with, scroll_bottom, split_handle, vgrid, Carousel, SplitHandle, VGrid,
+    };
     pub use crate::{code_editor, data_grid, rich_editor, GridCell, Lang, RichText, Tone};
+    pub use crate::{fold_section, fold_section_open, Tip, TipSide};
+    pub use crate::{hovered, hovered_for, text_focused, Hover, Interact, InteractMsg};
     pub use alloy_ui_core::Color;
     pub use alloy_ui_theme::{Density, Easing, Preset};
     pub use alloy_ui_widgets::{Keyframes, Timeline};
@@ -339,6 +370,8 @@ where
             start: Instant::now(),
             tick_due: Arc::new(AtomicBool::new(false)),
             tick_pending: false,
+            pump_due: Arc::new(AtomicBool::new(false)),
+            pump_pending: false,
             subs: HashMap::new(),
             sub_rx,
             sub_tx,
@@ -397,6 +430,9 @@ struct Host<A: Application> {
     start: Instant,
     tick_due: Arc<AtomicBool>,
     tick_pending: bool,
+    /// The resource pump timer: every `App` gets finished fetches applied and refreshes fired.
+    pump_due: Arc<AtomicBool>,
+    pump_pending: bool,
     subs: HashMap<u64, Arc<AtomicBool>>,
     sub_rx: mpsc::Receiver<A::Message>,
     sub_tx: mpsc::Sender<A::Message>,
@@ -442,16 +478,14 @@ impl<A: Application + 'static> Host<A> {
         }
         let mut menus: Vec<_> = desktop.menus.clone();
         menus.extend([actions, edit].into_iter().filter(|m| !m.items.is_empty()));
-        if cfg!(target_os = "macos") && !menus.is_empty() {
+        if cfg!(target_os = "macos") && (!menus.is_empty() || desktop.app_menu.is_some()) {
             // The first menu of a Mac app is the application menu, named after the app.
-            menus.insert(
-                0,
-                platform::menu::Menu::new(ctx.window().title()).action(
-                    "alloy:quit",
-                    "Quit",
-                    Some("mod+q"),
-                ),
-            );
+            let mut app = match &desktop.app_menu {
+                Some(m) => m.clone(),
+                None => platform::menu::Menu::default().action("alloy:quit", "Quit", Some("mod+q")),
+            };
+            app.title = ctx.window().title();
+            menus.insert(0, app);
         }
         if let Err(e) = ctx.set_menu(&menus) {
             log::debug!("no native menu bar: {e:?}");
@@ -541,6 +575,9 @@ impl<A: Application + 'static> Host<A> {
             ctx.exit();
             return;
         }
+        if let Some(visible) = keys::take_window_visibility() {
+            ctx.set_window_visible(visible);
+        }
         if let Some(rt) = self.runtime.as_mut() {
             for req in rt.take_window_requests() {
                 match req {
@@ -594,8 +631,28 @@ impl<A: Application + 'static> Host<A> {
         self.sync_subscriptions();
     }
 
+    /// Wake the UI thread when a `resource` has something to apply, whatever the app type
+    /// (`Sketch`, `Pages` or a hand-written `impl App`). One short-lived timer thread at a
+    /// time, none while nothing is pending.
+    fn schedule_resource_pump(&mut self) {
+        if self.pump_pending {
+            return;
+        }
+        let Some(period) = resource::pump_period() else {
+            return;
+        };
+        self.pump_pending = true;
+        let (due, proxy) = (self.pump_due.clone(), self.proxy.clone());
+        std::thread::spawn(move || {
+            std::thread::sleep(period);
+            due.store(true, Ordering::Release);
+            proxy.wake();
+        });
+    }
+
     /// Start new timers and stop those no longer requested.
     fn sync_subscriptions(&mut self) {
+        self.schedule_resource_pump();
         let Some(rt) = self.runtime.as_ref() else {
             return;
         };
@@ -740,9 +797,17 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
                     let ms = self.start.elapsed().as_millis() as u64;
                     outcome = rt.handle_event(&Event::Tick(ms));
                 }
+                let pumped = self.pump_due.swap(false, Ordering::AcqRel);
+                if pumped {
+                    self.pump_pending = false;
+                    resource::pump();
+                }
                 let mut msgs = self.tasks.drain();
                 msgs.extend(self.sub_rx.try_iter());
-                if !msgs.is_empty() {
+                if pumped {
+                    outcome.redraw = true;
+                }
+                if !msgs.is_empty() || pumped {
                     let o = rt.dispatch_all(msgs);
                     outcome = Outcome {
                         redraw: outcome.redraw || o.redraw,
@@ -777,6 +842,8 @@ impl<A: Application + 'static> ShellHandler for Host<A> {
             PlatformEvent::MenuAction(id) => {
                 // A menu item or shortcut: replay it as the key press it stands for, so the
                 // focused widget and the page see it exactly as they would a typed one.
+                // Standard Cut/Copy/Paste/Select All stand for the key press the focused widget handles.
+                let id = platform::menu::standard_shortcut(&id).map_or(id, str::to_string);
                 let Some(sc) = platform::shortcut::Shortcut::parse(&id) else {
                     return;
                 };

@@ -39,7 +39,12 @@ impl Shortcut {
             }
         }
         let key = key?;
-        let key = if key.chars().count() == 1 {
+        // One spelling per key: "down" and "ArrowDown" are the same shortcut.
+        let key = alloy_ui_core::canonical_key_name(&key);
+        // The space bar keeps its name: the global-hotkey backends and `trigger` match on "space".
+        let key = if key == " " {
+            "space".to_string()
+        } else if key.chars().count() == 1 {
             key.to_lowercase()
         } else {
             key
@@ -53,14 +58,18 @@ impl Shortcut {
             return false;
         }
         match key {
-            Key::Character(c) => c.to_lowercase() == self.key,
+            Key::Character(c) => {
+                let c = c.to_lowercase();
+                c == self.key || (c == " " && self.key.eq_ignore_ascii_case("space"))
+            }
             Key::Enter => self.key.eq_ignore_ascii_case("enter"),
             Key::Escape => {
                 self.key.eq_ignore_ascii_case("escape") || self.key.eq_ignore_ascii_case("esc")
             }
             Key::Tab => self.key.eq_ignore_ascii_case("tab"),
             Key::Backspace => self.key.eq_ignore_ascii_case("backspace"),
-            Key::Named(n) => n.eq_ignore_ascii_case(&self.key),
+            Key::Named(n) => alloy_ui_core::canonical_key_name(n)
+                .eq_ignore_ascii_case(&alloy_ui_core::canonical_key_name(&self.key)),
         }
     }
 }
@@ -99,6 +108,21 @@ mod tests {
 
     fn ch(s: &str) -> Key {
         Key::Character(s.into())
+    }
+
+    /// The global-hotkey backends and the Linux `trigger` string match on the name "space", so
+    /// key-name aliasing must not turn it into " ".
+    #[test]
+    fn space_keeps_its_name_and_still_matches_the_space_bar() {
+        let sc = Shortcut::parse("ctrl+alt+space").unwrap();
+        assert_eq!(sc.key, "space");
+        let mods = Modifiers {
+            ctrl: true,
+            alt: true,
+            ..Modifiers::default()
+        };
+        assert!(sc.matches(&ch(" "), &mods));
+        assert!(sc.matches(&Key::Named("Space".into()), &mods));
     }
 
     #[test]

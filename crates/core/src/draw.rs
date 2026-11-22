@@ -232,6 +232,16 @@ pub enum DrawCommand {
         /// Renderer-assigned image id.
         id: u64,
     },
+    /// An image drawn at `alpha` opacity (0 to 1), so pictures can fade like
+    /// everything else.
+    ImageAlpha {
+        /// Destination bounds.
+        bounds: Rectangle,
+        /// Renderer-assigned image id.
+        id: u64,
+        /// Opacity multiplier, 0 to 1.
+        alpha: f32,
+    },
     /// Begin clipping to `bounds`; must be matched by [`DrawCommand::PopClip`].
     PushClip(Rectangle),
     /// End the innermost clip.

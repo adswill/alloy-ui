@@ -231,9 +231,19 @@ pub fn transform(cmd: DrawCommand, xf: &Xf) -> DrawCommand {
             width: width * k,
             color: xf.c(color),
         },
-        DrawCommand::Image { bounds, id } => DrawCommand::Image {
+        DrawCommand::Image { bounds, id } if xf.alpha >= 0.9999 => DrawCommand::Image {
             bounds: xf.r(bounds),
             id,
+        },
+        DrawCommand::Image { bounds, id } => DrawCommand::ImageAlpha {
+            bounds: xf.r(bounds),
+            id,
+            alpha: xf.alpha,
+        },
+        DrawCommand::ImageAlpha { bounds, id, alpha } => DrawCommand::ImageAlpha {
+            bounds: xf.r(bounds),
+            id,
+            alpha: alpha * xf.alpha,
         },
         DrawCommand::PushClip(b) => DrawCommand::PushClip(xf.r(b)),
         DrawCommand::PopClip => DrawCommand::PopClip,

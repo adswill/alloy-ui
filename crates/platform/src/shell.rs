@@ -252,6 +252,15 @@ impl ShellContext {
         self.window.set_minimized(false);
         self.window.focus_window();
     }
+    /// Hide the window (`false`) without closing it, or bring it back and focus it (`true`).
+    /// The app keeps running, e.g. in the tray.
+    pub fn set_window_visible(&self, visible: bool) {
+        self.window.set_visible(visible);
+        if visible {
+            self.window.set_minimized(false);
+            self.window.focus_window();
+        }
+    }
     /// Exit the event loop after this callback.
     pub fn exit(&mut self) {
         self.exit = true;
@@ -408,6 +417,23 @@ struct App<H> {
 
 static INITIAL_EFFECT: std::sync::Mutex<alloy_ui_core::WindowEffect> =
     std::sync::Mutex::new(alloy_ui_core::WindowEffect::None);
+
+static INITIAL_MIN: std::sync::Mutex<Option<(f32, f32)>> = std::sync::Mutex::new(None);
+
+/// Ask for the main window to refuse to be resized below `width` x `height` logical pixels,
+/// before [`run`]. Applied by the OS window manager (`setContentMinSize:` on macOS).
+pub fn request_min_window_size(width: f32, height: f32) {
+    if let Ok(mut m) = INITIAL_MIN.lock() {
+        *m = Some((width, height));
+    }
+}
+
+fn with_min(a: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    match INITIAL_MIN.lock().ok().and_then(|m| *m) {
+        Some((w, h)) => a.with_min_inner_size(LogicalSize::new(w as f64, h as f64)),
+        None => a,
+    }
+}
 
 /// Ask for windows to be created see-through, before [`run`]. X11 needs a
 /// 32-bit visual at creation time, so an app that will ever use a window
@@ -664,7 +690,7 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
             // Android hands out a new native window on every return to the
             // foreground; swap it in for the main window and tell the app.
             if cfg!(target_os = "android") {
-                match el.create_window(attributes(&self.settings)) {
+                match el.create_window(with_min(attributes(&self.settings))) {
                     Ok(w) => {
                         let w = Arc::new(w);
                         self.ids.retain(|_, k| *k != WindowKey::MAIN);
@@ -687,7 +713,7 @@ impl<H: ShellHandler> ApplicationHandler<Wake> for App<H> {
         }
         #[cfg(target_os = "macos")]
         crate::os::install_open_handler();
-        match el.create_window(dev_geometry::restore(attributes(&self.settings))) {
+        match el.create_window(dev_geometry::restore(with_min(attributes(&self.settings)))) {
             Ok(w) => {
                 let w = Arc::new(w);
                 self.ids.insert(w.id(), WindowKey::MAIN);

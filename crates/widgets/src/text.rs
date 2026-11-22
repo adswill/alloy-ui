@@ -24,23 +24,29 @@ pub enum TextRole {
     Caption,
 }
 
-/// Greedy word wrap of `content` into lines no wider than `max_width`.
-/// Explicit newlines always break. A single word wider than the limit gets its own line.
-pub(crate) fn wrap_lines(ui: &Ui, content: &str, size: f32, max_width: f32) -> Vec<String> {
+/// Greedy word wrap into lines no wider than `max_width`, handed out as slices of `content`: no
+/// allocation (a line is a byte range, never a rebuilt `String`).
+pub(crate) fn for_each_wrapped(
+    ui: &Ui,
+    content: &str,
+    size: f32,
+    max_width: f32,
+    mut f: impl FnMut(&str),
+) {
     let m = ui.metrics();
-    let mut lines = Vec::new();
     for para in content.split('\n') {
-        let mut line = String::new();
+        let mut start = 0;
+        let mut end = 0;
         for word in para.split_inclusive(' ') {
-            let candidate = format!("{line}{word}");
-            if !line.is_empty() && m.width(candidate.trim_end(), size) > max_width {
-                lines.push(std::mem::take(&mut line).trim_end().to_owned());
+            let cand = para[start..end + word.len()].trim_end();
+            if end > start && m.width(cand, size) > max_width {
+                f(para[start..end].trim_end());
+                start = end;
             }
-            line.push_str(word);
+            end += word.len();
         }
-        lines.push(line.trim_end().to_owned());
+        f(para[start..end].trim_end());
     }
-    lines
 }
 
 /// A run of text, wrapped to the width it is given.
@@ -128,11 +134,14 @@ impl Text {
         Element::new(self)
     }
 
-    fn lines(&self, width: f32) -> Vec<String> {
+    /// Hand each line to `f` without allocating.
+    fn for_each_line(&self, width: f32, mut f: impl FnMut(&str)) {
         if self.wrap && width.is_finite() {
-            wrap_lines(&self.ui, &self.content, self.size, width)
+            for_each_wrapped(&self.ui, &self.content, self.size, width, f);
         } else {
-            self.content.split('\n').map(str::to_owned).collect()
+            for l in self.content.split('\n') {
+                f(l);
+            }
         }
     }
 }
@@ -143,19 +152,22 @@ impl<M> Widget<M> for Text {
     }
     fn measure(&self, available: Size) -> Size {
         let m = self.ui.metrics();
-        let lines = self.lines(available.width);
-        let w = lines
-            .iter()
-            .map(|l| m.width(l, self.size))
-            .fold(0.0, f32::max);
-        Size::new(w, lines.len() as f32 * self.line_height)
+        let (mut w, mut n) = (0.0f32, 0usize);
+        self.for_each_line(available.width, |l| {
+            w = w.max(m.width(l, self.size));
+            n += 1;
+        });
+        Size::new(w, n as f32 * self.line_height)
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
         self.ui.describe(Role::Label, &self.content, &b, |_| {});
-        for (i, line) in self.lines(b.size.width).into_iter().enumerate() {
+        let mut i = 0usize;
+        self.for_each_line(b.size.width, |line| {
+            let at = i;
+            i += 1;
             if line.is_empty() {
-                continue;
+                return;
             }
             out.push(DrawCommand::Text {
                 family: if self.italic {
@@ -165,12 +177,12 @@ impl<M> Widget<M> for Text {
                 },
                 weight: self.weight,
                 line_height: None,
-                origin: Point::new(b.origin.x, b.origin.y + i as f32 * self.line_height),
-                content: line,
+                origin: Point::new(b.origin.x, b.origin.y + at as f32 * self.line_height),
+                content: line.to_owned(),
                 size: self.size,
                 color: self.color,
                 max_width: None,
             });
-        }
+        });
     }
 }

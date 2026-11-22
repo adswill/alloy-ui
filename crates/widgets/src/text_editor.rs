@@ -335,7 +335,7 @@ impl<M: 'static> Widget<M> for TextEditor<M> {
             });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
-        self.ui.register(self.id);
+        self.ui.register_text(self.id);
         let lines = self.vis(&b);
         let mut e = self.ui.edit(self.id);
         e.clamp(self.value.chars().count());

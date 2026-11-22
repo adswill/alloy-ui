@@ -50,6 +50,7 @@ pub struct Txt {
     wrap: bool,
     width: Length,
     italic: bool,
+    weight: Option<u16>,
 }
 
 /// Body text. Roles: `.heading()`, `.caption()`, ...
@@ -62,6 +63,7 @@ pub fn text(s: impl Into<String>) -> Txt {
         wrap: true,
         width: Length::Shrink,
         italic: false,
+        weight: None,
     }
 }
 /// A section heading.
@@ -103,6 +105,20 @@ impl Txt {
     pub fn italic(mut self) -> Self {
         self.italic = true;
         self
+    }
+    /// Font weight, 100 to 900 (400 is regular, 600 semibold, 700 bold). Combines with
+    /// [`color`](Self::color) and the roles: `text("Online").weight(600).color(green)`.
+    pub fn weight(mut self, w: u16) -> Self {
+        self.weight = Some(w.clamp(100, 900));
+        self
+    }
+    /// Bold (weight 700).
+    pub fn bold(self) -> Self {
+        self.weight(700)
+    }
+    /// Semibold (weight 600).
+    pub fn semibold(self) -> Self {
+        self.weight(600)
     }
     /// Secondary (dimmed) colour.
     pub fn dim(mut self) -> Self {
@@ -184,6 +200,9 @@ impl Txt {
         if self.italic {
             t = t.italic();
         }
+        if let Some(wt) = self.weight {
+            t = t.weight(wt);
+        }
         Node(t.into_element())
     }
 }
@@ -205,6 +224,7 @@ pub struct Btn<M> {
     sel: bool,
     tint: Option<Color>,
     hover: Option<Color>,
+    esc: Option<M>,
     id: u64,
 }
 
@@ -220,11 +240,17 @@ pub fn button<M>(label: impl Into<String>) -> Btn<M> {
         sel: false,
         tint: None,
         hover: None,
+        esc: None,
         id: auto_id(1),
     }
 }
 
 impl<M> Btn<M> {
+    /// Message sent on Escape while a [`confirm`](Btn::confirm) question is showing.
+    pub fn on_escape(mut self, m: M) -> Self {
+        self.esc = Some(m);
+        self
+    }
     /// Message sent when pressed.
     pub fn on(mut self, m: M) -> Self {
         self.on = Some(m);
@@ -291,6 +317,9 @@ impl<S: 'static> Btn<Act<S>> {
 impl<S: 'static> Btn<Act<S>> {
     /// Ask first: the button turns into "prompt [label] [Cancel]" and only the second click
     /// runs the action. Put it last, after `.act(..)`.
+    ///
+    /// While the question shows, Escape cancels it, like a modal. `.on_escape(..)` adds a
+    /// handler that also runs then.
     #[track_caller]
     pub fn confirm(mut self, prompt: &str) -> Node<Act<S>> {
         let asking = crate::local(false);
@@ -306,6 +335,16 @@ impl<S: 'static> Btn<Act<S>> {
             (go.0)(s)
         });
         let back = button("Cancel").ghost().act(move |_| asking.set(false));
+        let extra = self.esc.take();
+        crate::keys::register(crate::keys::Hotkey::new(
+            "esc",
+            Act::new(move |s: &mut S| {
+                asking.set(false);
+                if let Some(e) = &extra {
+                    (e.0)(s);
+                }
+            }),
+        ));
         crate::row([Node::from(caption(prompt)), sure.into(), back.into()])
             .align_center()
             .gap(8.0)
@@ -384,6 +423,21 @@ pub fn scroll<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
         w::Scrollable::new(&cx::ui(), id, child.into().0)
             .width(Length::Fill(1))
             .height(Length::Fill(1))
+            .into_element(),
+    )
+}
+
+/// [`scroll`] that stays pinned to the bottom, like a chat log: it starts at the newest content,
+/// follows it as it grows while the view is at the bottom, and stops following when the user
+/// scrolls up (until they scroll back to the end).
+#[track_caller]
+pub fn scroll_bottom<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
+    let id = auto_id(11);
+    Node(
+        w::Scrollable::new(&cx::ui(), id, child.into().0)
+            .width(Length::Fill(1))
+            .height(Length::Fill(1))
+            .stick_bottom()
             .into_element(),
     )
 }

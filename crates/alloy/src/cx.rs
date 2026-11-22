@@ -106,10 +106,12 @@ pub fn set_dark(dark: bool) {
     if let Some(c) = ACCENT.with(|a| a.get()) {
         t = t.with_accent(c);
     }
-    ui().set_theme(t);
+    ui().set_theme(pinned(t));
 }
 
 thread_local! {
+    /// Density chosen by `Sketch::density`: it wins over a [`Look`]'s own.
+    static DENSITY_PIN: std::cell::Cell<Option<alloy_ui_theme::Density>> = const { std::cell::Cell::new(None) };
     static ACCENT: std::cell::Cell<Option<Color>> = const { std::cell::Cell::new(None) };
 }
 
@@ -122,6 +124,34 @@ pub fn set_accent(brand: alloy_ui_core::Color) {
     if t.palette.accent != theme().palette.accent {
         ui().set_theme(t);
     }
+}
+
+/// Apply the app's pinned density (set by `Sketch::density`) to `t`.
+fn pinned(t: Theme) -> Theme {
+    match DENSITY_PIN.with(|d| d.get()) {
+        Some(d) => t.density(d),
+        None => t,
+    }
+}
+
+/// Pin the window's density for the app (`None` leaves looks in charge). Cheap to call every
+/// frame: the theme is only rebuilt when the density actually changes.
+pub(crate) fn pin_density(d: Option<alloy_ui_theme::Density>) {
+    DENSITY_PIN.with(|p| p.set(d));
+    if let Some(d) = d {
+        let t = theme();
+        if t.density != d {
+            ui().set_theme(t.as_ref().clone().density(d));
+        }
+    }
+}
+
+/// How much room the window's controls and rows take: [`Density::Compact`],
+/// [`Density::Comfortable`] (the default) or [`Density::Spacious`]. Set it with
+/// `Sketch::density(..)` or a [`Look`]; a size of your own that should follow it is
+/// `density().px(28.0)`.
+pub fn density() -> alloy_ui_theme::Density {
+    theme().density
 }
 
 /// A complete look: appearance, optional brand accent, contrast and density. Build one and
@@ -202,7 +232,7 @@ impl Look {
 /// Apply a [`Look`] to the window.
 pub fn set_look(look: Look) {
     ACCENT.with(|a| a.set(look.accent));
-    ui().set_theme(look.theme());
+    ui().set_theme(pinned(look.theme()));
 }
 
 /// Run `f` with every generated id (and so every [`local`](crate::local)) keyed by `key` as
@@ -433,6 +463,7 @@ thread_local! {
             accent: None,
         }) };
     static HOVERING_FILES: Cell<bool> = const { Cell::new(false) };
+    static APP_FOCUSED: Cell<bool> = const { Cell::new(true) };
 }
 
 /// Opacity of the page background: below 1 while a window effect shows through.
@@ -462,6 +493,16 @@ pub fn files_hovering() -> bool {
 
 pub(crate) fn set_files_hovering(on: bool) -> bool {
     HOVERING_FILES.with(|c| c.replace(on)) != on
+}
+
+/// True while the window has keyboard focus (the app is frontmost). Starts true. Use it to show
+/// notifications only when the app is in the background. The view is rebuilt when it changes.
+pub fn app_focused() -> bool {
+    APP_FOCUSED.with(Cell::get)
+}
+
+pub(crate) fn set_app_focused(on: bool) {
+    APP_FOCUSED.with(|c| c.set(on));
 }
 
 /// Recolour every window with the accent `c`, keeping light or dark.

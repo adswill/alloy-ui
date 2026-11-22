@@ -13,7 +13,6 @@ use alloy_ui_widgets::Ui;
 
 const H: f32 = 44.0;
 const GAP: f32 = 8.0;
-const BOTTOM: f32 = 24.0;
 const PAD: f32 = 16.0;
 const FADE_IN: f32 = 220.0;
 const FADE_OUT: f32 = 260.0;
@@ -26,7 +25,7 @@ const INPUT_H: f32 = 52.0;
 pub(crate) struct Chrome<M> {
     ui: Ui,
     child: Vec<Element<M>>,
-    keys: Vec<(Shortcut, M)>,
+    keys: Vec<(Shortcut, M, bool)>,
     /// Everything the command palette lists: title, the keys that trigger it, what it sends.
     entries: Vec<(String, Option<String>, M)>,
     undo: Option<M>,
@@ -72,7 +71,7 @@ impl<M: Clone + 'static> Chrome<M> {
                 .collect(),
             keys: keys
                 .into_iter()
-                .filter_map(|h| Shortcut::parse(&h.keys).map(|s| (s, h.msg)))
+                .filter_map(|h| Shortcut::parse(&h.keys).map(|s| (s, h.msg, h.typing)))
                 .collect(),
             undo,
         }
@@ -121,8 +120,9 @@ fn ease_out(t: f32) -> f32 {
 /// Where every toast sits in `bounds` right now, and how visible it is.
 fn place(ui: &Ui, bounds: Rectangle, can_undo: bool) -> Vec<(Placed, String, bool, u8)> {
     let size = ui.theme().typography.body.size;
+    let inset = keys::toast_inset();
     keys::toasts(|ts, now| {
-        let mut y = bounds.origin.y + bounds.size.height - BOTTOM;
+        let mut y = bounds.origin.y + bounds.size.height - inset;
         let mut out = Vec::new();
         for t in ts.iter().rev() {
             let age = t.born.map_or(0.0, |b| now.saturating_sub(b) as f32);
@@ -278,8 +278,9 @@ impl<M: Clone + 'static> Chrome<M> {
                         t.born.get_or_insert(now);
                     }
                     ts.retain(|t| {
-                        t.born
-                            .map_or(true, |b| (now - b) as f32 <= t.secs * 1000.0 + FADE_OUT)
+                        t.born.map_or(true, |b| {
+                            now.saturating_sub(b) as f32 <= t.secs * 1000.0 + FADE_OUT
+                        })
                     });
                 });
             }
@@ -303,7 +304,15 @@ impl<M: Clone + 'static> Chrome<M> {
             }
         }
         if let Event::KeyPressed(key, mods) = event {
-            if let Some((_, msg)) = self.keys.iter().find(|(s, _)| s.matches(key, mods)) {
+            // A plain printable key belongs to a focused text field, not to a shortcut.
+            let typing = matches!(key, Key::Character(_))
+                && !(mods.ctrl || mods.alt || mods.logo)
+                && self.ui.text_focused();
+            if let Some((_, msg, _)) = self
+                .keys
+                .iter()
+                .find(|(s, _, always)| (*always || !typing) && s.matches(key, mods))
+            {
                 out.push(msg.clone());
                 return true;
             }

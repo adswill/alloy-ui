@@ -327,6 +327,21 @@ fn place(node: &Node, m: &Measured, origin: Point, size: Size) -> Layout {
 /// `(weight, min, max)`; writes results into `mains`. Violating items are
 /// frozen at their limit and the remainder is redistributed (CSS flexbox).
 fn distribute(free: f32, flex: &[Option<(u16, f32, f32)>], mains: &mut [f32]) {
+    // Nothing flexible, or one flexible item (the common `space()` / one `fill`
+    // row): the result is a single clamp, with no scratch vectors.
+    let mut it = flex
+        .iter()
+        .enumerate()
+        .filter_map(|(i, f)| f.map(|f| (i, f)));
+    match (it.next(), it.next()) {
+        (None, _) => return,
+        (Some((i, (w, lo, hi))), None) => {
+            let w = f32::from(w);
+            mains[i] = (free * w / w).clamp(lo, hi);
+            return;
+        }
+        _ => {}
+    }
     let mut active: Vec<usize> = (0..flex.len()).filter(|&i| flex[i].is_some()).collect();
     let mut free = free;
     while !active.is_empty() {

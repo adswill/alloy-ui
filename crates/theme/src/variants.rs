@@ -40,6 +40,11 @@ impl Density {
             Self::Spacious => 1.25,
         }
     }
+    /// A fixed row height (or any other size that should follow the density)
+    /// scaled for this density, rounded to whole pixels.
+    pub fn px(self, base: f32) -> f32 {
+        (base * self.scale()).round()
+    }
 }
 
 const BLACK: Color = Color::hex(0x000000);
@@ -167,6 +172,7 @@ impl Theme {
     /// Scale the spacing tokens for `density`.
     pub fn density(mut self, density: Density) -> Self {
         let k = density.scale();
+        self.density = density;
         let s = Spacing::standard();
         let r = |v: f32| (v * k).round().max(1.0);
         self.spacing = Spacing {
