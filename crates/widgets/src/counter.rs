@@ -187,6 +187,30 @@ impl<M> Widget<M> for Counter {
         };
         let mut x = b.origin.x;
         let y = b.origin.y;
+        // At rest, draw the whole value as one string so it can be read (and found by the
+        // test harness) as "3 of 8" rather than as separate glyphs. While rolling, the
+        // per-digit wheels below are used.
+        if (n.abs() - n.abs().round()).abs() < 1e-3 {
+            let mag = n.abs().round() as f64;
+            let mut full = self.prefix.clone();
+            for s in &slots {
+                match s {
+                    Slot::Fixed(c) => full.push(*c),
+                    Slot::Digit(k) => {
+                        let d = (mag / 10f64.powi(*k as i32)).floor() as u64 % 10;
+                        full.push(char::from_digit(d as u32, 10).unwrap_or('0'));
+                    }
+                }
+            }
+            full.push_str(&self.suffix);
+            out.push(text(x, y, full, 1.0));
+            let spoken = format!(
+                "{}{:.*}{}",
+                self.prefix, self.decimals as usize, self.target, self.suffix
+            );
+            self.ui.describe(Role::Label, &spoken, &b, |_| {});
+            return;
+        }
         if !self.prefix.is_empty() {
             out.push(text(x, y, self.prefix.clone(), 1.0));
             x += self.text_w(&self.prefix);

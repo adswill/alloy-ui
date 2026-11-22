@@ -433,6 +433,7 @@ thread_local! {
             accent: None,
         }) };
     static HOVERING_FILES: Cell<bool> = const { Cell::new(false) };
+    static APP_FOCUSED: Cell<bool> = const { Cell::new(true) };
 }
 
 /// Opacity of the page background: below 1 while a window effect shows through.
@@ -462,6 +463,16 @@ pub fn files_hovering() -> bool {
 
 pub(crate) fn set_files_hovering(on: bool) -> bool {
     HOVERING_FILES.with(|c| c.replace(on)) != on
+}
+
+/// True while the window has keyboard focus (the app is frontmost). Starts true. Use it to show
+/// notifications only when the app is in the background. The view is rebuilt when it changes.
+pub fn app_focused() -> bool {
+    APP_FOCUSED.with(Cell::get)
+}
+
+pub(crate) fn set_app_focused(on: bool) {
+    APP_FOCUSED.with(|c| c.set(on));
 }
 
 /// Recolour every window with the accent `c`, keeping light or dark.

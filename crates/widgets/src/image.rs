@@ -7,12 +7,22 @@ use alloy_ui_layout::Length;
 pub struct Image {
     id: u64,
     size: Size,
+    alpha: f32,
 }
 
 impl Image {
     /// The image `id`, shown at `size` logical pixels.
     pub fn new(id: u64, size: Size) -> Self {
-        Self { id, size }
+        Self {
+            id,
+            size,
+            alpha: 1.0,
+        }
+    }
+    /// Draw at `alpha` opacity, 0 to 1 (default 1). Fades and enters also apply.
+    pub fn opacity(mut self, alpha: f32) -> Self {
+        self.alpha = alpha.clamp(0.0, 1.0);
+        self
     }
     /// Box as an element.
     pub fn into_element<M: 'static>(self) -> Element<M> {
@@ -32,9 +42,17 @@ impl<M> Widget<M> for Image {
         self.size
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
-        out.push(DrawCommand::Image {
-            bounds: layout.bounds,
-            id: self.id,
+        out.push(if self.alpha >= 0.9999 {
+            DrawCommand::Image {
+                bounds: layout.bounds,
+                id: self.id,
+            }
+        } else {
+            DrawCommand::ImageAlpha {
+                bounds: layout.bounds,
+                id: self.id,
+                alpha: self.alpha,
+            }
         });
     }
 }

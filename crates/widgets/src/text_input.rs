@@ -247,7 +247,7 @@ impl<M: 'static> Widget<M> for TextInput<M> {
             });
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
-        self.ui.register(self.id);
+        self.ui.register_text(self.id);
         let mut e = self.ui.edit(self.id);
         e.clamp(self.value.chars().count());
         let s = t.typography.body;

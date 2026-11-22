@@ -15,6 +15,10 @@ use alloy_ui_layout::Length;
 const GAP: f32 = 9.0;
 const K_DRAG: u64 = 0x5917_0001 << 20;
 const K_RATIO: u64 = 0x5917_0002 << 20;
+/// Slot: the first pane's laid-out length last drawn, in 1/16 px.
+const K_LEN: u64 = 0x5917_0003 << 20;
+/// Slot: the length a view last read through [`SplitPane::first_len_of`].
+const K_SEEN: u64 = 0x5917_0004 << 20;
 const KEY_STEP: f32 = 24.0;
 
 /// Sizing shell around one pane. Its share of the space is read from the [`Ui`] every time
@@ -121,6 +125,16 @@ impl<M: 'static> SplitPane<M> {
     pub fn min(mut self, px: f32) -> Self {
         self.min = px;
         self
+    }
+    /// The first pane's current length in pixels (its width, or its height for a
+    /// [`vertical`](Self::vertical) split) as of the last frame drawn, for the split with `id`;
+    /// 0 before the first frame. Reading it inside the view makes the split ask for one more
+    /// frame whenever the size has since changed (a drag, a window resize), so the view always
+    /// catches up.
+    pub fn first_len_of(ui: &Ui, id: u64) -> f32 {
+        let len = ui.slot(id ^ K_LEN);
+        ui.set_slot(id ^ K_SEEN, Some(len.unwrap_or(0)));
+        len.unwrap_or(0) as f32 / 16.0
     }
     /// Box as an element.
     pub fn into_element(mut self) -> Element<M> {
@@ -270,11 +284,20 @@ impl<M: 'static> Widget<M> for SplitPane<M> {
         util::dispatch(&mut self.panes, event, layout, cursor, out)
     }
     fn animating(&self) -> bool {
-        util::any_animating(&self.panes)
+        // A view that read the pane size needs another build once the size moved.
+        let stale = self
+            .ui
+            .slot(self.id ^ K_SEEN)
+            .is_some_and(|seen| Some(seen) != self.ui.slot(self.id ^ K_LEN));
+        stale || util::any_animating(&self.panes)
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         util::draw_children(&self.panes, layout, out);
         self.ui.register(self.id);
+        self.ui.set_slot(
+            self.id ^ K_LEN,
+            Some((self.first_len(layout) * 16.0).round() as i64),
+        );
         let t = self.ui.theme();
         let p = &t.palette;
         let g = self.gutter(layout);

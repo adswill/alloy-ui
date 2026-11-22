@@ -12,6 +12,8 @@ pub struct Hotkey<M> {
     /// Defaults to `cmd:<label>` for a labelled command.
     pub(crate) id: Option<String>,
     pub(crate) msg: M,
+    /// Fire even while a text field has focus (plain keys otherwise stay with the field).
+    pub(crate) typing: bool,
 }
 
 impl<M> Hotkey<M> {
@@ -23,6 +25,7 @@ impl<M> Hotkey<M> {
             label: None,
             id: None,
             msg,
+            typing: false,
         }
     }
     /// A command only the desktop can call (a tray item, a global hotkey): no key, not in the palette.
@@ -32,6 +35,7 @@ impl<M> Hotkey<M> {
             label: None,
             id: Some(id.into()),
             msg,
+            typing: false,
         }
     }
     /// A command with no key: it only appears in the command palette (`mod+k`).
@@ -41,7 +45,15 @@ impl<M> Hotkey<M> {
             label: Some(label.into()),
             id: None,
             msg,
+            typing: false,
         }
+    }
+    /// Fire this shortcut even while a text field has focus. By default a shortcut made of a
+    /// plain key (`"n"`, `"?"`, `"shift+a"`) stays quiet then, so typing is never stolen;
+    /// shortcuts with Ctrl, Cmd or Alt, and keys like arrows, Enter and Escape, always fire.
+    pub fn while_typing(mut self) -> Self {
+        self.typing = true;
+        self
     }
     /// Also list the shortcut under this name in the native menu bar and the palette.
     pub fn labelled(mut self, label: &str) -> Self {
@@ -107,7 +119,7 @@ pub(crate) struct ToastItem {
 }
 
 /// A shortcut registered from a view: keys, label, desktop id and the boxed message.
-type Registered = (String, Option<String>, Option<String>, Box<dyn Any>);
+type Registered = (String, Option<String>, Option<String>, Box<dyn Any>, bool);
 
 #[derive(Default)]
 struct Reg {
@@ -136,19 +148,23 @@ fn reg<R>(f: impl FnOnce(&mut Reg) -> R) -> R {
 
 /// Remember a shortcut registered while building the view.
 pub(crate) fn register<M: 'static>(h: Hotkey<M>) {
-    reg(|r| r.keys.push((h.keys, h.label, h.id, Box::new(h.msg))));
+    reg(|r| {
+        r.keys
+            .push((h.keys, h.label, h.id, Box::new(h.msg), h.typing))
+    });
 }
 
 /// The shortcuts registered since the last call, of message type `M`.
 pub(crate) fn take_registered<M: 'static>() -> Vec<Hotkey<M>> {
     reg(|r| std::mem::take(&mut r.keys))
         .into_iter()
-        .filter_map(|(keys, label, id, m)| {
+        .filter_map(|(keys, label, id, m, typing)| {
             m.downcast::<M>().ok().map(|m| Hotkey {
                 keys,
                 label,
                 id,
                 msg: *m,
+                typing,
             })
         })
         .collect()
@@ -314,6 +330,12 @@ pub trait Shortcuts<S: 'static>: View<Act<S>> + Sized {
     /// shown). `mod` is Cmd on macOS and Ctrl elsewhere.
     fn shortcut(self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
         register(Hotkey::new(keys, Act::new(f)));
+        self
+    }
+    /// Like [`shortcut`](Self::shortcut), and it fires even while a text field has focus (see
+    /// [`Hotkey::while_typing`]).
+    fn shortcut_typing(self, keys: &str, f: impl Fn(&mut S) + Send + Sync + 'static) -> Self {
+        register(Hotkey::new(keys, Act::new(f)).while_typing());
         self
     }
     /// Add `label` to the command palette (`mod+k`) while this view is shown:

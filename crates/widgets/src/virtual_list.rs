@@ -307,6 +307,18 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
     ) -> bool {
         let b = layout.bounds;
         let inside = b.contains(cursor);
+        // An overlay press (open popover or context menu in a row) arrives with the pointer
+        // parked off-screen: offer it to every visible row so the owner finds it.
+        if self.ui.hit_pending() && matches!(event, Event::MousePressed(_) | Event::Scrolled { .. })
+        {
+            for i in self.range(&b) {
+                let (mut row, l) = self.laid(&b, i);
+                if row.0.on_event(event, &l, cursor, out) {
+                    return true;
+                }
+            }
+            return false;
+        }
         match event {
             Event::Scrolled { dy, .. } if inside => {
                 let before = self.target(&b);
@@ -338,6 +350,13 @@ impl<M: 'static> Widget<M> for VirtualList<M> {
                     }
                 }
                 return true;
+            }
+            // Right and middle presses belong to the row's own controls (a context menu).
+            Event::MousePressed(_) if inside => {
+                if let Some(i) = self.row_at((cursor.y - b.origin.y) as f64 + self.offset(&b)) {
+                    let (mut row, l) = self.laid(&b, i);
+                    return row.0.on_event(event, &l, cursor, out);
+                }
             }
             Event::CursorMoved(_) => {
                 if let Some(g) = self.ui.slot(self.id ^ K_DRAG) {

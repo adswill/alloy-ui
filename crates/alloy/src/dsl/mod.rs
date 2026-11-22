@@ -50,6 +50,7 @@ pub struct Txt {
     wrap: bool,
     width: Length,
     italic: bool,
+    weight: Option<u16>,
 }
 
 /// Body text. Roles: `.heading()`, `.caption()`, ...
@@ -62,6 +63,7 @@ pub fn text(s: impl Into<String>) -> Txt {
         wrap: true,
         width: Length::Shrink,
         italic: false,
+        weight: None,
     }
 }
 /// A section heading.
@@ -103,6 +105,20 @@ impl Txt {
     pub fn italic(mut self) -> Self {
         self.italic = true;
         self
+    }
+    /// Font weight, 100 to 900 (400 is regular, 600 semibold, 700 bold). Combines with
+    /// [`color`](Self::color) and the roles: `text("Online").weight(600).color(green)`.
+    pub fn weight(mut self, w: u16) -> Self {
+        self.weight = Some(w.clamp(100, 900));
+        self
+    }
+    /// Bold (weight 700).
+    pub fn bold(self) -> Self {
+        self.weight(700)
+    }
+    /// Semibold (weight 600).
+    pub fn semibold(self) -> Self {
+        self.weight(600)
     }
     /// Secondary (dimmed) colour.
     pub fn dim(mut self) -> Self {
@@ -183,6 +199,9 @@ impl Txt {
         }
         if self.italic {
             t = t.italic();
+        }
+        if let Some(wt) = self.weight {
+            t = t.weight(wt);
         }
         Node(t.into_element())
     }
@@ -384,6 +403,21 @@ pub fn scroll<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
         w::Scrollable::new(&cx::ui(), id, child.into().0)
             .width(Length::Fill(1))
             .height(Length::Fill(1))
+            .into_element(),
+    )
+}
+
+/// [`scroll`] that stays pinned to the bottom, like a chat log: it starts at the newest content,
+/// follows it as it grows while the view is at the bottom, and stops following when the user
+/// scrolls up (until they scroll back to the end).
+#[track_caller]
+pub fn scroll_bottom<M: 'static>(child: impl Into<Node<M>>) -> Node<M> {
+    let id = auto_id(11);
+    Node(
+        w::Scrollable::new(&cx::ui(), id, child.into().0)
+            .width(Length::Fill(1))
+            .height(Length::Fill(1))
+            .stick_bottom()
             .into_element(),
     )
 }

@@ -20,6 +20,8 @@ const K_DRAG: u64 = 0x5C02_0000_0000;
 const K_TOUCH: u64 = 0x5C04_0000_0000;
 /// Pointer travel (px) before a press on content becomes a scroll drag.
 const TOUCH_SLOP: f32 = 4.0;
+/// Slot (in [`Ui`]) holding the last seen maximum offset of a stick-to-bottom area, in 1/16 px.
+const K_STICK: u64 = 0x5C05_0000_0000;
 
 /// Scrolls one child vertically. Give the child `Fill` width and `Shrink`
 /// height so it is as wide as the viewport and as tall as its content.
@@ -29,6 +31,7 @@ pub struct Scrollable<M> {
     id: u64,
     style: Style,
     touch: bool,
+    stick: bool,
     child: Vec<Element<M>>,
 }
 
@@ -45,6 +48,7 @@ impl<M: 'static> Scrollable<M> {
                 ..Style::default()
             },
             touch: false,
+            stick: false,
             child: vec![child],
         }
     }
@@ -55,6 +59,29 @@ impl<M: 'static> Scrollable<M> {
     pub fn touch_drag(mut self) -> Self {
         self.touch = true;
         self
+    }
+    /// Stay pinned to the bottom, like a chat log: while the view is at the bottom (or has never
+    /// been scrolled) it follows content that grows, and it starts at the bottom. Scroll up and
+    /// it stays where you are until you scroll back down to the end.
+    pub fn stick_bottom(mut self) -> Self {
+        self.stick = true;
+        self
+    }
+    /// Follow growing content when pinned (see [`Scrollable::stick_bottom`]).
+    fn follow(&self, layout: &Layout) {
+        let max = Self::max_offset(layout);
+        let key = self.id ^ K_STICK;
+        match self.ui.slot(key).map(|v| v as f32 / 16.0) {
+            None => self.ui.scroll_jump(self.id, max, max),
+            Some(last) if (max - last).abs() > 0.01 => {
+                // Pinned if the target was at (or within a pixel of) the old end.
+                if self.ui.scroll_offset(self.id) >= last - 1.0 {
+                    self.ui.scroll_jump(self.id, max, max);
+                }
+            }
+            Some(_) => {}
+        }
+        self.ui.set_slot(key, Some((max * 16.0) as i64));
     }
     /// Width sizing.
     pub fn width(mut self, w: Length) -> Self {
@@ -224,6 +251,13 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
         cursor: Point,
         out: &mut Vec<M>,
     ) -> bool {
+        // An overlay press (open popover or context menu inside the content) arrives with the
+        // pointer parked off-screen; the owner is somewhere below, so forward it.
+        if self.ui.hit_pending() && matches!(event, Event::MousePressed(_) | Event::Scrolled { .. })
+        {
+            let shifted = self.shifted(layout);
+            return util::dispatch(&mut self.child, event, &shifted, cursor, out);
+        }
         let inside = layout.bounds.contains(cursor);
         let b = layout.bounds;
         let max = Self::max_offset(layout);
@@ -314,6 +348,9 @@ impl<M: 'static> Widget<M> for Scrollable<M> {
     }
     fn draw(&self, layout: &Layout, out: &mut DrawList) {
         let b = layout.bounds;
+        if self.stick {
+            self.follow(layout);
+        }
         out.push(DrawCommand::PushClip(b));
         let shifted = self.shifted(layout);
         let outer = self.ui.clip();

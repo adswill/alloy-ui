@@ -39,6 +39,8 @@ impl Shortcut {
             }
         }
         let key = key?;
+        // One spelling per key: "down" and "ArrowDown" are the same shortcut.
+        let key = alloy_ui_core::canonical_key_name(&key);
         let key = if key.chars().count() == 1 {
             key.to_lowercase()
         } else {
@@ -53,14 +55,17 @@ impl Shortcut {
             return false;
         }
         match key {
-            Key::Character(c) => c.to_lowercase() == self.key,
+            Key::Character(c) => {
+                let c = c.to_lowercase();
+                c == self.key || (c == " " && self.key.eq_ignore_ascii_case("space"))
+            }
             Key::Enter => self.key.eq_ignore_ascii_case("enter"),
             Key::Escape => {
                 self.key.eq_ignore_ascii_case("escape") || self.key.eq_ignore_ascii_case("esc")
             }
             Key::Tab => self.key.eq_ignore_ascii_case("tab"),
             Key::Backspace => self.key.eq_ignore_ascii_case("backspace"),
-            Key::Named(n) => n.eq_ignore_ascii_case(&self.key),
+            Key::Named(n) => alloy_ui_core::canonical_key_name(n).eq_ignore_ascii_case(&self.key),
         }
     }
 }

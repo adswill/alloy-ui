@@ -1093,7 +1093,7 @@ impl<M: 'static> Widget<M> for CodeEditor<M> {
         let doc = Doc::get(self.id, &self.value);
         let focused = self.ui.is_focused(Some(self.id));
         let editable = self.on_input.is_some();
-        self.ui.register(self.id);
+        self.ui.register_text(self.id);
         self.ui.describe(Role::TextEditor, "Code editor", &b, |n| {
             n.id = Some(self.id);
             n.value = Some(self.value.clone());
